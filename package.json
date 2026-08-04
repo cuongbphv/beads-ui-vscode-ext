@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "beads-dashboard",
   "displayName": "Beads Dashboard — Kanban & Roadmap",
   "description": "Velox-style dashboard for the beads (bd) issue tracker: Overview, Roadmap and Kanban board, plus an Epic → Task sidebar.",
