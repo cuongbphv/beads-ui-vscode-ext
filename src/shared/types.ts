@@ -79,6 +79,18 @@ export function edgeKind(edge: BeadDependency): string | undefined {
 export const PARENT_CHILD = 'parent-child';
 
 /**
+ * The two core types that describe *plan* rather than work: an epic spans many
+ * issues, a milestone marks a set of them complete and "contains no work
+ * itself" (bd's own wording). Both belong in the plan section of the sidebar and
+ * neither belongs in a triage list of unowned work.
+ */
+export const PLAN_TYPES = ['epic', 'milestone'] as const;
+
+export function isPlanType(issueType: string | undefined): boolean {
+  return (PLAN_TYPES as readonly string[]).includes(issueType ?? '');
+}
+
+/**
  * One issue, as returned by `bd list --json` / `bd show --json`.
  *
  * Field names and optionality mirror `internal/types/types.go` in the beads

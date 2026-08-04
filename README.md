@@ -32,6 +32,28 @@ Everything is read and written through `bd --json`. The extension never reads `.
 or the Dolt files directly — that export has auto-refresh off by default, and upstream declares
 direct readers incompatible.
 
+## See it in action
+
+**Overview** — totals, status split, priority mix and a burn-up of everything closed so far:
+
+![Overview tab showing 46 issues, a 98% done donut, priority and issue-type breakdowns, and a cumulative burn-up chart](docs/screenshots/overview.png)
+
+**Roadmap** — milestones as a timeline, each epic with its own progress count:
+
+![Roadmap tab showing milestones M001 11/11, M002 10/10 and M003 9/9 as Gantt rows with per-task bars](docs/screenshots/roadmap.png)
+
+**Board** — columns derived from your status categories, drag a card to move it:
+
+![Kanban board with Open, In Progress, On Hold and Done columns, cards carrying issue id, title, labels and priority](docs/screenshots/board.png)
+
+**Detail pane** — the full issue without leaving the board:
+
+![Detail pane for task T105 showing status, priority, assignee, estimate, due date, description, design and acceptance criteria](docs/screenshots/roadmap-detail.png)
+
+**Sidebar** — Epic → Task, with a "Needs You" section on top:
+
+![Epics and Tasks sidebar tree with a Needs You section and milestone epics expanded to show their child tasks](docs/screenshots/sidebar-tree-expanded.png)
+
 ## Requirements
 
 - The [`bd` CLI](https://github.com/steveyegge/beads) on your `PATH` (or set `beadsUi.bdPath`).
@@ -81,6 +103,23 @@ on demand, and after every change you make from the extension.
 npm run watch        # rebuild both bundles on change
 npm run verify       # lint + typecheck + test + build + npm audit
 npm test             # vitest
+npm run capture      # refresh docs/screenshots/ from a real editor
+npm run preview      # render the dashboard in Chromium at 420/900/1440px
+```
+
+`capture` and `preview` both drive live `bd --json` output, so they need the `bd`
+CLI and a `.beads` workspace. That is why they run locally and not in CI.
+
+### Releasing
+
+Tag a commit and push it — [`.github/workflows/release.yml`](.github/workflows/release.yml) builds the
+`.vsix` and attaches it to a GitHub Release. The tag must match `version` in `package.json` or the
+workflow fails before building. Nothing is published to the Marketplace.
+
+```bash
+npm run verify       # the workflow cannot run the bd-backed tests; do it here
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 Architecture, decisions and the task roadmap live in [`.velox/`](.velox/); the agent rule set is

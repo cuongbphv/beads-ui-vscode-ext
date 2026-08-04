@@ -250,6 +250,38 @@ async function main() {
       `looked in the ${where}; found: ${activityLabels.join(' / ') || '(no items)'}`,
     );
 
+    // The sidebar tree is the other half of the UI, and the only place the
+    // three sections exist — assert them before the side bar is collapsed.
+    await window.keyboard.press('Control+Shift+P');
+    await window.locator('.quick-input-box input').fill('>Beads: Focus on Issues View');
+    await window.locator('.quick-input-list .monaco-list-row').first().waitFor();
+    await window.keyboard.press('Enter');
+    await window.waitForTimeout(1500);
+
+    const treeRows = await window
+      .locator('.pane-body .monaco-list-row')
+      .allInnerTexts()
+      .catch(() => []);
+    const treeText = treeRows.join(' | ');
+
+    for (const heading of ['Needs You', 'Epics & Milestones', 'Unassigned']) {
+      check(
+        `sidebar shows the "${heading}" section`,
+        treeRows.some((row) => row.includes(heading)),
+        `tree read: ${treeText.slice(0, 400)}`,
+      );
+    }
+
+    // Each section reports its own count; a section stuck at 0 while bd says
+    // otherwise means the identity probe or the filter is broken.
+    check(
+      'sidebar section counts are rendered',
+      /Epics & Milestones\s*\(\d+\)/.test(treeText),
+      treeText.slice(0, 400),
+    );
+
+    await window.screenshot({ path: join(artifactsDir, 'sidebar.png') });
+
     // Collapse the side bars so the screenshots show the dashboard, not the
     // explorer. Ctrl+B is the primary side bar, Ctrl+Alt+B the secondary one.
     await window.keyboard.press('Control+B');

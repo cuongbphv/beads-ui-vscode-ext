@@ -1,16 +1,37 @@
 /**
- * Sidebar tree: a "Needs You" bucket, then Epic → Task.
+ * Sidebar trees, one per view in the Beads container.
+ *
+ *   Needs You            issues where you are the PIC — your queue
+ *   Epics & Milestones   the plan: Epic → Task, with progress,
+ *                        and Unassigned as its triage queue
+ *
+ * They are lenses over the same list, not a partition: your task under an epic
+ * appears in both, which is the point. Only the plan view is exhaustive, so
+ * nothing can drop out of the tree.
+ *
+ * Each is a separate registered view rather than a root node in one tree, so
+ * VSCode gives it its own title bar, collapse state and draggable height — the
+ * way Explorer stacks Folders / Outline / Timeline.
  *
  * The tree is a navigator, not a second dashboard — one line per issue, the
  * detail lives in the webview and the tooltip.
  */
 import * as vscode from 'vscode';
 
-import { StatusIndex, groupByEpic, progressOf } from '../../shared/model';
-import { PRIORITY_LABELS, type Bead, type DashboardSnapshot } from '../../shared/types';
+import { StatusIndex, buildSidebarSections, progressOf } from '../../shared/model';
+import {
+  PRIORITY_LABELS,
+  type Bead,
+  type DashboardSnapshot,
+  type EpicGroup,
+} from '../../shared/types';
+import type { ActorResolver } from '../actor';
 import type { BeadsStore } from '../store';
 
 type NodeKind = 'section' | 'epic' | 'bead' | 'message';
+
+/** Which of the container's views a provider instance feeds. */
+export type SidebarScope = 'mine' | 'plan';
 
 /**
  * Children rendered per epic (and in "Needs You") before a "…and N more" node.
@@ -18,6 +39,16 @@ type NodeKind = 'section' | 'epic' | 'bead' | 'message';
  * and a 300-child epic is unreadable long before it is slow (T402).
  */
 const CHILD_CAP = 100;
+
+/** How a section wants its issue rows rendered. */
+interface LeafOptions {
+  /** Keeps TreeItem ids unique when one issue appears in two sections. */
+  scope: 'mine' | 'plan' | 'triage';
+  /** Ids from `bd ready`, annotated on the row where that is actionable. */
+  ready?: ReadonlySet<string>;
+  /** Suppress the assignee, which is a constant inside "Needs You". */
+  hideAssignee?: boolean;
+}
 
 export class BeadNode extends vscode.TreeItem {
   constructor(
@@ -80,7 +111,16 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
   private readonly byId = new Map<string, BeadNode>();
   private readonly subscription: vscode.Disposable;
 
-  constructor(private readonly store: BeadsStore) {
+  constructor(
+    private readonly store: BeadsStore,
+    private readonly actor: ActorResolver,
+    /**
+     * Which sidebar view this instance feeds. The container registers one view
+     * per scope so each gets its own title bar, collapse state and height —
+     * root nodes inside a single view cannot do any of that.
+     */
+    private readonly scope: SidebarScope = 'plan',
+  ) {
     this.subscription = store.onDidChange(() => this.rebuild());
     this.rebuild();
   }
@@ -131,56 +171,77 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
   private build(snapshot: DashboardSnapshot): BeadNode[] {
     const index = new StatusIndex(snapshot.vocabulary.statuses);
     const showClosed = vscode.workspace.getConfiguration('beadsUi').get<boolean>('showClosed', true);
+    const me = this.actor.current;
 
-    const visible = showClosed
-      ? snapshot.beads
-      : snapshot.beads.filter((bead) => !index.isDone(bead.status));
+    if (snapshot.beads.length === 0) {
+      return [messageNode('No issues yet. Run `bd create` to add one.', 'info')];
+    }
 
-    const roots: BeadNode[] = [];
+    const { mine, plan, unassigned } = buildSidebarSections(snapshot.beads, index, {
+      me,
+      showClosed,
+      readyIds: snapshot.readyIds,
+    });
 
-    // "Needs You" is the whole point of the sidebar: what can be started now.
     const readySet = new Set(snapshot.readyIds);
-    const ready = visible.filter((bead) => readySet.has(bead.id));
-    if (ready.length > 0) {
-      roots.push(
-        section(`Needs You (${ready.length})`, this.capped(ready, index), 'flame'),
-      );
+
+    // Each scope fills its own view, so the roots here are the section's
+    // contents — the view title carries the heading the wrapper node used to.
+    if (this.scope === 'mine') {
+      if (!me) return [whoAreYouNode()];
+      return mine.length > 0
+        ? this.capped(mine, index, { scope: 'mine', ready: readySet, hideAssignee: true })
+        : // Names the identity it resolved: an empty queue and a wrong name look
+          // identical otherwise.
+          [messageNode(`Nothing is assigned to ${me}.`, 'check')];
     }
 
-    for (const group of groupByEpic(visible, index)) {
-      const node = new BeadNode(
-        'epic',
-        group.epic.id === '__unassigned__' ? undefined : group.epic,
-        group.epic.title,
-        group.children.length > 0
-          ? vscode.TreeItemCollapsibleState.Collapsed
-          : vscode.TreeItemCollapsibleState.None,
-        this.capped(group.children, index),
-      );
+    // Unassigned rides along in the plan view rather than claiming a third one:
+    // it is a triage queue, usually short, and a section that is empty most days
+    // costs more height than it earns.
+    return [
+      ...plan.map((group) => this.planNode(group, index)),
+      section(
+        `Unassigned (${unassigned.length})`,
+        unassigned.length > 0
+          ? this.capped(unassigned, index, { scope: 'triage', ready: readySet })
+          : [messageNode('Everything open has an owner.', 'check')],
+        'inbox',
+        'no PIC yet',
+      ),
+    ];
+  }
 
-      node.description = `${group.doneCount}/${group.totalCount} · ${progressOf(group)}%`;
-      node.iconPath = iconForType(group.epic.issue_type);
-      node.contextValue = group.epic.id === '__unassigned__' ? 'group' : 'beadEpic';
-      if (group.epic.id !== '__unassigned__') {
-        node.id = `epic:${group.epic.id}`;
-        node.tooltip = tooltipFor(group.epic, index);
-        node.command = openCommand(group.epic);
-      }
-      roots.push(node);
-    }
+  /** One epic (or milestone, or non-epic parent) with its rollup. */
+  private planNode(group: EpicGroup, index: StatusIndex): BeadNode {
+    const synthetic = group.epic.id === '__unassigned__';
+    const node = new BeadNode(
+      'epic',
+      synthetic ? undefined : group.epic,
+      group.epic.title,
+      group.children.length > 0
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.None,
+      this.capped(group.children, index, { scope: 'plan' }),
+    );
 
-    if (roots.length === 0) {
-      roots.push(messageNode('No issues yet. Run `bd create` to add one.', 'info'));
+    node.description = `${group.doneCount}/${group.totalCount} · ${progressOf(group)}%`;
+    node.iconPath = iconForType(group.epic.issue_type);
+    node.contextValue = synthetic ? 'group' : 'beadEpic';
+    if (!synthetic) {
+      node.id = `epic:${group.epic.id}`;
+      node.tooltip = tooltipFor(group.epic, index);
+      node.command = openCommand(group.epic);
     }
-    return roots;
+    return node;
   }
 
   /**
    * Leaf nodes for at most `CHILD_CAP` issues, with a final node naming what
    * was left out. The overflow node opens the dashboard, which pages properly.
    */
-  private capped(beads: Bead[], index: StatusIndex): BeadNode[] {
-    const nodes = beads.slice(0, CHILD_CAP).map((bead) => this.leaf(bead, index));
+  private capped(beads: Bead[], index: StatusIndex, options: LeafOptions): BeadNode[] {
+    const nodes = beads.slice(0, CHILD_CAP).map((bead) => this.leaf(bead, index, options));
     const hidden = beads.length - nodes.length;
     if (hidden > 0) {
       const more = messageNode(`…and ${hidden} more — open the dashboard`, 'ellipsis');
@@ -190,12 +251,21 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
     return nodes;
   }
 
-  private leaf(bead: Bead, index: StatusIndex): BeadNode {
+  private leaf(bead: Bead, index: StatusIndex, options: LeafOptions): BeadNode {
     const node = new BeadNode('bead', bead, bead.title, vscode.TreeItemCollapsibleState.None);
     const statusDef = index.def(bead.status);
 
-    node.id = `bead:${bead.id}`;
-    node.description = `${statusDef?.icon ?? ''} P${bead.priority}${bead.assignee ? ` · ${bead.assignee}` : ''}`;
+    // The same issue legitimately appears in two sections; VS Code rejects a
+    // tree that reuses an id, so the section is part of it.
+    node.id = `bead:${options.scope}:${bead.id}`;
+
+    // Ready is only worth calling out where it changes what you would do next:
+    // in your own queue and in triage. Under an epic it is just noise.
+    const parts = [[statusDef?.icon, `P${bead.priority}`].filter(Boolean).join(' ')];
+    if (options.ready?.has(bead.id)) parts.push('ready');
+    // In "Needs You" every row says the same name; spend the width on the rest.
+    if (bead.assignee && !options.hideAssignee) parts.push(bead.assignee);
+    node.description = parts.join(' · ');
     node.iconPath = new vscode.ThemeIcon(
       iconForType(bead.issue_type).id,
       colorForPriority(bead.priority),
@@ -217,7 +287,12 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
   }
 }
 
-function section(label: string, children: BeadNode[], icon: string): BeadNode {
+function section(
+  label: string,
+  children: BeadNode[],
+  icon: string,
+  description?: string,
+): BeadNode {
   const node = new BeadNode(
     'section',
     undefined,
@@ -225,8 +300,30 @@ function section(label: string, children: BeadNode[], icon: string): BeadNode {
     vscode.TreeItemCollapsibleState.Expanded,
     children,
   );
+  node.id = `section:${icon}`;
   node.iconPath = new vscode.ThemeIcon(icon);
   node.contextValue = 'section';
+  node.description = description;
+  return node;
+}
+
+/**
+ * Shown instead of a "Needs You" list when nothing identifies the user.
+ *
+ * Silence would be indistinguishable from "you have no work", so the section
+ * says what is missing and opens the setting that fixes it.
+ */
+function whoAreYouNode(): BeadNode {
+  const node = messageNode('Set who you are to see your work', 'question');
+  node.tooltip = new vscode.MarkdownString(
+    'beads reads the assignee from `BEADS_ACTOR`, then `git config user.name`.\n\n' +
+      'Set `beadsUi.assignee` to override it.',
+  );
+  node.command = {
+    command: 'workbench.action.openSettings',
+    title: 'Open Settings',
+    arguments: ['beadsUi.assignee'],
+  };
   return node;
 }
 

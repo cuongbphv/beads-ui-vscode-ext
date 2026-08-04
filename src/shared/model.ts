@@ -5,12 +5,14 @@
  * dashboard (webview) must agree on what "an epic's progress" means, and the
  * only way to guarantee that is one implementation.
  */
+import { isSameActor, normalizeActor } from './actor';
 import {
   CATEGORY_LABELS,
   CATEGORY_ORDER,
   PARENT_CHILD,
   edgeKind,
   edgeTargetId,
+  isPlanType,
   toCategory,
   type Bead,
   type BeadDependency,
@@ -78,8 +80,10 @@ export function edgesOfKind(
  * Group issues under their epic.
  *
  * Anything whose parent is missing from the list — an orphan, or a child whose
- * epic was filtered out — lands in a synthetic "Unassigned" group rather than
+ * epic was filtered out — lands in a synthetic "No epic" group rather than
  * disappearing, which is the failure mode that makes other beads UIs untrustworthy.
+ * The group is about *parentage*, not ownership; unowned work is a separate
+ * question answered by `buildSidebarSections`.
  */
 export function groupByEpic(beads: Bead[], index: StatusIndex): EpicGroup[] {
   const byId = new Map(beads.map((bead) => [bead.id, bead]));
@@ -114,7 +118,7 @@ export function groupByEpic(beads: Bead[], index: StatusIndex): EpicGroup[] {
     groups.push({
       epic: {
         id: '__unassigned__',
-        title: 'Unassigned',
+        title: 'No epic',
         status: 'open',
         priority: 4,
         issue_type: 'epic',
@@ -215,6 +219,62 @@ export function assigneesOf(beads: Bead[]): string[] {
   const seen = new Set<string>();
   for (const bead of beads) if (bead.assignee) seen.add(bead.assignee);
   return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * The three questions the sidebar answers.
+ *
+ * They are lenses, not a partition: an issue assigned to you and parented to an
+ * epic is in both `mine` and `plan`, exactly as it is in real life. `plan` is
+ * the one that covers everything — nothing can fall out of the tree by being
+ * filtered out of the other two.
+ */
+export interface SidebarSections {
+  /** What you are the PIC of and it is not finished. */
+  mine: Bead[];
+  /** The Epic → Task hierarchy, plus a "No epic" bucket for orphans. */
+  plan: EpicGroup[];
+  /** Open work nobody owns — the triage queue. */
+  unassigned: Bead[];
+}
+
+export interface SidebarOptions {
+  /** Who "you" are; without it the `mine` section cannot be computed. */
+  me?: string;
+  /** Whether finished work stays in the plan tree. */
+  showClosed?: boolean;
+  /** Ids from `bd ready`, used to float startable work to the top of `mine`. */
+  readyIds?: readonly string[];
+}
+
+export function buildSidebarSections(
+  beads: Bead[],
+  index: StatusIndex,
+  options: SidebarOptions = {},
+): SidebarSections {
+  // "Needs you" and "nobody owns this" are both about work still to do, so
+  // closed issues leave them regardless of the showClosed setting — that
+  // setting is about how much of the *plan* you want to see.
+  const open = beads.filter((bead) => !index.isDone(bead.status));
+  const ready = new Set(options.readyIds ?? []);
+
+  const mine = options.me
+    ? open
+        .filter((bead) => isSameActor(bead.assignee, options.me))
+        .sort((a, b) => {
+          // Startable first: within your own queue, blocked work is noise.
+          const byReady = Number(ready.has(b.id)) - Number(ready.has(a.id));
+          return byReady !== 0 ? byReady : compareBeads(a, b);
+        })
+    : [];
+
+  const unassigned = open
+    .filter((bead) => !normalizeActor(bead.assignee) && !isPlanType(bead.issue_type))
+    .sort(compareBeads);
+
+  const plan = groupByEpic(options.showClosed ? beads : open, index);
+
+  return { mine, plan, unassigned };
 }
 
 /** Every distinct issue type present, so the filter only offers types in use. */

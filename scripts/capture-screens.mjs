@@ -23,7 +23,8 @@ const testVersion = process.env.VSCODE_TEST_VERSION ?? '1.105.0';
 scrubProcessEnv();
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(repoRoot, 'dist', 'test-artifacts');
+// Committed, not dist/: these images are what README.md points at.
+const outDir = join(repoRoot, 'docs', 'screenshots');
 
 const LAUNCH_TIMEOUT = 180_000;
 
@@ -92,6 +93,16 @@ try {
     .click({ timeout: 5000 })
     .catch(() => {});
 
+  // The Chat pane opens by default and eats ~20% of the width in every shot.
+  // Close it via the palette, then fall back to its own close button — the
+  // command title has moved between releases, the button has not.
+  await runCommand(window, 'View: Close Secondary Side Bar').catch(() => {});
+  const auxBar = window.locator('.part.auxiliarybar');
+  if (await auxBar.isVisible().catch(() => false)) {
+    await auxBar.locator('.codicon-close').first().click({ timeout: 5000 }).catch(() => {});
+  }
+  await window.waitForTimeout(500);
+
   // ── Sidebar: the Epic → Task tree ──────────────────────────────────────────
   const beadsActivity = window.locator('.activitybar .action-item[aria-label*="Beads" i]').first();
   await beadsActivity.waitFor({ state: 'visible' });
@@ -113,12 +124,30 @@ try {
   const inner = window.frameLocator('iframe.webview').frameLocator('#active-frame');
   await inner.locator('text=/\\d+\\s+issues/').first().waitFor();
 
+  // App.tsx defaults the query to `includeClosed: false`, which hides finished
+  // work — a milestone then shows only its leftovers and reads as barely
+  // started. Tick "Closed" so every screenshot shows the full task list.
+  //
+  // The filter bar lives in RoadmapView and BoardView, not OverviewView, so the
+  // toggle has to be reached from Roadmap first. `query` is App-level state, so
+  // ticking it once also applies to Board. Overview reads `snapshot` and is
+  // unaffected either way.
   await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
-  await shot(window, 'roadmap');
+  const closedToggle = inner.locator('label:has-text("Closed") input[type="checkbox"]').first();
+  await closedToggle.waitFor({ state: 'visible' });
+  if (!(await closedToggle.isChecked())) {
+    await closedToggle.check();
+    await window.waitForTimeout(600);
+  }
+
+  for (const tab of ['Overview', 'Roadmap', 'Board']) {
+    await inner.locator(`[role="tab"]:has-text("${tab}")`).first().click();
+    await shot(window, tab.toLowerCase());
+  }
 
   // A selected issue opens the detail pane, which is its own layout branch.
-  const firstCard = inner.locator('[role="tab"]:has-text("Roadmap")').first();
-  void firstCard;
+  await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
+  await window.waitForTimeout(600);
   await inner
     .locator('text=/beads-ui-vscode-ext-/')
     .first()
@@ -139,9 +168,13 @@ try {
 
   console.log(`\n✔ screenshots in ${outDir}`);
 } catch (error) {
+  // A failure shot is a debugging artifact, not documentation — keep it out of
+  // the committed screenshot directory.
+  const failureDir = join(repoRoot, 'dist', 'test-artifacts');
+  await mkdir(failureDir, { recursive: true }).catch(() => {});
   await app
     .windows()[0]
-    ?.screenshot({ path: join(outDir, 'capture-failure.png') })
+    ?.screenshot({ path: join(failureDir, 'capture-failure.png') })
     .catch(() => {});
   console.error('\n✘ capture failed');
   console.error(error);

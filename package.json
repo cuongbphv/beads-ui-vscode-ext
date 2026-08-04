@@ -43,10 +43,20 @@
     "views": {
       "beadsUi": [
         {
-          "id": "beadsUi.tree",
-          "name": "Epics & Tasks",
+          "id": "beadsUi.needsYou",
+          "name": "Needs You",
           "icon": "media/activity-bar.svg",
-          "contextualTitle": "Beads"
+          "contextualTitle": "Beads",
+          "visibility": "visible",
+          "initialSize": 1
+        },
+        {
+          "id": "beadsUi.tree",
+          "name": "Epics & Milestones",
+          "icon": "media/activity-bar.svg",
+          "contextualTitle": "Beads",
+          "visibility": "visible",
+          "initialSize": 4
         }
       ]
     },
@@ -182,32 +192,32 @@
       "view/item/context": [
         {
           "command": "beadsUi.claim",
-          "when": "view == beadsUi.tree && viewItem =~ /^bead/",
+          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "inline@1"
         },
         {
           "command": "beadsUi.setStatus",
-          "when": "view == beadsUi.tree && viewItem =~ /^bead/",
+          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "1_edit@1"
         },
         {
           "command": "beadsUi.setPriority",
-          "when": "view == beadsUi.tree && viewItem =~ /^bead/",
+          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "1_edit@2"
         },
         {
           "command": "beadsUi.setAssignee",
-          "when": "view == beadsUi.tree && viewItem =~ /^bead/",
+          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "1_edit@3"
         },
         {
           "command": "beadsUi.closeBead",
-          "when": "view == beadsUi.tree && viewItem == beadOpen",
+          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem == beadOpen",
           "group": "2_close@1"
         },
         {
           "command": "beadsUi.copyId",
-          "when": "view == beadsUi.tree && viewItem =~ /^bead/",
+          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "9_copy@1"
         }
       ],
@@ -276,6 +286,11 @@
           "type": "boolean",
           "default": true,
           "description": "Include closed issues in the board and the sidebar tree."
+        },
+        "beadsUi.assignee": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Who you are in beads, for the sidebar's **Needs You** section. Leave empty to use the same identity `bd` does: `BEADS_ACTOR`, then `BD_ACTOR`, then `git config user.name`, then your OS username."
         }
       }
     }
@@ -293,6 +308,7 @@
     "test:electron": "node scripts/run-electron-test.mjs",
     "test:webview": "node scripts/run-webview-test.mjs",
     "preview": "npm run build && node scripts/render-preview.mjs",
+    "capture": "npm run build && node scripts/capture-screens.mjs",
     "audit:ci": "npm audit --audit-level=low",
     "package": "npm run build:prod && vsce package --no-dependencies",
     "install:local": "node scripts/install-local.mjs",

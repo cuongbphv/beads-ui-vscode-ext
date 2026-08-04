@@ -9,6 +9,7 @@
 import * as vscode from 'vscode';
 
 import type { DashboardTab } from '../shared/protocol';
+import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
 import { DashboardPanel } from './panel/DashboardPanel';
 import { BeadsStore } from './store';
@@ -45,14 +46,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   store = new BeadsStore(folder, output);
   context.subscriptions.push(store);
 
-  const tree = new BeadsTreeProvider(store);
-  context.subscriptions.push(tree);
+  const actor = new ActorResolver(folder.uri.fsPath);
+  const tree = new BeadsTreeProvider(store, actor, 'plan');
+  const mineTree = new BeadsTreeProvider(store, actor, 'mine');
+  context.subscriptions.push(
+    actor,
+    tree,
+    mineTree,
+    actor.onDidChange(() => {
+      tree.refresh();
+      mineTree.refresh();
+    }),
+  );
+  // Fire-and-forget: the identity probe shells out to git, and the tree is
+  // useful before it lands.
+  void actor.resolve();
 
+  // "Needs You" is declared first in package.json, so it sits on top.
+  const mineView = vscode.window.createTreeView('beadsUi.needsYou', {
+    treeDataProvider: mineTree,
+  });
   const treeView = vscode.window.createTreeView('beadsUi.tree', {
     treeDataProvider: tree,
     showCollapseAll: true,
   });
-  context.subscriptions.push(treeView);
+  context.subscriptions.push(mineView, treeView);
 
   const openDashboard = (id?: string): void => {
     const defaultTab = vscode.workspace
@@ -63,10 +81,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (id) panel.focus(id);
   };
 
-  /** Selecting an issue in the webview highlights it in the sidebar too. */
+  /**
+   * Selecting an issue in the webview highlights it in the sidebar too. The plan
+   * view is exhaustive, so it is tried first; "Needs You" only ever holds a
+   * subset, and revealing there would scroll a view the issue may not be in.
+   */
   const revealBead = (id: string): void => {
-    const node = tree.nodeFor(id);
-    if (node) void treeView.reveal(node, { select: true, focus: false, expand: true });
+    const planNode = tree.nodeFor(id);
+    if (planNode) {
+      void treeView.reveal(planNode, { select: true, focus: false, expand: true });
+      return;
+    }
+    const mineNode = mineTree.nodeFor(id);
+    if (mineNode) void mineView.reveal(mineNode, { select: true, focus: false, expand: true });
   };
 
   const velox = new VeloxSync({ store, output, folder: () => folder });
