@@ -34,3 +34,10 @@ dist/test/**
 dist/test-artifacts/**
 # The review harness writes its host pages next to the bundles.
 dist/preview-*.html
+
+# Screenshots and the demo GIF are 5.6 MB and every one of them is dead weight
+# inside the package: vsce rewrites the README's relative image paths to
+# raw.githubusercontent URLs at packaging time, so the copies the reader sees are
+# always the ones on the default branch, never these. Shipping them would triple
+# the download for bytes nothing ever loads.
+docs/**

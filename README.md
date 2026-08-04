@@ -1,5 +1,5 @@
-<p align="center">
-  <img src="media/icon.png" alt="Beads Dashboard" width="128" />
+﻿<p align="center">
+  <img src="https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/media/icon.png" alt="Beads Dashboard" width="128" />
 </p>
 
 <h1 align="center">Beads Dashboard for VS Code</h1>
@@ -15,7 +15,7 @@
 
 ---
 
-![Beads Dashboard: the sidebar, the roadmap, dragging a card across the board, and the board updating itself when an agent files and starts an issue from the terminal](docs/screenshots/demo.gif)
+![Beads Dashboard: the sidebar, the roadmap, dragging a card across the board, and the board updating itself when an agent files and starts an issue from the terminal](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/demo.gif)
 
 > The last few seconds are the point: nothing is clicked. An agent runs `bd create`
 > and `bd update` outside the editor, and the board follows on its own.
@@ -46,26 +46,26 @@ capture:demo` seeds it and re-takes every image.
 **Overview** — totals, status split, priority mix, workload per person, and a
 burn-up of everything closed so far:
 
-![Overview tab: 46 issues, 15 ready, 4 blocked, 2 overdue, a 30% done donut, priority and issue-type breakdowns, a rising burn-up over six weeks, and workload per assignee](docs/screenshots/overview.png)
+![Overview tab: 46 issues, 15 ready, 4 blocked, 2 overdue, a 30% done donut, priority and issue-type breakdowns, a rising burn-up over six weeks, and workload per assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview.png)
 
 **Roadmap** — a real timeline with today marked, each epic carrying its own
 progress count. Closed work is folded away behind a count you can click:
 
-![Roadmap tab: five epics as Gantt rows with per-task bars across nine weeks, a today line, and a "14 closed hidden — show" chip](docs/screenshots/roadmap.png)
+![Roadmap tab: five epics as Gantt rows with per-task bars across nine weeks, a today line, and a "14 closed hidden — show" chip](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap.png)
 
 **Board** — columns derived from your status *categories* at runtime, so a custom
 status lands in the right column. Done starts folded:
 
-![Kanban board with Open 19, In Progress 9, On Hold 4 and a folded Done 14; cards carry type, id, title, labels, priority, due date and assignee](docs/screenshots/board.png)
+![Kanban board with Open 19, In Progress 9, On Hold 4 and a folded Done 14; cards carry type, id, title, labels, priority, due date and assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board.png)
 
 **Detail pane** — the full issue without leaving the board. Status, priority and
 assignee apply as you set them:
 
-![Detail pane for a feature showing status and priority selects, an assignee field that applies on Enter, estimate, due date, parent epic and dependencies](docs/screenshots/roadmap-detail.png)
+![Detail pane for a feature showing status and priority selects, an assignee field that applies on Enter, estimate, due date, parent epic and dependencies](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap-detail.png)
 
 **Sidebar** — what needs you on top, then the plan:
 
-![Sidebar with a Needs You section listing five issues assigned to you, then Epics & Milestones expanded to show child tasks with type icons and priorities](docs/screenshots/sidebar-tree-expanded.png)
+![Sidebar with a Needs You section listing five issues assigned to you, then Epics & Milestones expanded to show child tasks with type icons and priorities](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/sidebar-tree-expanded.png)
 
 ## Requirements
 
@@ -141,7 +141,7 @@ npm run preview      # render the dashboard in Chromium at 420/900/1440px
 ```
 
 Every image in this README comes from `capture:demo` / `gif`, never from a hand-posed editor.
-The demo project is a fixture in [`scripts/lib/demo-project.mjs`](scripts/lib/demo-project.mjs),
+The demo project is a fixture in [`scripts/lib/demo-project.mjs`](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/scripts/lib/demo-project.mjs),
 seeded through `bd import` into a throwaway workspace in your temp directory — the extension's own
 tracker is nearly all closed, and screenshots taken against it make a live tool look finished. The
 unit suite asserts the fixture stays mid-flight rather than drifting back into a graveyard.
@@ -151,7 +151,7 @@ locally. That is why they do not run in CI. `gif` also needs `ffmpeg` on your `P
 
 ### Releasing
 
-Tag a commit and push it — [`.github/workflows/release.yml`](.github/workflows/release.yml) builds the
+Tag a commit and push it — [`.github/workflows/release.yml`](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/.github/workflows/release.yml) builds the
 `.vsix`, attaches it to a GitHub Release, then publishes that exact file to the VS Code Marketplace
 and to Open VSX. The tag must match `version` in `package.json` or the workflow fails before
 building.
@@ -169,9 +169,6 @@ is missing, so a fork still gets a working `.vsix` release:
 |---|---|
 | `VSCE_PAT` | An Azure DevOps PAT with the **Marketplace: Manage** scope. The `publisher` in `package.json` must exist first at [Manage Publishers](https://marketplace.visualstudio.com/manage). |
 | `OVSX_PAT` | An [Open VSX access token](https://open-vsx.org/user-settings/tokens). Create the namespace once with `npx ovsx create-namespace cuongbphv -p <token>`. |
-
-Architecture, decisions and the task roadmap live in [`.velox/`](.velox/); the agent rule set is
-[`.velox/docs/VELOX-CONTEXT.md`](.velox/docs/VELOX-CONTEXT.md).
 
 The call chain is one-directional, and no layer may be skipped:
 
@@ -195,7 +192,7 @@ the sidebar and on the board.
 
 ## Design system
 
-Design decisions are not ad-hoc — read [design-system/MASTER.md](design-system/MASTER.md) before
+Design decisions are not ad-hoc — read [design-system/MASTER.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/design-system/MASTER.md) before
 touching UI code. The rules that most often get violated:
 
 - **No remote fonts or CDN assets.** The webview CSP blocks external hosts; use
@@ -218,4 +215,4 @@ VS Code Extension API · TypeScript 6 · React 19 · Tailwind CSS 4 (CSS-first `
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Bùi Phan Viết Cường.
+MIT — see [LICENSE](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/LICENSE). Copyright (c) 2026 Bùi Phan Viết Cường.
