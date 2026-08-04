@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
 
 import { isRpcRequest, type DashboardTab, type HostEvent } from '../../shared/protocol';
-import type { BeadsStore } from '../store';
+import { bindVisibility, type BeadsStore } from '../store';
 import { handleRequest, isMutation, type RouterHost } from './router';
 
 export class DashboardPanel implements vscode.Disposable {
@@ -26,7 +26,7 @@ export class DashboardPanel implements vscode.Disposable {
       return DashboardPanel.current;
     }
 
-    const panel = vscode.window.createWebviewPanel('beadsUi.dashboard', 'Beads Dashboard', column, {
+    const panel = vscode.window.createWebviewPanel('beadsDashboard.dashboard', 'Beads Dashboard', column, {
       enableScripts: true,
       // Keep the React tree alive when the user tabs away; rebuilding it means
       // another full bd fan-out.
@@ -58,6 +58,17 @@ export class DashboardPanel implements vscode.Disposable {
     this.disposables.push(
       panel.webview.onDidReceiveMessage((message: unknown) => void this.onMessage(message)),
       panel.onDidDispose(() => this.dispose()),
+      // A dashboard in a background tab is not being watched; `retainContextWhenHidden`
+      // keeps its React tree alive, so it costs nothing to stop polling for it.
+      bindVisibility(store, {
+        get visible() {
+          return panel.visible;
+        },
+        onDidChange: (listener) => panel.onDidChangeViewState(() => listener()),
+      }),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration('beadsDashboard.showClosed')) this.postSettings();
+      }),
       // Anything that changes the snapshot — a poll, a tree action, another
       // window's mutation — is pushed straight into the open panel.
       store.onDidChange((state) => {
@@ -81,8 +92,25 @@ export class DashboardPanel implements vscode.Disposable {
     void this.panel.webview.postMessage(event);
   }
 
+  /**
+   * Push the settings the webview honours. Sent on connect and on change: the
+   * webview has no `vscode`, so this is the only way `beadsDashboard.showClosed`
+   * can reach the board it is documented to control.
+   */
+  private postSettings(): void {
+    const config = vscode.workspace.getConfiguration('beadsDashboard');
+    this.post({
+      kind: 'event',
+      name: 'settings',
+      settings: { showClosed: config.get<boolean>('showClosed', true) },
+    });
+  }
+
   private async onMessage(message: unknown): Promise<void> {
     if ((message as { kind?: string })?.kind === 'ready') {
+      // Before the data, so the first render already knows whether closed issues
+      // belong on the board.
+      this.postSettings();
       const state = this.store.current.snapshot ? this.store.current : await this.store.refresh();
       if (state.snapshot) {
         this.post({ kind: 'event', name: 'issuesChanged', snapshot: state.snapshot });

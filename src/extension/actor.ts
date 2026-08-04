@@ -32,7 +32,7 @@ export class ActorResolver implements vscode.Disposable {
 
   constructor(private readonly cwd: string) {
     this.subscription = vscode.workspace.onDidChangeConfiguration((event) => {
-      if (!event.affectsConfiguration('beadsUi.assignee')) return;
+      if (!event.affectsConfiguration('beadsDashboard.assignee')) return;
       // Re-probe: clearing the setting should fall back to git, not to nothing.
       this.cached = undefined;
       this.pending = undefined;
@@ -45,7 +45,7 @@ export class ActorResolver implements vscode.Disposable {
     // The setting outranks everything, so a freshly typed one applies before
     // the git probe has had a chance to run.
     const override = normalizeActor(
-      vscode.workspace.getConfiguration('beadsUi').get<string>('assignee'),
+      vscode.workspace.getConfiguration('beadsDashboard').get<string>('assignee'),
     );
     return override ?? this.cached ?? undefined;
   }
@@ -57,7 +57,7 @@ export class ActorResolver implements vscode.Disposable {
 
     this.pending = (async () => {
       const sources: ActorSources = {
-        setting: vscode.workspace.getConfiguration('beadsUi').get<string>('assignee'),
+        setting: vscode.workspace.getConfiguration('beadsDashboard').get<string>('assignee'),
         beadsActorEnv: process.env.BEADS_ACTOR,
         bdActorEnv: process.env.BD_ACTOR,
         gitUserName: await this.gitUserName(),

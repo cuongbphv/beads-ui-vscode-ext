@@ -5,7 +5,7 @@
  * parent→child hierarchy is a Gantt without inventing any data. List keeps the
  * older card view for when the dates are not the question being asked.
  */
-import { GanttChartSquare, List as ListIcon, Map as MapIcon } from 'lucide-react';
+import { CheckCircle2, GanttChartSquare, List as ListIcon, Map as MapIcon } from 'lucide-react';
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { StatusIndex, filterBeads, groupByEpic, progressOf, type BeadQuery } from '../../shared/model';
@@ -15,9 +15,8 @@ import { BeadCard } from '../components/bead-card';
 import { GanttChart, GanttLegend, hasNoScheduleData, sortEpicSpans } from '../components/gantt';
 import { EmptyState, ProgressBar, TypeIcon } from '../components/primitives';
 import { QuickFilterBar } from '../components/quick-filter-bar';
+import { hiddenClosedCount, resolveShape, type RoadmapShape } from '../lib/roadmap-shape';
 import { cn } from '../lib/utils';
-
-type Shape = 'timeline' | 'list';
 
 export function RoadmapView({
   beads,
@@ -27,6 +26,10 @@ export function RoadmapView({
   onSelect,
   selectedId,
   blockedIds,
+  showClosed,
+  onShowClosedChange,
+  shape: chosenShape,
+  onShapeChange,
 }: {
   beads: Bead[];
   index: StatusIndex;
@@ -35,9 +38,29 @@ export function RoadmapView({
   onSelect: (id: string) => void;
   selectedId?: string;
   blockedIds: Set<string>;
+  /**
+   * Scoped to this tab. A finished plan is a wall of strikethroughs, so the
+   * Roadmap starts without them — while the Board, where "done" is a column
+   * you move things into, keeps its own answer.
+   */
+  showClosed: boolean;
+  onShowClosedChange: (next: boolean) => void;
+  /** `undefined` until the user picks one; the date range decides until then. */
+  shape?: RoadmapShape;
+  onShapeChange: (next: RoadmapShape) => void;
 }): ReactNode {
   const epics = useMemo(() => beads.filter((bead) => bead.issue_type === 'epic'), [beads]);
-  const [shape, setShape] = useState<Shape>('timeline');
+
+  // Everything in the filter bar is shared with the other tabs except the
+  // closed toggle, which this tab answers for itself.
+  const roadmapQuery = useMemo<BeadQuery>(
+    () => ({ ...query, includeClosed: showClosed }),
+    [query, showClosed],
+  );
+  const hiddenClosed = useMemo(
+    () => hiddenClosedCount(beads, roadmapQuery, index),
+    [beads, roadmapQuery, index],
+  );
 
   // Epics themselves are never filtered out by the status filter — an epic
   // whose children all match must still be reachable.
@@ -51,7 +74,7 @@ export function RoadmapView({
       rollups.set(group.epic.id, { done: group.doneCount, total: group.totalCount });
     }
 
-    const visible = filterBeads(beads, query, index);
+    const visible = filterBeads(beads, roadmapQuery, index);
     const keep = new Set(visible.map((bead) => bead.id));
     const withEpics = beads.filter((bead) => keep.has(bead.id) || bead.issue_type === 'epic');
 
@@ -61,7 +84,7 @@ export function RoadmapView({
         const rollup = rollups.get(group.epic.id);
         return rollup ? { ...group, doneCount: rollup.done, totalCount: rollup.total } : group;
       });
-  }, [beads, query, index]);
+  }, [beads, roadmapQuery, index]);
 
   // One clock reading per render, so every bar agrees on where "today" is.
   const timeline = useMemo(() => {
@@ -79,28 +102,52 @@ export function RoadmapView({
     });
 
   const undated = hasNoScheduleData(beads);
+  const shape = resolveShape(chosenShape, timeline);
 
   return (
     <div className="@container flex h-full min-h-0 flex-col">
       <div className="border-border flex flex-wrap items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
-          <QuickFilterBar beads={beads} epics={epics} query={query} onChange={onQueryChange} />
+          <QuickFilterBar
+            beads={beads}
+            epics={epics}
+            query={roadmapQuery}
+            onChange={(next) => {
+              // The closed toggle belongs to this tab; everything else is shared.
+              onShowClosedChange(next.includeClosed ?? false);
+              onQueryChange({ ...next, includeClosed: query.includeClosed });
+            }}
+          />
         </div>
         <div role="group" aria-label="Roadmap shape" className="flex shrink-0 gap-1">
           <ShapeButton
             active={shape === 'timeline'}
-            onClick={() => setShape('timeline')}
+            onClick={() => onShapeChange('timeline')}
             icon={<GanttChartSquare aria-hidden="true" className="size-3.5" />}
             label="Timeline"
           />
           <ShapeButton
             active={shape === 'list'}
-            onClick={() => setShape('list')}
+            onClick={() => onShapeChange('list')}
             icon={<ListIcon aria-hidden="true" className="size-3.5" />}
             label="List"
           />
         </div>
       </div>
+
+      {/* Never a silent filter: the count is on screen and is the control. */}
+      {hiddenClosed > 0 ? (
+        <div className="border-border border-b px-3 py-1.5">
+          <button
+            type="button"
+            onClick={() => onShowClosedChange(true)}
+            className="text-fg-muted hover:bg-surface-hover hover:text-fg border-border surface-interactive inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
+          >
+            <CheckCircle2 aria-hidden="true" className="size-3" />
+            {hiddenClosed} closed hidden — show
+          </button>
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
         {groups.length === 0 ? (

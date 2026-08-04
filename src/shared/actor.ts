@@ -17,7 +17,7 @@ const UNKNOWN = 'unknown';
 
 /** Candidate identities, highest precedence first. */
 export interface ActorSources {
-  /** `beadsUi.assignee` — an explicit override for when bd guesses wrong. */
+  /** `beadsDashboard.assignee` — an explicit override for when bd guesses wrong. */
   setting?: string;
   beadsActorEnv?: string;
   /** Deprecated in bd, still honoured because bd still honours it. */

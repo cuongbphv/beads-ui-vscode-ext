@@ -7,7 +7,7 @@
  */
 import * as vscode from 'vscode';
 
-const MEMENTO_KEY = 'beadsUi.selectedFolder';
+const MEMENTO_KEY = 'beadsDashboard.selectedFolder';
 
 async function hasBeadsDir(folder: vscode.WorkspaceFolder): Promise<boolean> {
   try {

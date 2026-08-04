@@ -53,15 +53,34 @@
 }
 
 /*
- * Priority colours are a scale, not part of the editor theme. They are always
- * paired with a "P0…P4" label — colour never carries the meaning alone.
+ * The categorical chart palette. VS Code asks every theme to supply one, so
+ * borrowing it is what keeps a chart in the same hue family as the rest of the
+ * editor instead of dropping a web app's palette into a panel. The fallbacks
+ * are the built-in dark defaults, for a theme that declares none of them.
  */
 @theme {
-  --color-p0: #f14c4c;
-  --color-p1: #e8a33d;
-  --color-p2: #3794ff;
-  --color-p3: #8a8a8a;
-  --color-p4: #6a6a6a;
+  --color-chart-red: var(--vscode-charts-red, #f14c4c);
+  --color-chart-orange: var(--vscode-charts-orange, #d18616);
+  --color-chart-yellow: var(--vscode-charts-yellow, #cca700);
+  --color-chart-green: var(--vscode-charts-green, #89d185);
+  --color-chart-blue: var(--vscode-charts-blue, #3794ff);
+  --color-chart-purple: var(--vscode-charts-purple, #b180d7);
+  --color-chart-neutral: var(--vscode-charts-lines, #8a8a8a);
+}
+
+/*
+ * Priority is a heat scale that cools into grey, drawn from the palette above
+ * so it follows the theme. It is always paired with a "P0…P4" label — colour
+ * never carries the meaning alone.
+ */
+@theme {
+  --color-p0: var(--color-chart-red);
+  --color-p1: var(--color-chart-orange);
+  --color-p2: var(--color-chart-blue);
+  --color-p3: var(--color-chart-neutral);
+  /* P4 is the same grey stepped back toward the card, so the two low bands
+     stay distinguishable without inventing a colour outside the palette. */
+  --color-p4: color-mix(in oklab, var(--color-chart-neutral) 55%, var(--color-surface));
 }
 
 /*

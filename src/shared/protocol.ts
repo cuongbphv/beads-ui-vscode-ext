@@ -124,11 +124,24 @@ export type RpcErrorKind =
   /** Anything else. */
   | 'unknown';
 
+/**
+ * The subset of `beadsDashboard.*` the webview needs.
+ *
+ * The webview cannot read settings — it has no `vscode` — so the host pushes
+ * them on connect and whenever they change. They are *defaults*: once the user
+ * has touched the matching control, their own choice is what persists.
+ */
+export interface DashboardSettings {
+  /** `beadsDashboard.showClosed`: whether the board starts with closed issues in it. */
+  showClosed: boolean;
+}
+
 /** Host-initiated messages the webview subscribes to. */
 export type HostEvent =
   | { kind: 'event'; name: 'issuesChanged'; snapshot: DashboardSnapshot }
   | { kind: 'event'; name: 'focusBead'; id: string }
   | { kind: 'event'; name: 'setTab'; tab: DashboardTab }
+  | { kind: 'event'; name: 'settings'; settings: DashboardSettings }
   | { kind: 'event'; name: 'error'; error: RpcError };
 
 export type DashboardTab = 'overview' | 'roadmap' | 'board';

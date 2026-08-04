@@ -175,6 +175,37 @@ export class BdQueries {
   }
 
   /**
+   * "Has anything changed?" in one `bd` call.
+   *
+   * A full snapshot is a six-way fan-out; asking that on a timer would spawn six
+   * processes every few seconds to learn that nothing happened. `--sort updated`
+   * returns newest-first, so a single row is enough to fingerprint the whole
+   * project: any `bd` write bumps `updated_at` on the row it touched.
+   *
+   * The id is part of the fingerprint because bd's timestamps have one-second
+   * resolution — two different issues touched in the same second would otherwise
+   * look identical. Two writes to the *same* issue inside one second still
+   * collapse into one fingerprint, which is why the store also forces a full
+   * resync on a slow cycle.
+   */
+  async watermark(): Promise<string> {
+    const rows = pickArray<Bead>(
+      await this.bd.jsonShared<unknown>([
+        'list',
+        '--flat',
+        '--all',
+        '--sort',
+        'updated',
+        '--limit',
+        '1',
+      ]),
+      'issues',
+    );
+    const newest = rows[0];
+    return newest ? `${newest.id}@${newest.updated_at ?? ''}` : '';
+  }
+
+  /**
    * One round trip that fills the entire dashboard. The calls are independent,
    * so they run concurrently; BdService coalesces the ones the tree also wants.
    */

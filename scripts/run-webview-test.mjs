@@ -250,13 +250,30 @@ async function main() {
       `looked in the ${where}; found: ${activityLabels.join(' / ') || '(no items)'}`,
     );
 
-    // The sidebar tree is the other half of the UI, and the only place the
-    // three sections exist — assert them before the side bar is collapsed.
+    // The sidebar is the other half of the UI. It is two views now — "Needs
+    // You" and "Epics & Milestones" — so the headings are pane titles, and
+    // "Unassigned" rides inside the plan view as its triage queue.
     await window.keyboard.press('Control+Shift+P');
-    await window.locator('.quick-input-box input').fill('>Beads: Focus on Issues View');
+    await window.locator('.quick-input-box input').fill('>Beads: Focus on Epics');
     await window.locator('.quick-input-list .monaco-list-row').first().waitFor();
     await window.keyboard.press('Enter');
     await window.waitForTimeout(1500);
+
+    const paneTitles = await window
+      .locator('.pane-header .title')
+      .allInnerTexts()
+      .catch(() => []);
+
+    for (const [heading, pattern] of [
+      ['Needs You', /needs you/i],
+      ['Epics & Milestones', /epics\s*&\s*milestones/i],
+    ]) {
+      check(
+        `sidebar shows the "${heading}" view`,
+        paneTitles.some((title) => pattern.test(title)),
+        `pane titles read: ${paneTitles.join(' / ') || '(none)'}`,
+      );
+    }
 
     const treeRows = await window
       .locator('.pane-body .monaco-list-row')
@@ -264,19 +281,17 @@ async function main() {
       .catch(() => []);
     const treeText = treeRows.join(' | ');
 
-    for (const heading of ['Needs You', 'Epics & Milestones', 'Unassigned']) {
-      check(
-        `sidebar shows the "${heading}" section`,
-        treeRows.some((row) => row.includes(heading)),
-        `tree read: ${treeText.slice(0, 400)}`,
-      );
-    }
-
-    // Each section reports its own count; a section stuck at 0 while bd says
-    // otherwise means the identity probe or the filter is broken.
     check(
-      'sidebar section counts are rendered',
-      /Epics & Milestones\s*\(\d+\)/.test(treeText),
+      'the plan view carries its Unassigned triage queue',
+      /Unassigned\s*\(\d+\)/.test(treeText),
+      `tree read: ${treeText.slice(0, 400)}`,
+    );
+
+    // Every epic reports its own x/y; a row stuck at 0 while bd says otherwise
+    // means the rollup is broken.
+    check(
+      'epic rows report progress counts',
+      /\d+\s*\/\s*\d+/.test(treeText),
       treeText.slice(0, 400),
     );
 
@@ -298,6 +313,58 @@ async function main() {
       'board renders at least one column',
       (await inner.locator('text=/Open|In Progress|Done|On Hold/').count()) > 0,
     );
+
+    // Finished work starts folded away: the done column's header is a toggle
+    // offering to *expand* it. Read the aria-label, which is also the promise
+    // made to a screen reader.
+    const expandDone = inner.locator('[aria-label^="Expand Done"]');
+    check('done column starts collapsed', (await expandDone.count()) > 0);
+
+    if ((await expandDone.count()) > 0) {
+      await expandDone.first().click();
+      await window.waitForTimeout(400);
+      check(
+        'the done column unfolds when its header is clicked',
+        (await inner.locator('[aria-label^="Collapse Done"]').count()) > 0,
+      );
+    }
+
+    // Every empty column says what is actually empty rather than "Drop an issue
+    // here", so the generic hint must be gone.
+    check(
+      'empty columns no longer use the generic drop hint',
+      (await inner.locator('text="Drop an issue here"').count()) === 0,
+    );
+
+    // The detail pane: Assignee applies on commit like Status and Priority, so
+    // there is no Save button left to be inconsistent with them.
+    // `:visible` matters: the narrow single-column layout renders the same
+    // cards behind a container query, so the first card in DOM order is the
+    // hidden one.
+    const firstCard = inner.locator('article[role="button"]:visible').first();
+    if ((await firstCard.count()) > 0) {
+      await firstCard.click();
+      const detail = inner.locator('aside[aria-label^="Details for"]');
+      await detail.first().waitFor();
+      // `has-text` is a substring match over the whole subtree, so it hits any
+      // button whose issue title happens to contain the word. Match the button's
+      // own accessible name instead, and say what was found when it fails.
+      const saveButtons = await detail
+        .locator('button')
+        .filter({ hasText: /^\s*save\s*$/i })
+        .allInnerTexts();
+      check(
+        'detail pane has no Save button beside the assignee field',
+        saveButtons.length === 0,
+        `found: ${saveButtons.join(' / ')}`,
+      );
+      check(
+        'the assignee field says when it applies',
+        (await detail.locator('text=/Applies on Enter/').count()) > 0,
+      );
+      await window.keyboard.press('Escape');
+      await window.waitForTimeout(300);
+    }
 
     await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
     await window.waitForTimeout(1500);
