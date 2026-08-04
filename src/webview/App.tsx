@@ -5,15 +5,17 @@
  * the whole panel when it is not — same component, no duplicate markup.
  */
 import { AlertCircle, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type { BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
+import type { StatusCategory } from '../shared/types';
 import { BeadDetail } from './components/bead-detail';
 import { Button, EmptyState, Skeleton } from './components/primitives';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
 import { OverviewView } from './views/OverviewView';
@@ -22,6 +24,12 @@ import { RoadmapView } from './views/RoadmapView';
 interface PersistedState {
   tab: DashboardTab;
   query: BeadQuery;
+  /** Absent until the user first folds or unfolds a board column. */
+  collapsedColumns?: StatusCategory[];
+  /** The Roadmap answers "show closed" for itself; the Board keeps `query`. */
+  roadmapShowClosed?: boolean;
+  /** Absent until the user picks a shape; the date range decides until then. */
+  roadmapShape?: RoadmapShape;
 }
 
 const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
@@ -35,12 +43,45 @@ export function App(): ReactNode {
   const { snapshot, index, error, loading, focusedId, setFocusedId, refresh } = useBeads();
 
   const [tab, setTab] = useState<DashboardTab>(saved?.tab ?? 'overview');
-  const [query, setQuery] = useState<BeadQuery>(saved?.query ?? { includeClosed: false });
+  // Matches `beadsDashboard.showClosed`, which the host pushes right after
+  // connect; this is only what the first frame renders with.
+  const [query, setQuery] = useState<BeadQuery>(saved?.query ?? { includeClosed: true });
+  const [collapsedColumns, setCollapsedColumns] = useState(saved?.collapsedColumns);
+  const [roadmapShowClosed, setRoadmapShowClosed] = useState(saved?.roadmapShowClosed ?? false);
+  const [roadmapShape, setRoadmapShape] = useState(saved?.roadmapShape);
 
   // Survives the panel being closed and reopened in the same session.
-  useEffect(() => persist<PersistedState>({ tab, query }), [tab, query]);
+  useEffect(
+    () =>
+      persist<PersistedState>({
+        tab,
+        query,
+        collapsedColumns,
+        roadmapShowClosed,
+        roadmapShape,
+      }),
+    [tab, query, collapsedColumns, roadmapShowClosed, roadmapShape],
+  );
 
-  useEffect(() => onHostEvent((event) => event.name === 'setTab' && setTab(event.tab)), []);
+  // `beadsDashboard.showClosed` is a *default*, not an override: the first push
+  // is ignored when this panel already has the user's own filter restored, but
+  // every later push is the user deliberately changing the setting.
+  const settingsSeen = useRef(false);
+  const hadSavedQuery = saved?.query !== undefined;
+
+  useEffect(
+    () =>
+      onHostEvent((event) => {
+        if (event.name === 'setTab') setTab(event.tab);
+        if (event.name === 'settings') {
+          const isFirst = !settingsSeen.current;
+          settingsSeen.current = true;
+          if (isFirst && hadSavedQuery) return;
+          setQuery((current) => ({ ...current, includeClosed: event.settings.showClosed }));
+        }
+      }),
+    [hadSavedQuery],
+  );
 
   const onSelect = useCallback((id: string) => setFocusedId(id), [setFocusedId]);
 
@@ -80,7 +121,7 @@ export function App(): ReactNode {
               </span>
             ) : null}
             {snapshot?.truncated ? (
-              <span className="text-warning" title="Raise beadsUi.issueLimit to load more">
+              <span className="text-warning" title="Raise beadsDashboard.issueLimit to load more">
                 truncated
               </span>
             ) : null}
@@ -101,7 +142,7 @@ export function App(): ReactNode {
               <p className="font-medium">{error.message}</p>
               {error.kind === 'bd-not-found' ? (
                 <p className="text-fg-muted mt-1">
-                  Set <code>beadsUi.bdPath</code> in settings if bd is installed somewhere unusual.
+                  Set <code>beadsDashboard.bdPath</code> in settings if bd is installed somewhere unusual.
                 </p>
               ) : null}
             </div>
@@ -117,7 +158,7 @@ export function App(): ReactNode {
                 <EmptyState
                   icon={<AlertCircle className="size-10" />}
                   title="No data from bd yet"
-                  hint="Press Refresh, or check the Beads UI output log for what bd reported."
+                  hint="Press Refresh, or check the Beads Dashboard output log for what bd reported."
                   action={
                     <Button variant="primary" onClick={refresh}>
                       Refresh
@@ -141,6 +182,10 @@ export function App(): ReactNode {
                 onSelect={onSelect}
                 selectedId={focusedId}
                 blockedIds={blockedIds}
+                showClosed={roadmapShowClosed}
+                onShowClosedChange={setRoadmapShowClosed}
+                shape={roadmapShape}
+                onShapeChange={setRoadmapShape}
               />
             ) : (
               <BoardView
@@ -151,6 +196,8 @@ export function App(): ReactNode {
                 onSelect={onSelect}
                 selectedId={focusedId}
                 blockedIds={blockedIds}
+                collapsedColumns={collapsedColumns}
+                onCollapsedColumnsChange={setCollapsedColumns}
               />
             )}
           </div>

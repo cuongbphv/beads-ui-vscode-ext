@@ -1,7 +1,20 @@
 name: Release
 
-# Tag a commit `v0.1.0` and push it; this builds the extension and attaches the
-# .vsix to a GitHub Release. Nothing is published to the Marketplace.
+# Tag a commit `v0.1.0` and push it; this builds the extension, attaches the
+# .vsix to a GitHub Release, and publishes it to both registries.
+#
+# Open VSX is not an afterthought: Cursor and Windsurf cannot install from
+# Microsoft's Marketplace, and that is where a large share of beads users are.
+#
+# Both publish steps are skipped when their token is absent, so a fork — or this
+# repo before the publisher accounts exist — still gets a working .vsix release
+# instead of a red run. Required secrets:
+#
+#   VSCE_PAT  Azure DevOps PAT (Marketplace → Manage Publishers, scope
+#             "Marketplace: Manage"). The publisher in package.json must exist
+#             first: https://marketplace.visualstudio.com/manage
+#   OVSX_PAT  Open VSX access token: https://open-vsx.org/user-settings/tokens
+#             (the namespace must be created once with `npx ovsx create-namespace`)
 #
 # The unit suite is deliberately not run here: src/test/bd-live.test.ts drives
 # the real `bd` CLI against a real .beads workspace, and a runner has neither.
@@ -75,3 +88,27 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             "${{ steps.vsix.outputs.path }}"
+
+      # Publish the artefact that was just built and attached, never a rebuild —
+      # the bytes on the Marketplace and the bytes on the release must match.
+      - name: Publish to the VS Code Marketplace
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::warning::VSCE_PAT is not set — skipping the Marketplace publish."
+            exit 0
+          fi
+          npx --yes @vscode/vsce publish --packagePath "${{ steps.vsix.outputs.path }}"
+
+      - name: Publish to Open VSX
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::warning::OVSX_PAT is not set — skipping the Open VSX publish."
+            exit 0
+          fi
+          npx --yes ovsx publish "${{ steps.vsix.outputs.path }}" --pat "$OVSX_PAT"

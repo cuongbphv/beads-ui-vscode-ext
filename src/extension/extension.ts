@@ -12,7 +12,7 @@ import type { DashboardTab } from '../shared/protocol';
 import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
 import { DashboardPanel } from './panel/DashboardPanel';
-import { BeadsStore } from './store';
+import { BeadsStore, bindVisibility } from './store';
 import { BeadsTreeProvider } from './tree/BeadsTreeProvider';
 import { VeloxSync } from './velox/VeloxSync';
 import { pickBeadsFolder, resolveBeadsFolder } from './workspace';
@@ -20,28 +20,28 @@ import { pickBeadsFolder, resolveBeadsFolder } from './workspace';
 let store: BeadsStore | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const output = vscode.window.createOutputChannel('Beads UI');
+  const output = vscode.window.createOutputChannel('Beads Dashboard');
   context.subscriptions.push(output);
 
   const folder = await resolveBeadsFolder(context.workspaceState, false);
   if (!folder) {
     // The tree's viewsWelcome explains what to do; the command still opens so
     // the user gets a real message rather than "command not found".
-    await vscode.commands.executeCommand('setContext', 'beadsUi.hasWorkspace', false);
+    await vscode.commands.executeCommand('setContext', 'beadsDashboard.hasWorkspace', false);
     context.subscriptions.push(
-      vscode.commands.registerCommand('beadsUi.openDashboard', () =>
+      vscode.commands.registerCommand('beadsDashboard.openDashboard', () =>
         vscode.window.showWarningMessage(
           'No .beads directory found in this workspace. Run `bd init` in a terminal first.',
         ),
       ),
-      vscode.commands.registerCommand('beadsUi.showOutput', () => output.show(true)),
+      vscode.commands.registerCommand('beadsDashboard.showOutput', () => output.show(true)),
     );
     output.appendLine('No workspace folder contains a .beads directory — staying idle.');
     return;
   }
 
   output.appendLine(`Beads workspace: ${folder.uri.fsPath}`);
-  await vscode.commands.executeCommand('setContext', 'beadsUi.hasWorkspace', true);
+  await vscode.commands.executeCommand('setContext', 'beadsDashboard.hasWorkspace', true);
 
   store = new BeadsStore(folder, output);
   context.subscriptions.push(store);
@@ -63,18 +63,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void actor.resolve();
 
   // "Needs You" is declared first in package.json, so it sits on top.
-  const mineView = vscode.window.createTreeView('beadsUi.needsYou', {
+  const mineView = vscode.window.createTreeView('beadsDashboard.needsYou', {
     treeDataProvider: mineTree,
   });
-  const treeView = vscode.window.createTreeView('beadsUi.tree', {
+  const treeView = vscode.window.createTreeView('beadsDashboard.tree', {
     treeDataProvider: tree,
     showCollapseAll: true,
   });
   context.subscriptions.push(mineView, treeView);
 
+  // Live refresh is paid for by whoever is looking: each view holds the store's
+  // poll gate open only while it is actually on screen.
+  for (const view of [mineView, treeView]) {
+    context.subscriptions.push(
+      bindVisibility(store, {
+        get visible() {
+          return view.visible;
+        },
+        onDidChange: (listener) => view.onDidChangeVisibility(() => listener()),
+      }),
+    );
+  }
+
   const openDashboard = (id?: string): void => {
     const defaultTab = vscode.workspace
-      .getConfiguration('beadsUi')
+      .getConfiguration('beadsDashboard')
       .get<DashboardTab>('defaultTab', 'overview');
 
     const panel = DashboardPanel.show(context, store!, { revealBead }, defaultTab);
@@ -144,7 +157,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const action = state.error.kind === 'bd-not-found' ? 'Open Settings' : 'Show Log';
     const choice = await vscode.window.showErrorMessage(`Beads: ${state.error.message}`, action);
     if (choice === 'Open Settings') {
-      await vscode.commands.executeCommand('workbench.action.openSettings', 'beadsUi.bdPath');
+      await vscode.commands.executeCommand('workbench.action.openSettings', 'beadsDashboard.bdPath');
     } else if (choice === 'Show Log') {
       output.show(true);
     }

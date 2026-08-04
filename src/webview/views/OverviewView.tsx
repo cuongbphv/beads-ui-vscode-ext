@@ -20,6 +20,7 @@ import {
   WorkloadChart,
 } from '../components/charts';
 import { EmptyState } from '../components/primitives';
+import { burnUpDensity, workloadDensity } from '../lib/chart-density';
 import { cn } from '../lib/utils';
 
 export function OverviewView({
@@ -51,6 +52,11 @@ export function OverviewView({
         Date.parse(bead.due_at) < now,
     ).length;
   }, [beads, index]);
+
+  // Sparse data decides the layout, not just the drawing: a burn-up with no
+  // trend in it should not also be the widest card on the page.
+  const burnUp = useMemo(() => burnUpDensity(beads, index), [beads, index]);
+  const workload = useMemo(() => workloadDensity(beads, index), [beads, index]);
 
   return (
     <div className="@container h-full overflow-y-auto px-3 py-3">
@@ -106,11 +112,13 @@ export function OverviewView({
         <ChartCard title="Issue types">
           <TypeChart beads={beads} />
         </ChartCard>
+        {/* Still two columns wide when sparse: the card shrinks in *height*, so
+            a narrower one would only punch a hole in the row. */}
         <ChartCard title="Burn-up" hint="cumulative closed" className="@2xl:col-span-2">
-          <BurnUpChart beads={beads} index={index} />
+          <BurnUpChart beads={beads} index={index} density={burnUp} />
         </ChartCard>
         <ChartCard title="Workload" hint="open work per PIC">
-          <WorkloadChart beads={beads} index={index} />
+          <WorkloadChart beads={beads} index={index} density={workload} />
         </ChartCard>
         <ChartCard title="Epic progress" className="@2xl:col-span-2 @5xl:col-span-3">
           <EpicProgressChart beads={beads} index={index} />
