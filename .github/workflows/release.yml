@@ -8,7 +8,13 @@ name: Release
 #
 # Both publish steps are skipped when their token is absent, so a fork — or this
 # repo before the publisher accounts exist — still gets a working .vsix release
-# instead of a red run. Required secrets:
+# instead of a red run. A skip is easy to miss in the annotations, so every step
+# also writes its outcome to the run summary.
+#
+# The whole job is re-runnable. Adding a missing secret after the fact and
+# re-running the run is the normal recovery path, so the release step updates an
+# existing release instead of failing on it, and a publish step treats "this
+# version is already there" as success. Required secrets:
 #
 #   VSCE_PAT  Azure DevOps PAT (Marketplace → Manage Publishers, scope
 #             "Marketplace: Manage"). The publisher in package.json must exist
@@ -34,9 +40,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -73,24 +79,38 @@ jobs:
         id: vsix
         run: echo "path=$(ls -1 ./*.vsix | head -n 1)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vsix
           path: ${{ steps.vsix.outputs.path }}
           if-no-files-found: error
 
-      - name: Create GitHub Release
+      # Idempotent on purpose. `gh release create` fails once a release exists for
+      # the tag, which used to kill the job here and leave the two publish steps
+      # below unreachable — the exact thing you need when you add a missing token
+      # and re-run.
+      - name: Create or update the GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            "${{ steps.vsix.outputs.path }}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists — replacing its .vsix."
+            gh release upload "$GITHUB_REF_NAME" "${{ steps.vsix.outputs.path }}" --clobber
+            echo "- 🔁 **GitHub Release** — updated the existing \`$GITHUB_REF_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              "${{ steps.vsix.outputs.path }}"
+            echo "- ✅ **GitHub Release** — created \`$GITHUB_REF_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # Publish the artefact that was just built and attached, never a rebuild —
       # the bytes on the Marketplace and the bytes on the release must match.
+      #
+      # A version that is already on the registry is success, not failure: it is
+      # what a re-run sees, and re-running is how a skipped publish gets fixed.
       - name: Publish to the VS Code Marketplace
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -98,9 +118,21 @@ jobs:
         run: |
           if [ -z "$VSCE_PAT" ]; then
             echo "::warning::VSCE_PAT is not set — skipping the Marketplace publish."
+            echo "- ⏭️ **VS Code Marketplace** — skipped, \`VSCE_PAT\` is not set" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          npx --yes @vscode/vsce publish --packagePath "${{ steps.vsix.outputs.path }}"
+          if out="$(npx --yes @vscode/vsce publish --packagePath "${{ steps.vsix.outputs.path }}" 2>&1)"; then
+            echo "$out"
+            echo "- ✅ **VS Code Marketplace** — published" >> "$GITHUB_STEP_SUMMARY"
+          elif printf '%s' "$out" | grep -qiE 'already exists|already published'; then
+            echo "$out"
+            echo "::notice::This version is already on the Marketplace — nothing to publish."
+            echo "- ✅ **VS Code Marketplace** — already published" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "$out"
+            echo "- ❌ **VS Code Marketplace** — failed" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Publish to Open VSX
         if: startsWith(github.ref, 'refs/tags/v')
@@ -109,6 +141,18 @@ jobs:
         run: |
           if [ -z "$OVSX_PAT" ]; then
             echo "::warning::OVSX_PAT is not set — skipping the Open VSX publish."
+            echo "- ⏭️ **Open VSX** — skipped, \`OVSX_PAT\` is not set" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          npx --yes ovsx publish "${{ steps.vsix.outputs.path }}" --pat "$OVSX_PAT"
+          if out="$(npx --yes ovsx publish "${{ steps.vsix.outputs.path }}" --pat "$OVSX_PAT" 2>&1)"; then
+            echo "$out"
+            echo "- ✅ **Open VSX** — published" >> "$GITHUB_STEP_SUMMARY"
+          elif printf '%s' "$out" | grep -qiE 'already exists|already published'; then
+            echo "$out"
+            echo "::notice::This version is already on Open VSX — nothing to publish."
+            echo "- ✅ **Open VSX** — already published" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "$out"
+            echo "- ❌ **Open VSX** — failed" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
