@@ -1,0 +1,14 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+  <!-- dây -->
+  <line x1="5" y1="2.5" x2="5" y2="21.5"/>
+  <line x1="12" y1="2.5" x2="12" y2="21.5"/>
+  <line x1="19" y1="2.5" x2="19" y2="21.5"/>
+  <!-- cột 1: todo treo trên -->
+  <circle cx="5" cy="6.5" r="2" fill="currentColor" stroke="none"/>
+  <circle cx="5" cy="11" r="2" fill="currentColor" stroke="none"/>
+  <!-- cột 2: doing giữa (hạt lớn, rỗng để nổi bật) -->
+  <circle cx="12" cy="12" r="2.7"/>
+  <!-- cột 3: done dồn đáy -->
+  <circle cx="19" cy="17.5" r="2" fill="currentColor" stroke="none"/>
+  <circle cx="19" cy="13" r="2" fill="currentColor" stroke="none"/>
+</svg>
