@@ -31,14 +31,23 @@ import {
   type Bead,
   type StatusCategory,
 } from '../../shared/types';
+import {
+  burnUpSeries,
+  type BurnUpDensity,
+  type WorkloadDensity,
+} from '../lib/chart-density';
 import { shortDate } from '../lib/utils';
 
+/**
+ * Every series colour comes from the editor's own categorical chart palette
+ * (see `--color-chart-*` in globals.css), so a chart never fights the theme.
+ */
 const CATEGORY_COLORS: Record<StatusCategory, string> = {
-  active: 'var(--color-p2)',
-  wip: 'var(--color-warning)',
-  frozen: 'var(--color-fg-muted)',
-  done: 'var(--color-success)',
-  unspecified: 'var(--color-p4)',
+  active: 'var(--color-chart-blue)',
+  wip: 'var(--color-chart-orange)',
+  frozen: 'var(--color-chart-neutral)',
+  done: 'var(--color-chart-green)',
+  unspecified: 'var(--color-chart-purple)',
 };
 
 /** Shared axis/tooltip styling so five charts cannot drift apart. */
@@ -188,7 +197,10 @@ export function PriorityChart({
       name: PRIORITY_LABELS[priority].split(' · ')[0],
       open: inBucket.length - closed,
       done: closed,
-      fill: PRIORITY_COLORS[priority],
+      // Deliberately not named `fill`: recharts lets a data row's `fill` win
+      // over a Bar's own, so a `fill` here would tint the *done* segment with
+      // the priority hue too — which is what made P1 read as brown.
+      barColor: PRIORITY_COLORS[priority],
     };
   });
 
@@ -207,19 +219,19 @@ export function PriorityChart({
           <Bar
             dataKey="open"
             stackId="a"
-            fill="var(--color-p2)"
+            fill="var(--color-chart-blue)"
             radius={[0, 0, 0, 0]}
             isAnimationActive={false}
           >
             {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.fill} />
+              <Cell key={entry.name} fill={entry.barColor} />
             ))}
           </Bar>
           {/* Closed work stays visible but recedes: muted fill, not background. */}
           <Bar
             dataKey="done"
             stackId="a"
-            fill="var(--color-fg-muted)"
+            fill="var(--color-chart-neutral)"
             fillOpacity={0.35}
             radius={[3, 3, 0, 0]}
             isAnimationActive={false}
@@ -265,63 +277,81 @@ export function TypeChart({ beads }: { beads: Bead[] }): ReactNode {
 export function BurnUpChart({
   beads,
   index,
+  density,
 }: {
   beads: Bead[];
   index: StatusIndex;
+  /** Whether the data has earned a full-height chart — see lib/chart-density. */
+  density: BurnUpDensity;
 }): ReactNode {
-  const closed = beads
-    .filter((bead) => index.isDone(bead.status) && bead.closed_at)
-    .map((bead) => Date.parse(bead.closed_at as string))
-    .filter((at) => !Number.isNaN(at))
-    .sort((a, b) => a - b);
+  const series = burnUpSeries(beads, index);
 
-  if (closed.length === 0) {
+  if (density.mode === 'empty' || series.length === 0) {
     return (
-      <p className="text-fg-muted flex h-52 items-center justify-center text-sm">
+      <p className="text-fg-muted flex h-24 items-center justify-center text-sm">
         Nothing has been closed yet.
       </p>
     );
   }
 
-  // One point per day the project closed something, plus the total as a ceiling.
-  const byDay = new Map<number, number>();
-  for (const at of closed) {
-    const day = new Date(at).setHours(0, 0, 0, 0);
-    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  const data = series.map((point) => ({ ...point, label: shortDate(point.day) }));
+
+  // A day or two of history has no curve in it. Drawing that at full height
+  // spends the largest card on the page saying "a line went up once", so it
+  // shrinks to a sparkline and the number carries the meaning instead.
+  if (density.mode === 'sparkline') {
+    return (
+      <div>
+        <Summary
+          text={`${density.closed} of ${density.total} issues closed over ${density.spanDays} ${
+            density.spanDays === 1 ? 'day' : 'days'
+          }, most recently on ${data[data.length - 1].label}.`}
+        />
+        <div className="flex items-baseline gap-2">
+          <p className="text-fg-strong text-2xl leading-none font-semibold tabular-nums">
+            {density.closed}
+          </p>
+          <p className="text-fg-muted text-xs">
+            closed over {density.spanDays} {density.spanDays === 1 ? 'day' : 'days'} — too short to
+            trend
+          </p>
+        </div>
+        <div className="mt-2 h-12" aria-hidden="true">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 0, left: 2 }}>
+              <defs>
+                <linearGradient id="burnup-spark" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-chart-green)" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="var(--color-chart-green)" stopOpacity={0.04} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="closed"
+                stroke="var(--color-chart-green)"
+                strokeWidth={1.5}
+                fill="url(#burnup-spark)"
+                dot={false}
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
   }
-
-  let running = 0;
-  const points = [...byDay.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([day, count]) => {
-      running += count;
-      return { day, label: shortDate(day), closed: running };
-    });
-
-  // A project that closed everything in one sitting has a single point, which
-  // draws as nothing. Anchor it with a zero the day before, and carry the line
-  // to today so the chart reads as "and nothing since".
-  const DAY = 86_400_000;
-  const today = new Date().setHours(0, 0, 0, 0);
-  const data = [
-    { day: points[0].day - DAY, label: shortDate(points[0].day - DAY), closed: 0 },
-    ...points,
-    ...(points[points.length - 1].day < today
-      ? [{ day: today, label: shortDate(today), closed: running }]
-      : []),
-  ];
 
   return (
     <div className="h-52">
       <Summary
-        text={`${closed.length} of ${beads.length} issues closed, first on ${data[0].label}, most recently on ${data[data.length - 1].label}.`}
+        text={`${density.closed} of ${density.total} issues closed, first on ${data[0].label}, most recently on ${data[data.length - 1].label}.`}
       />
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
           <defs>
             <linearGradient id="burnup" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-success)" stopOpacity={0.45} />
-              <stop offset="100%" stopColor="var(--color-success)" stopOpacity={0.04} />
+              <stop offset="0%" stopColor="var(--color-chart-green)" stopOpacity={0.45} />
+              <stop offset="100%" stopColor="var(--color-chart-green)" stopOpacity={0.04} />
             </linearGradient>
           </defs>
           <XAxis dataKey="label" {...AXIS} axisLine={false} minTickGap={24} />
@@ -342,10 +372,10 @@ export function BurnUpChart({
           <Area
             type="monotone"
             dataKey="closed"
-            stroke="var(--color-success)"
+            stroke="var(--color-chart-green)"
             strokeWidth={2}
             fill="url(#burnup)"
-            dot={{ r: 2, fill: 'var(--color-success)', stroke: 'none' }}
+            dot={{ r: 2, fill: 'var(--color-chart-green)', stroke: 'none' }}
             isAnimationActive={false}
           />
         </AreaChart>
@@ -354,14 +384,38 @@ export function BurnUpChart({
   );
 }
 
-/** Who is carrying what — open work per assignee, unassigned included. */
+/**
+ * Who is carrying what — open work per assignee, unassigned included.
+ *
+ * A distribution needs something to distribute. With one person, or nobody, the
+ * bar chart is a single bar restating a number the stat cards already gave you,
+ * so those cases answer in a sentence instead.
+ */
 export function WorkloadChart({
   beads,
   index,
+  density,
 }: {
   beads: Bead[];
   index: StatusIndex;
+  density: WorkloadDensity;
 }): ReactNode {
+  if (density.mode !== 'chart') {
+    const message =
+      density.mode === 'idle'
+        ? 'No open work to distribute.'
+        : density.mode === 'unowned'
+          ? `${density.unassigned} open ${density.unassigned === 1 ? 'issue has' : 'issues have'} no PIC yet.`
+          : `${density.assignees[0]} is carrying all ${density.open} open ${
+              density.open === 1 ? 'issue' : 'issues'
+            }${density.unassigned > 0 ? `, ${density.unassigned} still unassigned` : ''}.`;
+    return (
+      <p className="text-fg-muted flex h-24 items-center justify-center px-2 text-center text-sm">
+        {message}
+      </p>
+    );
+  }
+
   const counts = new Map<string, { open: number; wip: number }>();
   for (const bead of beads) {
     if (index.isDone(bead.status)) continue;
@@ -376,14 +430,6 @@ export function WorkloadChart({
     .map(([name, value]) => ({ name, ...value }))
     .sort((a, b) => b.open + b.wip - (a.open + a.wip))
     .slice(0, 8);
-
-  if (data.length === 0) {
-    return (
-      <p className="text-fg-muted flex h-52 items-center justify-center text-sm">
-        No open work to distribute.
-      </p>
-    );
-  }
 
   return (
     <div className="h-52">
@@ -400,14 +446,14 @@ export function WorkloadChart({
             dataKey="wip"
             stackId="a"
             name="in progress"
-            fill="var(--color-warning)"
+            fill="var(--color-chart-orange)"
             isAnimationActive={false}
           />
           <Bar
             dataKey="open"
             stackId="a"
             name="open"
-            fill="var(--color-p2)"
+            fill="var(--color-chart-blue)"
             radius={[0, 3, 3, 0]}
             isAnimationActive={false}
           />
@@ -440,7 +486,7 @@ export function EpicProgressChart({
 
   if (data.length === 0) {
     return (
-      <p className="text-fg-muted flex h-52 items-center justify-center text-sm">
+      <p className="text-fg-muted flex h-24 items-center justify-center text-sm">
         No epics with children yet.
       </p>
     );
@@ -463,14 +509,14 @@ export function EpicProgressChart({
             dataKey="done"
             stackId="a"
             name="done"
-            fill="var(--color-success)"
+            fill="var(--color-chart-green)"
             isAnimationActive={false}
           />
           <Bar
             dataKey="remaining"
             stackId="a"
             name="remaining"
-            fill="var(--color-fg-muted)"
+            fill="var(--color-chart-neutral)"
             fillOpacity={0.35}
             radius={[0, 3, 3, 0]}
             isAnimationActive={false}

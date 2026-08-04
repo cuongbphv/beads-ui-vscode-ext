@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 
-const EXTENSION_ID = 'cuongbphv.beads-ui';
+const EXTENSION_ID = 'cuongbphv.beads-dashboard';
 
 async function waitFor(
   description: string,
@@ -36,24 +36,24 @@ export async function run(): Promise<void> {
   // every command must be registered.
   const commands = await vscode.commands.getCommands(true);
   for (const command of [
-    'beadsUi.openDashboard',
-    'beadsUi.refresh',
-    'beadsUi.showOutput',
-    'beadsUi.setStatus',
-    'beadsUi.setPriority',
-    'beadsUi.setAssignee',
-    'beadsUi.claim',
-    'beadsUi.closeBead',
-    'beadsUi.copyId',
+    'beadsDashboard.openDashboard',
+    'beadsDashboard.refresh',
+    'beadsDashboard.showOutput',
+    'beadsDashboard.setStatus',
+    'beadsDashboard.setPriority',
+    'beadsDashboard.setAssignee',
+    'beadsDashboard.claim',
+    'beadsDashboard.closeBead',
+    'beadsDashboard.copyId',
   ]) {
     assert.ok(commands.includes(command), `Command not registered: ${command}`);
   }
 
   // Refresh has to complete without throwing — that is the real bd round trip.
-  await vscode.commands.executeCommand('beadsUi.refresh');
+  await vscode.commands.executeCommand('beadsDashboard.refresh');
 
   // The dashboard must open and stay open; a CSP or bundle error would kill it.
-  await vscode.commands.executeCommand('beadsUi.openDashboard');
+  await vscode.commands.executeCommand('beadsDashboard.openDashboard');
   await waitFor('dashboard panel to be created', () =>
     vscode.window.tabGroups.all.some((group) =>
       group.tabs.some((tab) => tab.label === 'Beads Dashboard'),

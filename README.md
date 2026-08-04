@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="media/icon.png" alt="Beads UI" width="128" />
+  <img src="media/icon.png" alt="Beads Dashboard" width="128" />
 </p>
 
-<h1 align="center">Beads UI for VS Code</h1>
+<h1 align="center">Beads Dashboard for VS Code</h1>
 
 <p align="center">
   Kanban, roadmap and epic tracking for the <a href="https://github.com/steveyegge/beads">Beads</a> git-native issue tracker — inside your editor.
@@ -15,9 +15,14 @@
 
 ---
 
+![Beads Dashboard: the sidebar, the roadmap, dragging a card across the board, and the board updating itself when an agent files and starts an issue from the terminal](docs/screenshots/demo.gif)
+
+> The last few seconds are the point: nothing is clicked. An agent runs `bd create`
+> and `bd update` outside the editor, and the board follows on its own.
+
 ## What it does
 
-Beads UI reads your local beads database through the `bd` CLI and renders it three ways:
+Beads Dashboard reads your local beads database through the `bd` CLI and renders it three ways:
 
 - **Overview** — totals, a status breakdown, epic progress, and the two lists that matter on
   arrival: what is ready to start, and what is blocked.
@@ -34,34 +39,54 @@ direct readers incompatible.
 
 ## See it in action
 
-**Overview** — totals, status split, priority mix and a burn-up of everything closed so far:
+Every shot below is a real editor against the same mid-flight demo project — five
+epics, 46 issues, four people and an agent. It is generated, not curated: `npm run
+capture:demo` seeds it and re-takes every image.
 
-![Overview tab showing 46 issues, a 98% done donut, priority and issue-type breakdowns, and a cumulative burn-up chart](docs/screenshots/overview.png)
+**Overview** — totals, status split, priority mix, workload per person, and a
+burn-up of everything closed so far:
 
-**Roadmap** — milestones as a timeline, each epic with its own progress count:
+![Overview tab: 46 issues, 15 ready, 4 blocked, 2 overdue, a 30% done donut, priority and issue-type breakdowns, a rising burn-up over six weeks, and workload per assignee](docs/screenshots/overview.png)
 
-![Roadmap tab showing milestones M001 11/11, M002 10/10 and M003 9/9 as Gantt rows with per-task bars](docs/screenshots/roadmap.png)
+**Roadmap** — a real timeline with today marked, each epic carrying its own
+progress count. Closed work is folded away behind a count you can click:
 
-**Board** — columns derived from your status categories, drag a card to move it:
+![Roadmap tab: five epics as Gantt rows with per-task bars across nine weeks, a today line, and a "14 closed hidden — show" chip](docs/screenshots/roadmap.png)
 
-![Kanban board with Open, In Progress, On Hold and Done columns, cards carrying issue id, title, labels and priority](docs/screenshots/board.png)
+**Board** — columns derived from your status *categories* at runtime, so a custom
+status lands in the right column. Done starts folded:
 
-**Detail pane** — the full issue without leaving the board:
+![Kanban board with Open 19, In Progress 9, On Hold 4 and a folded Done 14; cards carry type, id, title, labels, priority, due date and assignee](docs/screenshots/board.png)
 
-![Detail pane for task T105 showing status, priority, assignee, estimate, due date, description, design and acceptance criteria](docs/screenshots/roadmap-detail.png)
+**Detail pane** — the full issue without leaving the board. Status, priority and
+assignee apply as you set them:
 
-**Sidebar** — Epic → Task, with a "Needs You" section on top:
+![Detail pane for a feature showing status and priority selects, an assignee field that applies on Enter, estimate, due date, parent epic and dependencies](docs/screenshots/roadmap-detail.png)
 
-![Epics and Tasks sidebar tree with a Needs You section and milestone epics expanded to show their child tasks](docs/screenshots/sidebar-tree-expanded.png)
+**Sidebar** — what needs you on top, then the plan:
+
+![Sidebar with a Needs You section listing five issues assigned to you, then Epics & Milestones expanded to show child tasks with type icons and priorities](docs/screenshots/sidebar-tree-expanded.png)
 
 ## Requirements
 
-- The [`bd` CLI](https://github.com/steveyegge/beads) on your `PATH` (or set `beadsUi.bdPath`).
+- The [`bd` CLI](https://github.com/steveyegge/beads) on your `PATH` (or set `beadsDashboard.bdPath`).
 - A workspace folder containing a `.beads` directory. The extension activates only when it finds one.
 
 ## Install
 
-Not on the Marketplace yet — build and install locally:
+Search **Beads Dashboard** in the Extensions view, or:
+
+```bash
+code --install-extension cuongbphv.beads-dashboard
+```
+
+Using **Cursor**, **Windsurf** or **VSCodium**? Those cannot reach Microsoft's Marketplace, so the
+same build is published to [Open VSX](https://open-vsx.org/) and their own Extensions view finds it.
+Every release also carries a `.vsix` on the
+[Releases page](https://github.com/cuongbphv/beads-ui-vscode-ext/releases) for offline install.
+
+<details>
+<summary>Build and install from source instead</summary>
 
 ```bash
 npm install
@@ -75,18 +100,24 @@ installing it, pass `-- --skip-install`.
 After it finishes: **Ctrl+Shift+P → "Developer: Reload Window"**, then open the Beads icon in the
 Activity Bar.
 
+</details>
+
 ## Settings
 
 | Setting | Default | What it does |
 |---|---|---|
-| `beadsUi.bdPath` | `bd` | Path to the `bd` executable. |
-| `beadsUi.defaultTab` | `overview` | Tab the dashboard opens on. |
-| `beadsUi.issueLimit` | `2000` | Issues loaded per refresh. |
-| `beadsUi.pollIntervalSeconds` | `0` | Automatic refresh interval. `0` disables polling. |
-| `beadsUi.showClosed` | `true` | Include closed issues in the board and tree. |
+| `beadsDashboard.bdPath` | `bd` | Path to the `bd` executable. |
+| `beadsDashboard.defaultTab` | `overview` | Tab the dashboard opens on. |
+| `beadsDashboard.issueLimit` | `2000` | Issues loaded per refresh. |
+| `beadsDashboard.pollIntervalSeconds` | `5` | How often to check for changes made outside the editor. `0` disables it. |
+| `beadsDashboard.showClosed` | `true` | Include closed issues in the board and tree. |
+| `beadsDashboard.assignee` | `""` | Who you are, for **Needs You**. Empty means the identity `bd` itself would use. |
 
-Nothing polls by default — one `bd` process per poll is not free. The views refresh on activation,
-on demand, and after every change you make from the extension.
+Changes made outside the editor — by an agent, a teammate, or your own terminal — show up on
+their own within a few seconds. That check is one `bd list --limit 1`, and the full reload only
+runs when something actually changed; nothing is checked at all while every Beads view is hidden
+or the window is in the background. Set `pollIntervalSeconds` to `0` if you would rather the
+extension spawn nothing you did not ask for.
 
 ## Commands
 
@@ -103,24 +134,41 @@ on demand, and after every change you make from the extension.
 npm run watch        # rebuild both bundles on change
 npm run verify       # lint + typecheck + test + build + npm audit
 npm test             # vitest
-npm run capture      # refresh docs/screenshots/ from a real editor
+npm run demo:seed    # build the throwaway "Harbor" demo workspace
+npm run capture:demo # seed it, then refresh docs/screenshots/ from a real editor
+npm run gif          # seed it, then record docs/screenshots/demo.gif
 npm run preview      # render the dashboard in Chromium at 420/900/1440px
 ```
 
-`capture` and `preview` both drive live `bd --json` output, so they need the `bd`
-CLI and a `.beads` workspace. That is why they run locally and not in CI.
+Every image in this README comes from `capture:demo` / `gif`, never from a hand-posed editor.
+The demo project is a fixture in [`scripts/lib/demo-project.mjs`](scripts/lib/demo-project.mjs),
+seeded through `bd import` into a throwaway workspace in your temp directory — the extension's own
+tracker is nearly all closed, and screenshots taken against it make a live tool look finished. The
+unit suite asserts the fixture stays mid-flight rather than drifting back into a graveyard.
+
+These, `capture` and `preview` all drive live `bd --json` output, so they need the `bd` CLI
+locally. That is why they do not run in CI. `gif` also needs `ffmpeg` on your `PATH`.
 
 ### Releasing
 
 Tag a commit and push it — [`.github/workflows/release.yml`](.github/workflows/release.yml) builds the
-`.vsix` and attaches it to a GitHub Release. The tag must match `version` in `package.json` or the
-workflow fails before building. Nothing is published to the Marketplace.
+`.vsix`, attaches it to a GitHub Release, then publishes that exact file to the VS Code Marketplace
+and to Open VSX. The tag must match `version` in `package.json` or the workflow fails before
+building.
 
 ```bash
 npm run verify       # the workflow cannot run the bd-backed tests; do it here
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+Publishing needs two repository secrets. Each publish step is skipped with a warning when its token
+is missing, so a fork still gets a working `.vsix` release:
+
+| Secret | Where it comes from |
+|---|---|
+| `VSCE_PAT` | An Azure DevOps PAT with the **Marketplace: Manage** scope. The `publisher` in `package.json` must exist first at [Manage Publishers](https://marketplace.visualstudio.com/manage). |
+| `OVSX_PAT` | An [Open VSX access token](https://open-vsx.org/user-settings/tokens). Create the namespace once with `npx ovsx create-namespace cuongbphv -p <token>`. |
 
 Architecture, decisions and the task roadmap live in [`.velox/`](.velox/); the agent rule set is
 [`.velox/docs/VELOX-CONTEXT.md`](.velox/docs/VELOX-CONTEXT.md).

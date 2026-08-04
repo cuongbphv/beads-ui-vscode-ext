@@ -265,7 +265,7 @@ export class VeloxSync {
     const failed = chosen.length - created;
     vscode.window.showInformationMessage(
       failed > 0
-        ? `Created ${created} issue(s); ${failed} failed — see the Beads UI log.`
+        ? `Created ${created} issue(s); ${failed} failed — see the Beads Dashboard log.`
         : `Created ${created} issue(s) from the roadmap.`,
     );
   }

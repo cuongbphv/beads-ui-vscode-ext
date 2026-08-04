@@ -120,7 +120,7 @@ describe('BdService', () => {
 
     expect(error).toBeInstanceOf(BdError);
     expect((error as InstanceType<typeof BdError>).rpcError.kind).toBe('bd-not-found');
-    expect((error as InstanceType<typeof BdError>).rpcError.message).toContain('beadsUi.bdPath');
+    expect((error as InstanceType<typeof BdError>).rpcError.message).toContain('beadsDashboard.bdPath');
   });
 
   it('retries through the shell once, for the Windows .cmd shim', async () => {

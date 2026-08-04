@@ -133,6 +133,36 @@ describe('BdQueries.list', () => {
   });
 });
 
+describe('BdQueries.watermark', () => {
+  it('asks bd for exactly one row, newest first, including closed issues', async () => {
+    const fake = new FakeBd();
+    fake.responses = { list: { issues: [{ id: 'harbor-9', updated_at: '2026-08-04T09:00:00Z' }] } };
+
+    await queries(fake).watermark();
+
+    const argv = fake.argv[0];
+    expect(argv[argv.indexOf('--sort') + 1]).toBe('updated');
+    expect(argv[argv.indexOf('--limit') + 1]).toBe('1');
+    // A close is the single most likely external change; without --all the
+    // issue leaves the list and the fingerprint moves backwards.
+    expect(argv).toContain('--all');
+  });
+
+  it('fingerprints the newest row by id and timestamp together', async () => {
+    const fake = new FakeBd();
+    fake.responses = { list: { issues: [{ id: 'harbor-9', updated_at: '2026-08-04T09:00:00Z' }] } };
+
+    expect(await queries(fake).watermark()).toBe('harbor-9@2026-08-04T09:00:00Z');
+  });
+
+  it('answers with an empty fingerprint for an empty project', async () => {
+    const fake = new FakeBd();
+    fake.responses = { list: { issues: [] } };
+
+    expect(await queries(fake).watermark()).toBe('');
+  });
+});
+
 describe('BdQueries.show and children', () => {
   it('takes the first row, since bd show returns an array even for one id', async () => {
     const fake = new FakeBd();

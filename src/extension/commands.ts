@@ -55,31 +55,31 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
   ): vscode.Disposable => vscode.commands.registerCommand(command, handler);
 
   return [
-    register('beadsUi.refresh', () => void store.refresh()),
+    register('beadsDashboard.refresh', () => void store.refresh()),
 
-    register('beadsUi.showOutput', () => output.show(true)),
+    register('beadsDashboard.showOutput', () => output.show(true)),
 
-    register('beadsUi.openDashboard', () => deps.openDashboard()),
+    register('beadsDashboard.openDashboard', () => deps.openDashboard()),
 
-    register('beadsUi.openBead', (target: BeadNode | string) => {
+    register('beadsDashboard.openBead', (target: BeadNode | string) => {
       const id = resolveId(target);
       if (id) deps.openDashboard(id);
     }),
 
-    register('beadsUi.copyId', async (target: BeadNode | string) => {
+    register('beadsDashboard.copyId', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;
       await vscode.env.clipboard.writeText(id);
       vscode.window.setStatusBarMessage(`Copied ${id}`, 2000);
     }),
 
-    register('beadsUi.claim', async (target: BeadNode | string) => {
+    register('beadsDashboard.claim', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;
       await guard(() => store.mutations.claim(id), output);
     }),
 
-    register('beadsUi.setStatus', async (target: BeadNode | string) => {
+    register('beadsDashboard.setStatus', async (target: BeadNode | string) => {
       const id = resolveId(target);
       const snapshot = store.current.snapshot;
       if (!id || !snapshot) return;
@@ -103,7 +103,7 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       await guard(() => store.mutations.setStatus(id, picked.value), output);
     }),
 
-    register('beadsUi.setPriority', async (target: BeadNode | string) => {
+    register('beadsDashboard.setPriority', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;
       const current = beadOf(store, id)?.priority;
@@ -121,7 +121,7 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       await guard(() => store.mutations.setPriority(id, picked.value), output);
     }),
 
-    register('beadsUi.setAssignee', async (target: BeadNode | string) => {
+    register('beadsDashboard.setAssignee', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;
       const current = beadOf(store, id)?.assignee ?? '';
@@ -136,7 +136,7 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       await guard(() => store.mutations.setAssignee(id, value), output);
     }),
 
-    register('beadsUi.closeBead', async (target: BeadNode | string) => {
+    register('beadsDashboard.closeBead', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;
 
@@ -151,19 +151,19 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       await guard(() => store.mutations.close(id, reason), output);
     }),
 
-    register('beadsUi.selectFolder', () => void deps.selectFolder()),
+    register('beadsDashboard.selectFolder', () => void deps.selectFolder()),
 
     // Velox sync. Each of the three previews before it writes anything, and
     // none of them runs unless the user picks it from the palette.
-    register('beadsUi.veloxStatus', async () => {
+    register('beadsDashboard.veloxStatus', async () => {
       await guard(() => deps.velox.showStatus(), output);
     }),
 
-    register('beadsUi.veloxExport', async () => {
+    register('beadsDashboard.veloxExport', async () => {
       await guard(() => deps.velox.exportToRoadmap(), output);
     }),
 
-    register('beadsUi.veloxImport', async () => {
+    register('beadsDashboard.veloxImport', async () => {
       await guard(() => deps.velox.importToBeads(), output);
     }),
   ];

@@ -283,7 +283,7 @@ export interface DashboardSnapshot {
   beads: Bead[];
   readyIds: string[];
   blockedIds: string[];
-  /** True when `beadsUi.issueLimit` truncated the list. */
+  /** True when `beadsDashboard.issueLimit` truncated the list. */
   truncated: boolean;
   fetchedAt: string;
 }

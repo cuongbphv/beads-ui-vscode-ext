@@ -1,6 +1,6 @@
 {
-  "name": "beads-ui",
-  "displayName": "Beads UI — Kanban & Roadmap",
+  "name": "beads-dashboard",
+  "displayName": "Beads Dashboard — Kanban & Roadmap",
   "description": "Velox-style dashboard for the beads (bd) issue tracker: Overview, Roadmap and Kanban board, plus an Epic → Task sidebar.",
   "version": "0.1.0",
   "publisher": "cuongbphv",
@@ -34,16 +34,16 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "beadsUi",
+          "id": "beadsDashboard",
           "title": "Beads",
           "icon": "media/activity-bar.svg"
         }
       ]
     },
     "views": {
-      "beadsUi": [
+      "beadsDashboard": [
         {
-          "id": "beadsUi.needsYou",
+          "id": "beadsDashboard.needsYou",
           "name": "Needs You",
           "icon": "media/activity-bar.svg",
           "contextualTitle": "Beads",
@@ -51,7 +51,7 @@
           "initialSize": 1
         },
         {
-          "id": "beadsUi.tree",
+          "id": "beadsDashboard.tree",
           "name": "Epics & Milestones",
           "icon": "media/activity-bar.svg",
           "contextualTitle": "Beads",
@@ -62,90 +62,90 @@
     },
     "viewsWelcome": [
       {
-        "view": "beadsUi.tree",
-        "contents": "No beads workspace detected here.\n\nThis folder has no `.beads` directory, or the `bd` CLI is not on your PATH.\n\n[Open the Beads Dashboard](command:beadsUi.openDashboard)\n[Check Setup](command:beadsUi.showOutput)"
+        "view": "beadsDashboard.tree",
+        "contents": "No beads workspace detected here.\n\nThis folder has no `.beads` directory, or the `bd` CLI is not on your PATH.\n\n[Open the Beads Dashboard](command:beadsDashboard.openDashboard)\n[Check Setup](command:beadsDashboard.showOutput)"
       }
     ],
     "commands": [
       {
-        "command": "beadsUi.openDashboard",
+        "command": "beadsDashboard.openDashboard",
         "title": "Open Dashboard",
         "category": "Beads",
         "icon": "$(dashboard)"
       },
       {
-        "command": "beadsUi.refresh",
+        "command": "beadsDashboard.refresh",
         "title": "Refresh",
         "category": "Beads",
         "icon": "$(refresh)"
       },
       {
-        "command": "beadsUi.showOutput",
+        "command": "beadsDashboard.showOutput",
         "title": "Show bd Output Log",
         "category": "Beads",
         "icon": "$(output)"
       },
       {
-        "command": "beadsUi.openBead",
+        "command": "beadsDashboard.openBead",
         "title": "Open Issue",
         "category": "Beads"
       },
       {
-        "command": "beadsUi.setStatus",
+        "command": "beadsDashboard.setStatus",
         "title": "Change Status…",
         "category": "Beads",
         "icon": "$(circle-outline)"
       },
       {
-        "command": "beadsUi.setPriority",
+        "command": "beadsDashboard.setPriority",
         "title": "Change Priority…",
         "category": "Beads",
         "icon": "$(arrow-up)"
       },
       {
-        "command": "beadsUi.setAssignee",
+        "command": "beadsDashboard.setAssignee",
         "title": "Change Assignee…",
         "category": "Beads",
         "icon": "$(person)"
       },
       {
-        "command": "beadsUi.claim",
+        "command": "beadsDashboard.claim",
         "title": "Claim (assign to me, set in progress)",
         "category": "Beads",
         "icon": "$(check)"
       },
       {
-        "command": "beadsUi.closeBead",
+        "command": "beadsDashboard.closeBead",
         "title": "Close Issue…",
         "category": "Beads",
         "icon": "$(pass)"
       },
       {
-        "command": "beadsUi.copyId",
+        "command": "beadsDashboard.copyId",
         "title": "Copy Issue ID",
         "category": "Beads",
         "icon": "$(copy)"
       },
       {
-        "command": "beadsUi.selectFolder",
+        "command": "beadsDashboard.selectFolder",
         "title": "Select Beads Folder…",
         "category": "Beads",
         "icon": "$(folder-opened)"
       },
       {
-        "command": "beadsUi.veloxStatus",
+        "command": "beadsDashboard.veloxStatus",
         "title": "Velox: Sync Status Report",
         "category": "Beads",
         "icon": "$(git-compare)"
       },
       {
-        "command": "beadsUi.veloxExport",
+        "command": "beadsDashboard.veloxExport",
         "title": "Velox: Export Status to Roadmap…",
         "category": "Beads",
         "icon": "$(export)"
       },
       {
-        "command": "beadsUi.veloxImport",
+        "command": "beadsDashboard.veloxImport",
         "title": "Velox: Import Roadmap Tasks…",
         "category": "Beads",
         "icon": "$(cloud-download)"
@@ -154,113 +154,113 @@
     "menus": {
       "view/title": [
         {
-          "command": "beadsUi.openDashboard",
-          "when": "view == beadsUi.tree",
+          "command": "beadsDashboard.openDashboard",
+          "when": "view == beadsDashboard.tree",
           "group": "navigation@1"
         },
         {
-          "command": "beadsUi.refresh",
-          "when": "view == beadsUi.tree",
+          "command": "beadsDashboard.refresh",
+          "when": "view == beadsDashboard.tree",
           "group": "navigation@2"
         },
         {
-          "command": "beadsUi.showOutput",
-          "when": "view == beadsUi.tree",
+          "command": "beadsDashboard.showOutput",
+          "when": "view == beadsDashboard.tree",
           "group": "1_diagnostics"
         },
         {
-          "command": "beadsUi.selectFolder",
-          "when": "view == beadsUi.tree",
+          "command": "beadsDashboard.selectFolder",
+          "when": "view == beadsDashboard.tree",
           "group": "1_diagnostics@2"
         },
         {
-          "command": "beadsUi.veloxStatus",
-          "when": "view == beadsUi.tree",
+          "command": "beadsDashboard.veloxStatus",
+          "when": "view == beadsDashboard.tree",
           "group": "2_velox@1"
         },
         {
-          "command": "beadsUi.veloxExport",
-          "when": "view == beadsUi.tree",
+          "command": "beadsDashboard.veloxExport",
+          "when": "view == beadsDashboard.tree",
           "group": "2_velox@2"
         },
         {
-          "command": "beadsUi.veloxImport",
-          "when": "view == beadsUi.tree",
+          "command": "beadsDashboard.veloxImport",
+          "when": "view == beadsDashboard.tree",
           "group": "2_velox@3"
         }
       ],
       "view/item/context": [
         {
-          "command": "beadsUi.claim",
-          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
+          "command": "beadsDashboard.claim",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "inline@1"
         },
         {
-          "command": "beadsUi.setStatus",
-          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
+          "command": "beadsDashboard.setStatus",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "1_edit@1"
         },
         {
-          "command": "beadsUi.setPriority",
-          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
+          "command": "beadsDashboard.setPriority",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "1_edit@2"
         },
         {
-          "command": "beadsUi.setAssignee",
-          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
+          "command": "beadsDashboard.setAssignee",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "1_edit@3"
         },
         {
-          "command": "beadsUi.closeBead",
-          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem == beadOpen",
+          "command": "beadsDashboard.closeBead",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem == beadOpen",
           "group": "2_close@1"
         },
         {
-          "command": "beadsUi.copyId",
-          "when": "view =~ /^beadsUi\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
+          "command": "beadsDashboard.copyId",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "9_copy@1"
         }
       ],
       "commandPalette": [
         {
-          "command": "beadsUi.openBead",
+          "command": "beadsDashboard.openBead",
           "when": "false"
         },
         {
-          "command": "beadsUi.setStatus",
+          "command": "beadsDashboard.setStatus",
           "when": "false"
         },
         {
-          "command": "beadsUi.setPriority",
+          "command": "beadsDashboard.setPriority",
           "when": "false"
         },
         {
-          "command": "beadsUi.setAssignee",
+          "command": "beadsDashboard.setAssignee",
           "when": "false"
         },
         {
-          "command": "beadsUi.claim",
+          "command": "beadsDashboard.claim",
           "when": "false"
         },
         {
-          "command": "beadsUi.closeBead",
+          "command": "beadsDashboard.closeBead",
           "when": "false"
         },
         {
-          "command": "beadsUi.copyId",
+          "command": "beadsDashboard.copyId",
           "when": "false"
         }
       ]
     },
     "configuration": {
-      "title": "Beads UI",
+      "title": "Beads Dashboard",
       "properties": {
-        "beadsUi.bdPath": {
+        "beadsDashboard.bdPath": {
           "type": "string",
           "default": "bd",
           "markdownDescription": "Path to the `bd` executable. Leave as `bd` to use your PATH."
         },
-        "beadsUi.defaultTab": {
+        "beadsDashboard.defaultTab": {
           "type": "string",
           "enum": [
             "overview",
@@ -270,24 +270,24 @@
           "default": "overview",
           "description": "Tab the dashboard opens on."
         },
-        "beadsUi.issueLimit": {
+        "beadsDashboard.issueLimit": {
           "type": "number",
           "default": 2000,
           "minimum": 50,
           "description": "Maximum number of issues loaded per refresh. Larger projects paint more slowly."
         },
-        "beadsUi.pollIntervalSeconds": {
+        "beadsDashboard.pollIntervalSeconds": {
           "type": "number",
-          "default": 0,
+          "default": 5,
           "minimum": 0,
-          "markdownDescription": "Seconds between automatic refreshes. `0` disables polling — the view still refreshes after every change you make from the extension."
+          "markdownDescription": "Seconds between checks for changes made outside the editor — by an agent, a teammate, or your own terminal. Each check is a single `bd list --limit 1`; the full reload only runs when something actually changed, and nothing is checked while every Beads view is hidden or the window is in the background. `0` disables it entirely."
         },
-        "beadsUi.showClosed": {
+        "beadsDashboard.showClosed": {
           "type": "boolean",
           "default": true,
           "description": "Include closed issues in the board and the sidebar tree."
         },
-        "beadsUi.assignee": {
+        "beadsDashboard.assignee": {
           "type": "string",
           "default": "",
           "markdownDescription": "Who you are in beads, for the sidebar's **Needs You** section. Leave empty to use the same identity `bd` does: `BEADS_ACTOR`, then `BD_ACTOR`, then `git config user.name`, then your OS username."
@@ -309,6 +309,9 @@
     "test:webview": "node scripts/run-webview-test.mjs",
     "preview": "npm run build && node scripts/render-preview.mjs",
     "capture": "npm run build && node scripts/capture-screens.mjs",
+    "demo:seed": "node scripts/seed-demo-workspace.mjs --force",
+    "capture:demo": "npm run demo:seed && npm run build && node scripts/capture-screens.mjs --demo",
+    "gif": "npm run demo:seed && npm run build && node scripts/record-demo.mjs",
     "audit:ci": "npm audit --audit-level=low",
     "package": "npm run build:prod && vsce package --no-dependencies",
     "install:local": "node scripts/install-local.mjs",

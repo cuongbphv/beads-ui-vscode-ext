@@ -170,7 +170,7 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
 
   private build(snapshot: DashboardSnapshot): BeadNode[] {
     const index = new StatusIndex(snapshot.vocabulary.statuses);
-    const showClosed = vscode.workspace.getConfiguration('beadsUi').get<boolean>('showClosed', true);
+    const showClosed = vscode.workspace.getConfiguration('beadsDashboard').get<boolean>('showClosed', true);
     const me = this.actor.current;
 
     if (snapshot.beads.length === 0) {
@@ -245,7 +245,7 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
     const hidden = beads.length - nodes.length;
     if (hidden > 0) {
       const more = messageNode(`…and ${hidden} more — open the dashboard`, 'ellipsis');
-      more.command = { command: 'beadsUi.openDashboard', title: 'Open Dashboard' };
+      more.command = { command: 'beadsDashboard.openDashboard', title: 'Open Dashboard' };
       nodes.push(more);
     }
     return nodes;
@@ -317,12 +317,12 @@ function whoAreYouNode(): BeadNode {
   const node = messageNode('Set who you are to see your work', 'question');
   node.tooltip = new vscode.MarkdownString(
     'beads reads the assignee from `BEADS_ACTOR`, then `git config user.name`.\n\n' +
-      'Set `beadsUi.assignee` to override it.',
+      'Set `beadsDashboard.assignee` to override it.',
   );
   node.command = {
     command: 'workbench.action.openSettings',
     title: 'Open Settings',
-    arguments: ['beadsUi.assignee'],
+    arguments: ['beadsDashboard.assignee'],
   };
   return node;
 }
@@ -335,7 +335,7 @@ function messageNode(text: string, icon: string): BeadNode {
 }
 
 function openCommand(bead: Bead): vscode.Command {
-  return { command: 'beadsUi.openBead', title: 'Open Issue', arguments: [bead.id] };
+  return { command: 'beadsDashboard.openBead', title: 'Open Issue', arguments: [bead.id] };
 }
 
 function tooltipFor(bead: Bead, index: StatusIndex): vscode.MarkdownString {

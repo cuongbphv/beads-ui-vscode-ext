@@ -83,6 +83,28 @@ export function BeadDetail({
     }
   }
 
+  /**
+   * Unlike the dropdowns, a rejected assignee has to be put back by hand: the
+   * field keeps its own draft, and bd's record never changed, so nothing else
+   * would ever correct it. An input still showing a name bd refused reads as
+   * saved.
+   */
+  async function commitAssignee(): Promise<void> {
+    const next = assignee.trim();
+    if (next === (bead.assignee ?? '')) return;
+
+    setBusy(true);
+    try {
+      await call('setAssignee', { id: bead.id, assignee: next });
+      notify(`${bead.id} assigned to ${next || 'nobody'}`);
+    } catch (error) {
+      setAssignee(bead.assignee ?? '');
+      notify(asRpcError(error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const done = index.isDone(bead.status);
   const span = spanOf(bead, done, Date.now());
   const parentId = parentIdOf(bead);
@@ -266,35 +288,35 @@ export function BeadDetail({
             </select>
           </label>
 
+          {/* Status and Priority apply the moment you pick one; a Save button
+              here would make the same pane behave two different ways. A text
+              field's equivalent of "on change" is on commit — Enter or leaving
+              the field — so that is what it does. */}
           <label className="grid gap-1">
             <span className="text-fg-muted text-xs">Assignee (PIC)</span>
-            <div className="flex gap-1">
-              <input
-                disabled={busy}
-                value={assignee}
-                placeholder="unassigned"
-                onChange={(event) => setAssignee(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter') return;
-                  void mutate(
-                    () => call('setAssignee', { id: bead.id, assignee }),
-                    `${bead.id} assigned to ${assignee || 'nobody'}`,
-                  );
-                }}
-                className="bg-input-bg border-input-border text-fg min-w-0 flex-1 rounded-md border px-2 py-1 text-sm"
-              />
-              <Button
-                disabled={busy || assignee === (bead.assignee ?? '')}
-                onClick={() =>
-                  void mutate(
-                    () => call('setAssignee', { id: bead.id, assignee }),
-                    `${bead.id} assigned to ${assignee || 'nobody'}`,
-                  )
+            <input
+              disabled={busy}
+              value={assignee}
+              placeholder="unassigned"
+              onChange={(event) => setAssignee(event.target.value)}
+              onBlur={() => void commitAssignee()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                  return;
                 }
-              >
-                Save
-              </Button>
-            </div>
+                if (event.key !== 'Escape') return;
+                // Abandon the edit without also closing the pane, which is what
+                // the window-level Escape handler would otherwise do.
+                event.stopPropagation();
+                setAssignee(bead.assignee ?? '');
+                event.currentTarget.blur();
+              }}
+              className="bg-input-bg border-input-border text-fg min-w-0 rounded-md border px-2 py-1 text-sm"
+            />
+            <span className="text-fg-muted text-xs opacity-70">
+              Applies on Enter, or when you leave the field. Escape cancels.
+            </span>
           </label>
 
           {!done ? (

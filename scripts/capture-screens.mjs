@@ -3,21 +3,29 @@
  * Screenshot pass over the whole surface: dashboard tabs, the Epic → Task
  * sidebar, and the settings the extension contributes.
  *
- *   npm run capture
+ *   npm run capture                          # this repo's own tracker
+ *   npm run capture:demo                     # the seeded Harbor workspace
+ *   node scripts/capture-screens.mjs --workspace <dir> --id-prefix harbor-
  *
  * Shares the isolation rules of run-webview-test.mjs — throwaway profile, real
  * `bd` data, read-only — but reports nothing: it exists to produce images for a
  * human to look at, not to assert.
+ *
+ * Which workspace matters more than it sounds: shot against this repo, every
+ * chart is 98% Done and the product photographs as finished. `--workspace`
+ * exists so the README can show a project that is actually in flight —
+ * see scripts/seed-demo-workspace.mjs.
  */
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 import { _electron } from 'playwright';
 
 import { cleanEnv, scrubProcessEnv } from './lib/clean-env.mjs';
+import { defaultDemoDir, DEMO_ID_PREFIX } from './lib/demo-workspace.mjs';
 
 const testVersion = process.env.VSCODE_TEST_VERSION ?? '1.105.0';
 scrubProcessEnv();
@@ -25,6 +33,20 @@ scrubProcessEnv();
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Committed, not dist/: these images are what README.md points at.
 const outDir = join(repoRoot, 'docs', 'screenshots');
+
+const argv = process.argv.slice(2);
+const flag = (name) => {
+  const index = argv.indexOf(name);
+  return index >= 0 ? argv[index + 1] : undefined;
+};
+
+/** `--demo` is `--workspace <the seeded Harbor workspace>` without typing a path. */
+const demo = argv.includes('--demo');
+
+/** The folder the editor opens. Defaults to this repo, which is the fallback. */
+const workspace = resolve(flag('--workspace') ?? (demo ? defaultDemoDir() : repoRoot));
+/** Issue-id prefix, used to find a row to open the detail pane on. */
+const idPrefix = flag('--id-prefix') ?? (demo ? DEMO_ID_PREFIX : 'beads-ui-vscode-ext-');
 
 const LAUNCH_TIMEOUT = 180_000;
 
@@ -51,7 +73,7 @@ const app = await (async () => {
   const executablePath = await downloadAndUnzipVSCode(testVersion);
   const profileDir = await mkdtemp(join(tmpdir(), 'beads-ui-profile-'));
   const extensionsDir = await mkdtemp(join(tmpdir(), 'beads-ui-exts-'));
-  console.log('› launching an isolated editor');
+  console.log(`› launching an isolated editor on ${workspace}`);
   const launched = await _electron.launch({
     executablePath,
     timeout: LAUNCH_TIMEOUT,
@@ -66,7 +88,7 @@ const app = await (async () => {
       '--skip-welcome',
       '--skip-release-notes',
       '--disable-updates',
-      repoRoot,
+      workspace,
     ],
     env: cleanEnv({ BD_JSON_ENVELOPE: '0' }),
   });
@@ -124,22 +146,10 @@ try {
   const inner = window.frameLocator('iframe.webview').frameLocator('#active-frame');
   await inner.locator('text=/\\d+\\s+issues/').first().waitFor();
 
-  // App.tsx defaults the query to `includeClosed: false`, which hides finished
-  // work — a milestone then shows only its leftovers and reads as barely
-  // started. Tick "Closed" so every screenshot shows the full task list.
-  //
-  // The filter bar lives in RoadmapView and BoardView, not OverviewView, so the
-  // toggle has to be reached from Roadmap first. `query` is App-level state, so
-  // ticking it once also applies to Board. Overview reads `snapshot` and is
-  // unaffected either way.
-  await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
-  const closedToggle = inner.locator('label:has-text("Closed") input[type="checkbox"]').first();
-  await closedToggle.waitFor({ state: 'visible' });
-  if (!(await closedToggle.isChecked())) {
-    await closedToggle.check();
-    await window.waitForTimeout(600);
-  }
-
+  // Nothing is touched before the shots: the README should show what the
+  // extension does on first open — closed issues on the board with the Done
+  // column folded, and the Roadmap hiding them behind its own "N closed hidden"
+  // chip. Posing the UI first would document a state no user starts in.
   for (const tab of ['Overview', 'Roadmap', 'Board']) {
     await inner.locator(`[role="tab"]:has-text("${tab}")`).first().click();
     await shot(window, tab.toLowerCase());
@@ -148,8 +158,10 @@ try {
   // A selected issue opens the detail pane, which is its own layout branch.
   await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
   await window.waitForTimeout(600);
+  // Task rows title their button "<id>: <title>"; epic rows carry only a title,
+  // so the prefix is what separates a task row from its epic.
   await inner
-    .locator('text=/beads-ui-vscode-ext-/')
+    .locator(`button[title^="${idPrefix}"]`)
     .first()
     .click({ timeout: 10_000 })
     .catch(() => {});
@@ -162,7 +174,7 @@ try {
   // suggest-widget whose markup moves between releases — type instead of
   // pinning a selector.
   await window.waitForTimeout(800);
-  await window.keyboard.type('beadsUi');
+  await window.keyboard.type('beadsDashboard');
   await window.locator('.settings-editor .setting-item').first().waitFor();
   await shot(window, 'settings');
 
