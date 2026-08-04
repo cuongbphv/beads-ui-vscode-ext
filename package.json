@@ -1,8 +1,8 @@
-{
+﻿{
   "name": "beads-dashboard",
   "displayName": "Beads Dashboard — Kanban & Roadmap",
   "description": "Velox-style dashboard for the beads (bd) issue tracker: Overview, Roadmap and Kanban board, plus an Epic → Task sidebar.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "cuongbphv",
   "license": "MIT",
   "author": "Bùi Phan Viết Cường",
@@ -10,7 +10,16 @@
     "type": "git",
     "url": "https://github.com/cuongbphv/beads-ui-vscode-ext.git"
   },
+  "homepage": "https://github.com/cuongbphv/beads-ui-vscode-ext#readme",
+  "bugs": {
+    "url": "https://github.com/cuongbphv/beads-ui-vscode-ext/issues"
+  },
+  "qna": "https://github.com/cuongbphv/beads-ui-vscode-ext/discussions",
   "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1F1F1F",
+    "theme": "dark"
+  },
   "categories": [
     "Visualization",
     "Other"
@@ -20,7 +29,12 @@
     "bd",
     "kanban",
     "issue tracker",
-    "roadmap"
+    "roadmap",
+    "gantt",
+    "agent",
+    "ai",
+    "claude code",
+    "dolt"
   ],
   "engines": {
     "vscode": "^1.105.0",
