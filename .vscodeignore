@@ -1,0 +1,36 @@
+# Everything the extension does not need at runtime. The two bundles in dist/
+# are self-contained, so no source and no node_modules are shipped.
+.beads/**
+.velox/**
+.agents/**
+.claude/**
+.codex/**
+.github/**
+.vscode/**
+design-system/**
+scripts/**
+src/**
+node_modules/**
+
+.editorconfig
+.eslintcache
+.gitattributes
+.gitignore
+.vscode-test/**
+**/*.map
+**/tsconfig*.json
+**/*.ts
+**/*.tsx
+
+AGENTS.md
+CLAUDE.md
+esbuild.mjs
+eslint.config.mjs
+package-lock.json
+vitest.config.mts
+*.vsix
+
+dist/test/**
+dist/test-artifacts/**
+# The review harness writes its host pages next to the bundles.
+dist/preview-*.html

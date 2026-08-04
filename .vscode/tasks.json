@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "build",
+      "group": "build",
+      "problemMatcher": "$esbuild"
+    },
+    {
+      "type": "npm",
+      "script": "watch",
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": "$esbuild-watch"
+    },
+    {
+      "label": "Build, package and install (reload window after)",
+      "type": "npm",
+      "script": "install:local",
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

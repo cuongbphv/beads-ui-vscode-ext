@@ -1,0 +1,77 @@
+name: Release
+
+# Tag a commit `v0.1.0` and push it; this builds the extension and attaches the
+# .vsix to a GitHub Release. Nothing is published to the Marketplace.
+#
+# The unit suite is deliberately not run here: src/test/bd-live.test.ts drives
+# the real `bd` CLI against a real .beads workspace, and a runner has neither.
+# Run `npm run verify` locally before tagging.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # A tag that disagrees with the manifest ships a .vsix whose filename and
+      # contents contradict the release it is attached to. Fail before building.
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $pkg"
+            exit 1
+          fi
+          echo "Tag $GITHUB_REF_NAME matches package.json version $pkg"
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      # Advisory: a new CVE published between tagging and building should be
+      # visible in the log, not a reason the release never happens.
+      - name: Audit dependencies
+        run: npm run audit:ci
+        continue-on-error: true
+
+      - name: Package .vsix
+        run: npm run package
+
+      - name: Locate the .vsix
+        id: vsix
+        run: echo "path=$(ls -1 ./*.vsix | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: ${{ steps.vsix.outputs.path }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            "${{ steps.vsix.outputs.path }}"

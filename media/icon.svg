@@ -1,0 +1,70 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1932"/>
+      <stop offset="1" stop-color="#100E1E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFB454" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFB454" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="beadTodo" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0" stop-color="#B0ACD0"/>
+      <stop offset="1" stop-color="#6E6A92"/>
+    </radialGradient>
+    <radialGradient id="beadDoing" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0" stop-color="#FFD08A"/>
+      <stop offset="1" stop-color="#F09A2E"/>
+    </radialGradient>
+    <radialGradient id="beadDone" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0" stop-color="#7BEFC0"/>
+      <stop offset="1" stop-color="#2BB984"/>
+    </radialGradient>
+  </defs>
+
+  <!-- nền -->
+  <rect x="0" y="0" width="128" height="128" rx="28" fill="url(#bg)"/>
+
+  <!-- dây -->
+  <g stroke="#3E3A58" stroke-width="3" stroke-linecap="round">
+    <line x1="32" y1="18" x2="32" y2="110"/>
+    <line x1="64" y1="18" x2="64" y2="110"/>
+    <line x1="96" y1="18" x2="96" y2="110"/>
+  </g>
+  <!-- nút thắt đầu dây -->
+  <g fill="#4A4668">
+    <circle cx="32" cy="17" r="3.4"/><circle cx="64" cy="17" r="3.4"/><circle cx="96" cy="17" r="3.4"/>
+    <circle cx="32" cy="111" r="3.4"/><circle cx="64" cy="111" r="3.4"/><circle cx="96" cy="111" r="3.4"/>
+  </g>
+
+  <!-- cột 1: todo — hạt treo phía trên -->
+  <g>
+    <circle cx="32" cy="33" r="9" fill="url(#beadTodo)"/>
+    <circle cx="32" cy="53" r="9" fill="url(#beadTodo)"/>
+    <circle cx="32" cy="73" r="9" fill="url(#beadTodo)"/>
+  </g>
+
+  <!-- cột 2: doing — hạt active phát sáng giữa dây -->
+  <circle cx="64" cy="62" r="26" fill="url(#glow)"/>
+  <circle cx="64" cy="36" r="8" fill="url(#beadTodo)"/>
+  <circle cx="64" cy="62" r="12.5" fill="url(#beadDoing)"/>
+
+  <!-- cột 3: done — hạt dồn xuống đáy dây -->
+  <g>
+    <circle cx="96" cy="97" r="9" fill="url(#beadDone)"/>
+    <circle cx="96" cy="79" r="9" fill="url(#beadDone)"/>
+    <circle cx="96" cy="61" r="9" fill="url(#beadDone)"/>
+  </g>
+
+  <!-- highlight thủy tinh -->
+  <g fill="#FFFFFF" opacity="0.5">
+    <ellipse cx="29" cy="30" rx="3" ry="2" transform="rotate(-30 29 30)"/>
+    <ellipse cx="29" cy="50" rx="3" ry="2" transform="rotate(-30 29 50)"/>
+    <ellipse cx="29" cy="70" rx="3" ry="2" transform="rotate(-30 29 70)"/>
+    <ellipse cx="61.5" cy="33.5" rx="2.6" ry="1.8" transform="rotate(-30 61.5 33.5)"/>
+    <ellipse cx="60" cy="58" rx="4.2" ry="2.8" transform="rotate(-30 60 58)"/>
+    <ellipse cx="93" cy="58" rx="3" ry="2" transform="rotate(-30 93 58)"/>
+    <ellipse cx="93" cy="76" rx="3" ry="2" transform="rotate(-30 93 76)"/>
+    <ellipse cx="93" cy="94" rx="3" ry="2" transform="rotate(-30 93 94)"/>
+  </g>
+</svg>

@@ -1,0 +1,232 @@
+@import 'tailwindcss';
+
+/* esbuild bundles the TSX; Tailwind still needs to be told where to scan. */
+@source '../**/*.{ts,tsx}';
+
+/*
+ * Theme tokens map onto the editor's own variables — never a hardcoded hex.
+ * The user's colour theme is the source of truth, so light, dark and high
+ * contrast all work without a single media query.
+ *
+ * The fallbacks exist only so the panel still renders if a theme omits a
+ * variable; they are not a palette.
+ */
+@theme {
+  --color-bg: var(--vscode-editor-background, #1e1e1e);
+  --color-surface: var(--vscode-editorWidget-background, #252526);
+  --color-surface-hover: var(--vscode-list-hoverBackground, #2a2d2e);
+  --color-surface-active: var(--vscode-list-activeSelectionBackground, #04395e);
+  --color-border: var(--vscode-panel-border, #3c3c3c);
+  --color-border-strong: var(--vscode-focusBorder, #007fd4);
+  --color-fg: var(--vscode-foreground, #cccccc);
+  --color-fg-muted: var(--vscode-descriptionForeground, #9d9d9d);
+  --color-fg-strong: var(--vscode-editor-foreground, #e7e7e7);
+  --color-accent: var(--vscode-textLink-foreground, #3794ff);
+  --color-accent-hover: var(--vscode-textLink-activeForeground, #4daafc);
+  --color-danger: var(--vscode-errorForeground, #f14c4c);
+  --color-warning: var(--vscode-editorWarning-foreground, #cca700);
+  --color-success: var(--vscode-testing-iconPassed, #4bb543);
+  --color-badge-bg: var(--vscode-badge-background, #4d4d4d);
+  --color-badge-fg: var(--vscode-badge-foreground, #ffffff);
+  --color-input-bg: var(--vscode-input-background, #313131);
+  --color-input-border: var(--vscode-input-border, #3c3c3c);
+  --color-button-bg: var(--vscode-button-background, #0e639c);
+  --color-button-fg: var(--vscode-button-foreground, #ffffff);
+  --color-button-secondary-bg: var(--vscode-button-secondaryBackground, #3a3d41);
+
+  --font-sans: var(--vscode-font-family, system-ui, sans-serif);
+  --font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+
+  /* Dense by design: 13px body is the editor's own reading size. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+
+  --ease-out-quick: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/*
+ * Priority colours are a scale, not part of the editor theme. They are always
+ * paired with a "P0…P4" label — colour never carries the meaning alone.
+ */
+@theme {
+  --color-p0: #f14c4c;
+  --color-p1: #e8a33d;
+  --color-p2: #3794ff;
+  --color-p3: #8a8a8a;
+  --color-p4: #6a6a6a;
+}
+
+/*
+ * One hue per issue type, so a column can be scanned by colour as well as by
+ * icon. Chosen to stay legible on both light and dark editor backgrounds — each
+ * is used as a border, a small chip, or a chart series, never as body text on
+ * its own.
+ */
+@theme {
+  --color-type-epic: #a371f7;
+  --color-type-milestone: #d29922;
+  --color-type-feature: #2da44e;
+  --color-type-bug: #e5534b;
+  --color-type-task: #4a9eff;
+  --color-type-chore: #8b949e;
+  --color-type-decision: #db6d28;
+  --color-type-spike: #2eb8b8;
+  --color-type-story: #e06c9f;
+}
+
+/*
+ * The type hues above are tuned for a dark editor. On a light theme the same
+ * values are 3:1 against white — under the 4.5:1 the design system requires for
+ * the small uppercase type label — so each one darkens.
+ *
+ * VS Code stamps the theme kind on the webview's <html>, which is the only
+ * reliable signal: `prefers-color-scheme` follows the OS, not the editor.
+ */
+:root:is(.vscode-light, .vscode-high-contrast-light),
+:root:has(body.vscode-light),
+[data-vscode-theme-kind='vscode-light'],
+[data-vscode-theme-kind='vscode-high-contrast-light'] {
+  --color-type-epic: #7c3aed;
+  --color-type-milestone: #a16207;
+  --color-type-feature: #15803d;
+  --color-type-bug: #b91c1c;
+  --color-type-task: #1d4ed8;
+  --color-type-chore: #4b5563;
+  --color-type-decision: #c2410c;
+  --color-type-spike: #0f766e;
+  --color-type-story: #be185d;
+
+  /* Label chips are generated in JS; only their lightness needs to flip. */
+  --label-lightness: 42%;
+}
+
+/*
+ * Label chips get a hue derived from the label text (see labelColor in
+ * lib/label-color.ts) rather than a fixed palette, so two labels are only ever
+ * the same colour by coincidence and the assignment is stable across reloads.
+ */
+@layer components {
+  .label-chip {
+    background: color-mix(in oklab, var(--label-color) 18%, transparent);
+    border: 1px solid color-mix(in oklab, var(--label-color) 45%, transparent);
+    color: var(--label-color);
+  }
+
+  /* The 3px spine down a card's leading edge, coloured by issue type. */
+  .type-spine {
+    box-shadow: inset 3px 0 0 0 var(--type-color);
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.5;
+    /* The panel scrolls its regions, never the document. */
+    overflow: hidden;
+  }
+
+  /* A visible focus ring is non-negotiable — the whole UI is keyboard-reachable. */
+  :focus-visible {
+    outline: 1px solid var(--color-border-strong);
+    outline-offset: 1px;
+    border-radius: var(--radius-sm);
+  }
+
+  button,
+  [role='button'],
+  summary {
+    cursor: pointer;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background, #4d4d4d80);
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground, #64646480);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* Every interactive surface shares one hover/transition contract. */
+  .surface-interactive {
+    transition:
+      background-color 150ms var(--ease-out-quick),
+      border-color 150ms var(--ease-out-quick),
+      box-shadow 150ms var(--ease-out-quick);
+  }
+
+  /*
+   * Card lift on hover. Deliberately shadow + border only, no transform: cards
+   * sit in dense columns and one that moves under the cursor is unusable.
+   */
+  .card-raise:hover {
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.28);
+  }
+
+  /* The card being dragged, and the column it is over. */
+  .drop-target {
+    background-image: repeating-linear-gradient(
+      45deg,
+      color-mix(in oklab, var(--color-border-strong) 8%, transparent) 0 8px,
+      transparent 8px 16px
+    );
+  }
+
+  /* Loading placeholder. Pulses only when the user allows motion. */
+  .skeleton {
+    background: var(--color-surface-hover);
+    border-radius: var(--radius-sm);
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 0.85;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
