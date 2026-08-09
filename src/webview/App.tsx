@@ -5,16 +5,26 @@
  * the whole panel when it is not — same component, no duplicate markup.
  */
 import { AlertCircle, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 
 import type { BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
 import type { StatusCategory } from '../shared/types';
 import { BeadDetail } from './components/bead-detail';
 import { Button, EmptyState, Skeleton } from './components/primitives';
+import { Splitter } from './components/splitter';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import { clamp, DETAIL_DEFAULT_PX, DETAIL_MIN_PX, detailMaxWidth, type Range } from './lib/drag-resize';
 import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
@@ -30,6 +40,8 @@ interface PersistedState {
   roadmapShowClosed?: boolean;
   /** Absent until the user picks a shape; the date range decides until then. */
   roadmapShape?: RoadmapShape;
+  /** Detail-pane width in px. Absent until the user first drags it. */
+  detailWidth?: number;
 }
 
 const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
@@ -49,6 +61,30 @@ export function App(): ReactNode {
   const [collapsedColumns, setCollapsedColumns] = useState(saved?.collapsedColumns);
   const [roadmapShowClosed, setRoadmapShowClosed] = useState(saved?.roadmapShowClosed ?? false);
   const [roadmapShape, setRoadmapShape] = useState(saved?.roadmapShape);
+  const [detailWidth, setDetailWidth] = useState(saved?.detailWidth ?? DETAIL_DEFAULT_PX);
+  const mainRef = useRef<HTMLElement>(null);
+  const [mainWidth, setMainWidth] = useState(0);
+
+  // The maximum is a share of the container, so it moves when the panel does.
+  const detailRange = useMemo<Range>(
+    () => ({ min: DETAIL_MIN_PX, max: detailMaxWidth(mainWidth) }),
+    [mainWidth],
+  );
+
+  useEffect(() => {
+    const node = mainRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => setMainWidth(entry.contentRect.width));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // Re-clamp whenever the container shrinks, not only while dragging: a pane
+  // restored at 900px would otherwise swallow the whole view in a narrow window.
+  useEffect(() => {
+    if (mainWidth === 0) return;
+    setDetailWidth((current) => clamp(current, detailRange));
+  }, [detailRange, mainWidth]);
 
   // Survives the panel being closed and reopened in the same session.
   useEffect(
@@ -59,8 +95,9 @@ export function App(): ReactNode {
         collapsedColumns,
         roadmapShowClosed,
         roadmapShape,
+        detailWidth,
       }),
-    [tab, query, collapsedColumns, roadmapShowClosed, roadmapShape],
+    [tab, query, collapsedColumns, roadmapShowClosed, roadmapShape, detailWidth],
   );
 
   // `beadsDashboard.showClosed` is a *default*, not an override: the first push
@@ -149,7 +186,11 @@ export function App(): ReactNode {
           </div>
         ) : null}
 
-        <main className="flex min-h-0 flex-1">
+        <main
+          ref={mainRef}
+          className="flex min-h-0 flex-1"
+          style={{ '--detail-w': `${detailWidth}px` } as CSSProperties}
+        >
           <div className="min-w-0 flex-1">
             {!snapshot ? (
               loading ? (
@@ -203,21 +244,29 @@ export function App(): ReactNode {
           </div>
 
           {selected ? (
-            <div
-              className={cn(
-                // Narrow: the detail pane covers the content. Wide: it docks.
-                'absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-96 @3xl:shrink-0',
-              )}
-            >
-              <BeadDetail
-                bead={selected}
-                beads={beads}
-                index={index}
-                onClose={() => setFocusedId(undefined)}
-                onSelect={onSelect}
-                refreshKey={snapshot?.fetchedAt}
+            <>
+              {/* Narrow: the pane covers the content, so there is nothing to split. */}
+              <Splitter
+                className="hidden @3xl:block"
+                label="Resize detail panel"
+                size={detailWidth}
+                range={detailRange}
+                // The pane is right of the handle, so dragging right narrows it.
+                sign={-1}
+                onChange={setDetailWidth}
+                onReset={() => setDetailWidth(clamp(DETAIL_DEFAULT_PX, detailRange))}
               />
-            </div>
+              <div className="absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-[var(--detail-w)] @3xl:shrink-0">
+                <BeadDetail
+                  bead={selected}
+                  beads={beads}
+                  index={index}
+                  onClose={() => setFocusedId(undefined)}
+                  onSelect={onSelect}
+                  refreshKey={snapshot?.fetchedAt}
+                />
+              </div>
+            </>
           ) : null}
         </main>
       </div>

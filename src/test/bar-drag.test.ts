@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { ESTIMATE_STEP_MINUTES, endFromDrag, planBarEdit, snapToDay, toDueDate } from '../webview/lib/bar-drag';
+import {
+  commitFor,
+  DRAG_THRESHOLD_PX,
+  ESTIMATE_STEP_MINUTES,
+  endFromDrag,
+  pastDragThreshold,
+  planBarEdit,
+  snapToDay,
+  toDueDate,
+} from '../webview/lib/bar-drag';
 import { DAY, HOUR, MINUTE, type Span, type Timeline } from '../shared/schedule';
 import type { Bead } from '../shared/types';
 
@@ -119,5 +128,40 @@ describe('planBarEdit', () => {
     // A nominal span defaults to end = start + DAY; dragging it to exactly that length is unchanged.
     const s = span({ bead: bead({ id: 'a' }), kind: 'nominal' });
     expect(planBarEdit(s, s.end)).toEqual({ field: 'none', reason: 'unchanged' });
+  });
+});
+
+describe('pastDragThreshold', () => {
+  it('stays false below the 4px threshold', () => {
+    expect(pastDragThreshold(false, 0)).toBe(false);
+    expect(pastDragThreshold(false, DRAG_THRESHOLD_PX - 1)).toBe(false);
+    expect(pastDragThreshold(false, -(DRAG_THRESHOLD_PX - 1))).toBe(false);
+  });
+
+  it('becomes true at exactly the threshold, in either direction', () => {
+    expect(pastDragThreshold(false, DRAG_THRESHOLD_PX)).toBe(true);
+    expect(pastDragThreshold(false, -DRAG_THRESHOLD_PX)).toBe(true);
+  });
+
+  it('stays true once a gesture has moved, even if the pointer eases back', () => {
+    // A gesture that already crossed the threshold must not "un-drag" just
+    // because the pointer drifted back toward its start.
+    expect(pastDragThreshold(true, 0)).toBe(true);
+    expect(pastDragThreshold(true, 1)).toBe(true);
+  });
+});
+
+describe('commitFor', () => {
+  it('produces no payload for a `none` edit, regardless of reason', () => {
+    expect(commitFor({ field: 'none', reason: 'unchanged' })).toBeUndefined();
+    expect(commitFor({ field: 'none', reason: 'closed' })).toBeUndefined();
+  });
+
+  it('passes a real edit through unchanged', () => {
+    const due = { field: 'due', at: NOW + DAY } as const;
+    expect(commitFor(due)).toBe(due);
+
+    const estimate = { field: 'estimate', minutes: 90 } as const;
+    expect(commitFor(estimate)).toBe(estimate);
   });
 });

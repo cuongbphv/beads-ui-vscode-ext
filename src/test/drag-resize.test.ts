@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clamp,
+  DETAIL_MIN_PX,
+  detailMaxWidth,
   keyResize,
   shouldActOnPointerMove,
   sizeFromDrag,
@@ -77,5 +79,26 @@ describe('shouldActOnPointerMove', () => {
     // fires and the browser auto-releases capture while dragging state is stuck.
     // Now user moves mouse without pressing button over the handle.
     expect(shouldActOnPointerMove(true, false)).toBe(false);
+  });
+});
+
+describe('detailMaxWidth', () => {
+  it('calculates max as a share of container width at typical widths', () => {
+    // 600 * 0.7 = 420
+    expect(detailMaxWidth(600)).toBe(420);
+    // 1000 * 0.7 = 700
+    expect(detailMaxWidth(1000)).toBe(700);
+  });
+
+  it('returns min when container is narrower than minimum', () => {
+    // 400 * 0.7 = 280, which is less than min (320), so returns min
+    expect(detailMaxWidth(400)).toBe(DETAIL_MIN_PX);
+    expect(detailMaxWidth(400)).toBe(320);
+  });
+
+  it('returns min when container width is zero', () => {
+    // Prevents inverted range before ResizeObserver fires
+    expect(detailMaxWidth(0)).toBe(DETAIL_MIN_PX);
+    expect(detailMaxWidth(0)).toBe(320);
   });
 });
