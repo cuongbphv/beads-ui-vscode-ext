@@ -11,7 +11,7 @@ import { formatDuration, placement, type Span, type Timeline } from '../../../sh
 import { typeStyle } from '../../../shared/types';
 import { commitFor, endFromDrag, pastDragThreshold, planBarEdit, toDueDate, type BarEdit } from '../../lib/bar-drag';
 import { shouldActOnPointerMove } from '../../lib/drag-resize';
-import { barTitle, previewSpan } from '../../lib/gantt-bar-layout';
+import { barTitle, isEditable, previewSpan } from '../../lib/gantt-bar-layout';
 import { cn } from '../../lib/utils';
 
 export function GanttBar({
@@ -26,8 +26,13 @@ export function GanttBar({
   timeline: Timeline;
   done: boolean;
   onSelect: (id: string) => void;
-  /** Called once on release, and never with a `none` edit. */
-  onCommit: (edit: BarEdit) => void;
+  /**
+   * Called once on release, and never with a `none` edit. Omitting this
+   * (rather than passing a no-op) is how a host says "not editable yet" —
+   * the handle itself does not render without it, so there is nothing for a
+   * user to drag into a silent discard.
+   */
+  onCommit?: (edit: BarEdit) => void;
   /** True between release and the host's next snapshot. */
   pending: boolean;
 }): ReactNode {
@@ -37,8 +42,7 @@ export function GanttBar({
   const drag = useRef({ x: 0, moved: false });
   const [preview, setPreview] = useState<number | undefined>(undefined);
 
-  // A closed bar ends at `closed_at`, which bd does not accept as an argument.
-  const editable = span.kind !== 'actual';
+  const editable = isEditable(span, onCommit !== undefined);
   const shown = previewSpan(span, preview);
   const { left, width } = placement(shown, timeline);
 
@@ -84,7 +88,7 @@ export function GanttBar({
       // `commitFor` maps a `none` decision (unchanged, or a closed issue) to
       // "nothing to send" — this must not spawn a bd subprocess.
       const payload = commitFor(planBarEdit(span, end));
-      if (payload) onCommit(payload);
+      if (payload) onCommit?.(payload);
     },
     [onCommit, preview, span],
   );

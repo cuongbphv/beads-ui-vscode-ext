@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DAY, type Span } from '../shared/schedule';
 import type { Bead } from '../shared/types';
-import { barTitle, previewSpan } from '../webview/lib/gantt-bar-layout';
+import { barTitle, isEditable, previewSpan } from '../webview/lib/gantt-bar-layout';
 
 /**
  * `gantt-bar.tsx` is a `.tsx` module. The root tsconfig (which `npm run
@@ -81,5 +81,24 @@ describe('previewSpan', () => {
     const s = span({ bead: bead({ id: 'a' }), end: NOW + DAY });
     previewSpan(s, NOW + 9 * DAY);
     expect(s.end).toBe(NOW + DAY);
+  });
+});
+
+describe('isEditable', () => {
+  it('is false for a closed span even when a commit handler is wired', () => {
+    expect(isEditable(span({ bead: bead({ id: 'a' }), kind: 'actual' }), true)).toBe(false);
+  });
+
+  it('is false when no commit handler is wired, regardless of kind', () => {
+    // Pins the fix for the drag-and-discard trap: a host that has no real
+    // `onCommit` yet must not offer a handle whose release silently discards.
+    expect(isEditable(span({ bead: bead({ id: 'a' }), kind: 'due' }), false)).toBe(false);
+    expect(isEditable(span({ bead: bead({ id: 'a' }), kind: 'nominal' }), false)).toBe(false);
+  });
+
+  it('is true only for an open span with a commit handler wired', () => {
+    expect(isEditable(span({ bead: bead({ id: 'a' }), kind: 'due' }), true)).toBe(true);
+    expect(isEditable(span({ bead: bead({ id: 'a' }), kind: 'estimated' }), true)).toBe(true);
+    expect(isEditable(span({ bead: bead({ id: 'a' }), kind: 'nominal' }), true)).toBe(true);
   });
 });
