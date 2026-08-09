@@ -11,10 +11,32 @@ import { DAY, MINUTE, type Span, type Timeline } from '../../shared/schedule';
 /** bd stores minutes; a quarter hour is the finest grid a drag can honestly hit. */
 export const ESTIMATE_STEP_MINUTES = 15;
 
+/** Below this a pointer move does not yet mean a drag rather than a click. */
+export const DRAG_THRESHOLD_PX = 4;
+
 export type BarEdit =
   | { field: 'due'; at: number }
   | { field: 'estimate'; minutes: number }
   | { field: 'none'; reason: 'closed' | 'unchanged' };
+
+/**
+ * Whether the pointer has moved far enough, over the course of the current
+ * gesture, to count as a drag rather than a click. `alreadyMoved` is the
+ * caller's memory of the gesture so far: once a gesture crosses the
+ * threshold it must stay "moved" even if the pointer eases back under it.
+ */
+export function pastDragThreshold(alreadyMoved: boolean, deltaPx: number): boolean {
+  return alreadyMoved || Math.abs(deltaPx) >= DRAG_THRESHOLD_PX;
+}
+
+/**
+ * What, if anything, should reach the host's `onCommit`. `planBarEdit`
+ * returning `none` — a drag that landed back where it started, or a closed
+ * issue — must never spawn a bd subprocess, so it maps to no call at all.
+ */
+export function commitFor(edit: BarEdit): BarEdit | undefined {
+  return edit.field === 'none' ? undefined : edit;
+}
 
 /**
  * Where the bar's end lands after its handle moves `deltaPx` across a track

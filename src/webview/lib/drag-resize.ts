@@ -5,6 +5,11 @@
  * user cannot drag back, so the clamping rules are worth testing directly.
  */
 
+/** Matches today's `w-96`, so nothing moves until the user drags. */
+export const DETAIL_DEFAULT_PX = 384;
+export const DETAIL_MIN_PX = 320;
+export const DETAIL_MAX_SHARE = 0.7;
+
 export interface Range {
   min: number;
   max: number;
@@ -22,6 +27,18 @@ export const STEP_LARGE = 64;
 export function clamp(px: number, range: Range): number {
   if (range.max < range.min) return range.min;
   return Math.min(Math.max(Math.round(px), range.min), range.max);
+}
+
+/**
+ * Calculate the maximum width for the detail pane as a share of the container.
+ *
+ * If the container is narrower than the minimum width, returns the minimum
+ * to prevent an inverted range (consistent with `clamp`'s convention).
+ */
+export function detailMaxWidth(containerWidth: number): number {
+  const max = Math.round(containerWidth * DETAIL_MAX_SHARE);
+  // Ensure max >= min to prevent inverted range (consistent with clamp's pattern)
+  return Math.max(max, DETAIL_MIN_PX);
 }
 
 /**
