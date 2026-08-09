@@ -40,3 +40,16 @@ export function barTitle(span: Span): string {
 export function previewSpan(span: Span, preview: number | undefined): Span {
   return preview === undefined ? span : { ...span, end: preview };
 }
+
+/**
+ * Whether the bar should offer its reschedule handle at all.
+ *
+ * A closed issue's end is `closed_at`, which bd will not accept as `--due` or
+ * `--estimate`, so it is never editable. And a handle must not render when
+ * there is no live `onCommit` to receive the result — that would let a user
+ * drag, watch a preview, release, and have it silently discard with nothing
+ * written and no feedback.
+ */
+export function isEditable(span: Span, hasCommitHandler: boolean): boolean {
+  return span.kind !== 'actual' && hasCommitHandler;
+}
