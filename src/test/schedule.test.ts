@@ -9,6 +9,7 @@ import {
   formatDuration,
   placement,
   spanOf,
+  withTickDensity,
 } from '../shared/schedule';
 import type { Bead, EpicGroup } from '../shared/types';
 
@@ -251,6 +252,34 @@ describe('buildTicks density', () => {
     const timeline = windowOf(30);
     expect(timeline.ticks.length).toBeGreaterThan(1);
     expect(timeline.ticks.length).toBeLessThan(20);
+  });
+
+  it('re-ticks an existing timeline without rebuilding a single bar', () => {
+    // The Roadmap needs the window before it can know the density, so it
+    // builds once, measures, then re-ticks. Re-running the whole build for the
+    // second pass walks every epic and every child again on every render.
+    const built = windowOf(30);
+    const rebuilt = buildTimeline(
+      [
+        {
+          epic: bead({ id: 'e', issue_type: 'epic' }),
+          children: [bead({ id: 't', created_at: iso(0), due_at: iso(30 * DAY) })],
+          doneCount: 0,
+          totalCount: 1,
+        },
+      ],
+      () => false,
+      built.now,
+      { pxPerDay: 48 },
+    );
+
+    const reticked = withTickDensity(built, 48);
+
+    expect(reticked.ticks).toEqual(rebuilt.ticks);
+    expect(reticked.epics).toBe(built.epics);
+    expect(reticked.start).toBe(built.start);
+    expect(reticked.end).toBe(built.end);
+    expect(reticked.now).toBe(built.now);
   });
 
   it('selects day-spaced ticks at the "day" zoom density (48px/day)', () => {

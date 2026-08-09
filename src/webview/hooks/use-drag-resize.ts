@@ -16,6 +16,7 @@ export interface DragResizeHandlers {
   onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLostPointerCapture: () => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
 }
 
@@ -75,6 +76,13 @@ export function useDragResize({
     [dragging],
   );
 
+  // Capture can vanish without a `pointercancel` — another element claiming
+  // the pointer, or the platform revoking it. `shouldActOnPointerMove` already
+  // stops a ghost drag from resizing anything, but the handle would stay drawn
+  // as if it were being dragged until the next full gesture. This also fires
+  // after our own release in `pointerup`, where clearing again is a no-op.
+  const onLostPointerCapture = useCallback(() => setDragging(false), []);
+
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
       const next = keyResize(event.key, event.shiftKey, size, range, sign);
@@ -85,5 +93,13 @@ export function useDragResize({
     [onChange, range, sign, size],
   );
 
-  return { dragging, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onKeyDown };
+  return {
+    dragging,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+    onLostPointerCapture,
+    onKeyDown,
+  };
 }

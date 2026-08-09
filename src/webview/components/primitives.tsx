@@ -142,6 +142,40 @@ export function EmptyState({
   );
 }
 
+/**
+ * A compact picker for a band, where there is no room for a visible label.
+ *
+ * Only for choices whose *current value* names the field — `By date`, `Weeks`.
+ * A filter select reading `bug` says nothing about which field it narrows, so
+ * those live in the filter popover with a real `<label>` instead.
+ */
+export function Select({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}): ReactNode {
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="bg-input-bg border-input-border text-fg max-w-40 rounded-md border px-1.5 py-1 text-sm"
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function Button({
   children,
   onClick,

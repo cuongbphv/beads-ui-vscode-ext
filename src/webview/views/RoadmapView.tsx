@@ -5,35 +5,58 @@
  * parent→child hierarchy is a Gantt without inventing any data. List keeps the
  * older card view for when the dates are not the question being asked.
  */
-import { CheckCircle2, GanttChartSquare, List as ListIcon, Map as MapIcon } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { GanttChartSquare, List as ListIcon, Map as MapIcon } from 'lucide-react';
+import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { StatusIndex, filterBeads, groupByEpic, progressOf, type BeadQuery } from '../../shared/model';
-import { sortTimeline } from '../../shared/roadmap-sort';
-import { buildTimeline } from '../../shared/schedule';
+import {
+  ROADMAP_SORTS,
+  sortGroups,
+  sortTimeline,
+  type RoadmapSort,
+} from '../../shared/roadmap-sort';
+import { buildTimeline, withTickDensity } from '../../shared/schedule';
 import { typeStyle, type Bead, type EpicGroup } from '../../shared/types';
 import { BeadCard } from '../components/bead-card';
-import { GanttChart, GanttLegend, hasNoScheduleData } from '../components/gantt';
-import { EmptyState, ProgressBar, TypeIcon } from '../components/primitives';
-import { QuickFilterBar } from '../components/quick-filter-bar';
+import {
+  GanttChart,
+  GanttLegend,
+  hasNoScheduleData,
+  pxPerDayFor,
+  ROADMAP_ZOOMS,
+  type RoadmapZoom,
+} from '../components/gantt';
+import { QuickFilterBar } from '../components/filter-bar';
+import { EmptyState, ProgressBar, Select, TypeIcon } from '../components/primitives';
+import { Splitter } from '../components/splitter';
+import { useScheduleEdit } from '../hooks/use-schedule-edit';
+import { clamp, roadmapGutterRange } from '../lib/drag-resize';
 import { hiddenClosedCount, resolveShape, type RoadmapShape } from '../lib/roadmap-shape';
 import { cn } from '../lib/utils';
 
+const GUTTER_DEFAULT_PX = 224;
+
 /**
- * Placeholder gutter width and pending wiring for `GanttChart`'s frozen-grid props.
- * Task 12 replaces all of this with the resizable splitter, the zoom control and the
- * real `bd`-backed commit handler.
- *
- * Until then, the gutter mirrors the deleted `gantt.tsx`'s fixed `w-44 @xl:w-64` —
- * measured here (rather than hardcoded to one width) because it feeds `GanttChart`'s
- * pixel-based track-width math, so the JS number and the rendered width must agree;
- * a plain CSS override on `GUTTER_CLASS` could not do that without also going stale
- * the moment Task 12 makes `gutter` a real, user-resized value.
+ * Wording only. The values themselves come from `ROADMAP_SORTS` and
+ * `ROADMAP_ZOOMS`, so a picker cannot offer a choice the restore-time
+ * validator rejects — or hide one it accepts. `Record` keyed by the union
+ * means adding a member without a label fails the typecheck.
  */
-const GUTTER_NARROW_PX = 176; // old `w-44`
-const GUTTER_WIDE_PX = 256; // old `@xl:w-64`
-const GUTTER_WIDE_AT_PX = 576; // Tailwind's default `@xl` container-query threshold (36rem)
-const NO_PENDING: ReadonlySet<string> = new Set();
+const SORT_LABELS: Record<RoadmapSort, string> = {
+  timeline: 'By date',
+  priority: 'By priority',
+  type: 'By type',
+};
+
+const ZOOM_LABELS: Record<RoadmapZoom, string> = {
+  fit: 'Fit',
+  day: 'Days',
+  week: 'Weeks',
+  month: 'Months',
+};
+
+const SORT_OPTIONS = ROADMAP_SORTS.map((value) => ({ value, label: SORT_LABELS[value] }));
+const ZOOM_OPTIONS = ROADMAP_ZOOMS.map((value) => ({ value, label: ZOOM_LABELS[value] }));
 
 export function RoadmapView({
   beads,
@@ -47,6 +70,12 @@ export function RoadmapView({
   onShowClosedChange,
   shape: chosenShape,
   onShapeChange,
+  sort,
+  onSortChange,
+  zoom,
+  onZoomChange,
+  gutter,
+  onGutterChange,
 }: {
   beads: Bead[];
   index: StatusIndex;
@@ -65,8 +94,15 @@ export function RoadmapView({
   /** `undefined` until the user picks one; the date range decides until then. */
   shape?: RoadmapShape;
   onShapeChange: (next: RoadmapShape) => void;
+  sort: RoadmapSort;
+  onSortChange: (next: RoadmapSort) => void;
+  zoom: RoadmapZoom;
+  onZoomChange: (next: RoadmapZoom) => void;
+  gutter: number;
+  onGutterChange: (next: number) => void;
 }): ReactNode {
   const epics = useMemo(() => beads.filter((bead) => bead.issue_type === 'epic'), [beads]);
+  const { pending, commit } = useScheduleEdit();
 
   // Everything in the filter bar is shared with the other tabs except the
   // closed toggle, which this tab answers for itself.
@@ -103,11 +139,42 @@ export function RoadmapView({
       });
   }, [beads, roadmapQuery, index]);
 
+  // Measured by the chart, fed back so the tick density matches what is drawn.
+  const [trackPx, setTrackPx] = useState(0);
+
+  // The gutter's maximum is a share of the pane, so it has to follow the pane —
+  // and the pane only exists in the timeline shape. A mount-time effect finds a
+  // null ref on a list-first render and never runs again, freezing the range at
+  // its unmeasured fallback for the rest of the session, so the observer is
+  // attached and detached by the ref itself instead.
+  const observer = useRef<ResizeObserver>(undefined);
+  const [viewportPx, setViewportPx] = useState(0);
+
+  const paneRef = useCallback((node: HTMLDivElement | null) => {
+    observer.current?.disconnect();
+    observer.current = undefined;
+    if (!node) return;
+    // The last measurement is kept rather than zeroed: the shape can flip back
+    // to the same pane at the same width, and a real ResizeObserver reports
+    // that width immediately on observe, so nothing is left stale for a frame.
+    const next = new ResizeObserver(([entry]) => setViewportPx(entry.contentRect.width));
+    next.observe(node);
+    observer.current = next;
+  }, []);
+
   // One clock reading per render, so every bar agrees on where "today" is.
+  // Built once and re-ticked: the density needs the window, but the bars do not
+  // need the density, so a second full build would only redo work.
   const timeline = useMemo(() => {
     const built = buildTimeline(groups, (bead) => index.isDone(bead.status), Date.now());
-    return { ...built, epics: sortTimeline(built.epics, 'timeline') };
-  }, [groups, index]);
+    const pxPerDay = pxPerDayFor(zoom, trackPx, built.end - built.start);
+    const withTicks = withTickDensity(built, pxPerDay);
+    return { ...withTicks, epics: sortTimeline(withTicks.epics, sort) };
+  }, [groups, index, sort, trackPx, zoom]);
+
+  const listGroups = useMemo(() => sortGroups(groups, sort), [groups, sort]);
+
+  const gutterRange = useMemo(() => roadmapGutterRange(viewportPx), [viewportPx]);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggle = (id: string): void =>
@@ -118,69 +185,64 @@ export function RoadmapView({
       return next;
     });
 
+  const onTrackWidth = useCallback((px: number) => setTrackPx(px), []);
+
   const undated = hasNoScheduleData(beads);
   const shape = resolveShape(chosenShape, timeline);
 
-  // Mirrors the `@xl` container-query breakpoint the deleted `gantt.tsx` used
-  // for its gutter, measured on the same element that carries `@container` so
-  // the threshold means the same thing it always did.
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [wideContainer, setWideContainer] = useState(false);
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setWideContainer(entry.contentRect.width >= GUTTER_WIDE_AT_PX),
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-  const gutter = wideContainer ? GUTTER_WIDE_PX : GUTTER_NARROW_PX;
-
   return (
-    <div ref={containerRef} className="@container flex h-full min-h-0 flex-col">
-      <div className="border-border flex flex-wrap items-center gap-2 border-b px-3 py-2">
-        <div className="min-w-0 flex-1">
-          <QuickFilterBar
-            beads={beads}
-            epics={epics}
-            query={roadmapQuery}
-            onChange={(next) => {
-              // The closed toggle belongs to this tab; everything else is shared.
-              onShowClosedChange(next.includeClosed ?? false);
-              onQueryChange({ ...next, includeClosed: query.includeClosed });
-            }}
-          />
-        </div>
-        <div role="group" aria-label="Roadmap shape" className="flex shrink-0 gap-1">
-          <ShapeButton
-            active={shape === 'timeline'}
-            onClick={() => onShapeChange('timeline')}
-            icon={<GanttChartSquare aria-hidden="true" className="size-3.5" />}
-            label="Timeline"
-          />
-          <ShapeButton
-            active={shape === 'list'}
-            onClick={() => onShapeChange('list')}
-            icon={<ListIcon aria-hidden="true" className="size-3.5" />}
-            label="List"
-          />
-        </div>
-      </div>
+    <div className="@container flex h-full min-h-0 flex-col">
+      {/* Two zones, one band: the search box and the Filters button narrow the
+          data, the pickers past the separator draw it. The closed-hidden count
+          is not a control of this tab's own any more — it belongs with the
+          chips, where everything the query is hiding is listed together. */}
+      <div className="border-border border-b px-3 py-2">
+        <QuickFilterBar
+          beads={beads}
+          epics={epics}
+          query={roadmapQuery}
+          hiddenClosedCount={hiddenClosed}
+          onChange={(next) => {
+            // The closed toggle belongs to this tab; everything else is shared.
+            onShowClosedChange(next.includeClosed ?? false);
+            onQueryChange({ ...next, includeClosed: query.includeClosed });
+          }}
+          trailing={
+            <>
+              <Select
+                label="Sort"
+                value={sort}
+                onChange={(value) => onSortChange(value as RoadmapSort)}
+                options={SORT_OPTIONS}
+              />
 
-      {/* Never a silent filter: the count is on screen and is the control. */}
-      {hiddenClosed > 0 ? (
-        <div className="border-border border-b px-3 py-1.5">
-          <button
-            type="button"
-            onClick={() => onShowClosedChange(true)}
-            className="text-fg-muted hover:bg-surface-hover hover:text-fg border-border surface-interactive inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
-          >
-            <CheckCircle2 aria-hidden="true" className="size-3" />
-            {hiddenClosed} closed hidden — show
-          </button>
-        </div>
-      ) : null}
+              {shape === 'timeline' ? (
+                <Select
+                  label="Zoom"
+                  value={zoom}
+                  onChange={(value) => onZoomChange(value as RoadmapZoom)}
+                  options={ZOOM_OPTIONS}
+                />
+              ) : null}
+
+              <div role="group" aria-label="Roadmap shape" className="flex gap-1">
+                <ShapeButton
+                  active={shape === 'timeline'}
+                  onClick={() => onShapeChange('timeline')}
+                  icon={<GanttChartSquare aria-hidden="true" className="size-3.5" />}
+                  label="Timeline"
+                />
+                <ShapeButton
+                  active={shape === 'list'}
+                  onClick={() => onShapeChange('list')}
+                  icon={<ListIcon aria-hidden="true" className="size-3.5" />}
+                  label="List"
+                />
+              </div>
+            </>
+          }
+        />
+      </div>
 
       {groups.length === 0 ? (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
@@ -191,42 +253,50 @@ export function RoadmapView({
           />
         </div>
       ) : shape === 'timeline' ? (
-        /*
-         * `GanttChart`'s own div is the *only* scroll container in this shape —
-         * this wrapper is a plain flex column, unpadded and non-scrolling, so
-         * sticky pinning inside `GanttChart` binds to the div that actually
-         * scrolls. A padded or `overflow-auto` wrapper here would leave the
-         * old sliver bug in a new shape: `sticky` pins below the padding, and
-         * that much scrolled content shows above the header again.
-         */
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div ref={paneRef} className="flex min-h-0 flex-1 flex-col">
           {undated ? (
-            <p className="text-fg-muted border-border mx-3 mt-2 mb-2 rounded-md border border-dashed px-2 py-1.5 text-xs">
+            <p className="text-fg-muted border-border mx-3 mt-2 rounded-md border border-dashed px-2 py-1.5 text-xs">
               No issue carries a due date or an estimate yet, so every bar is a nominal one-day
               block. Add them with <code>bd update &lt;id&gt; --due 2026-09-01 --estimate 120</code>.
             </p>
           ) : null}
-          <GanttChart
-            timeline={timeline}
-            index={index}
-            collapsed={collapsed}
-            onToggle={toggle}
-            onSelect={onSelect}
-            selectedId={selectedId}
-            blockedIds={blockedIds}
-            gutter={gutter}
-            zoom="fit"
-            onTrackWidth={() => {}}
-            pendingIds={NO_PENDING}
-          />
-          <div className="px-3 py-2">
+
+          <div className="relative flex min-h-0 flex-1">
+            <GanttChart
+              timeline={timeline}
+              index={index}
+              collapsed={collapsed}
+              onToggle={toggle}
+              onSelect={onSelect}
+              selectedId={selectedId}
+              blockedIds={blockedIds}
+              gutter={clamp(gutter, gutterRange)}
+              zoom={zoom}
+              onTrackWidth={onTrackWidth}
+              onCommit={commit}
+              pendingIds={pending}
+            />
+            {/* Absolutely placed over the grid, so it does not become a third
+                column the sticky gutter would have to account for. */}
+            <Splitter
+              className="absolute inset-y-0 z-40"
+              style={{ left: `calc(${clamp(gutter, gutterRange)}px - 3px)` }}
+              label="Resize the task name column"
+              size={clamp(gutter, gutterRange)}
+              range={gutterRange}
+              onChange={onGutterChange}
+              onReset={() => onGutterChange(clamp(GUTTER_DEFAULT_PX, gutterRange))}
+            />
+          </div>
+
+          <div className="border-border border-t px-3 py-1.5">
             <GanttLegend />
           </div>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
           <ul className="grid gap-2 py-1">
-            {groups.map((group) => (
+            {listGroups.map((group) => (
               <EpicRow
                 key={group.epic.id}
                 group={group}

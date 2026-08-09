@@ -1,8 +1,8 @@
 {
   "name": "beads-dashboard",
   "displayName": "Beads Dashboard — Kanban & Roadmap",
-  "description": "Velox-style dashboard for the beads (bd) issue tracker: Overview, Roadmap and Kanban board, plus an Epic → Task sidebar.",
-  "version": "0.1.1",
+  "description": "Dashboard for the beads (bd) issue tracker: Overview, Roadmap and Kanban board, plus an Epic → Task sidebar.",
+  "version": "0.1.2",
   "publisher": "cuongbphv",
   "license": "MIT",
   "author": "Bùi Phan Viết Cường",
@@ -366,6 +366,7 @@
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
+    "jsdom": "^29.1.1",
     "playwright": "^1.62.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",

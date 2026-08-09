@@ -9,6 +9,8 @@
 export const DETAIL_DEFAULT_PX = 384;
 export const DETAIL_MIN_PX = 320;
 export const DETAIL_MAX_SHARE = 0.7;
+export const ROADMAP_GUTTER_MIN_PX = 120;
+export const ROADMAP_GUTTER_MAX_SHARE = 0.6;
 
 export interface Range {
   min: number;
@@ -39,6 +41,17 @@ export function detailMaxWidth(containerWidth: number): number {
   const max = Math.round(containerWidth * DETAIL_MAX_SHARE);
   // Ensure max >= min to prevent inverted range (consistent with clamp's pattern)
   return Math.max(max, DETAIL_MIN_PX);
+}
+
+/** A valid gutter range before and after the Roadmap pane is measured. */
+export function roadmapGutterRange(containerWidth: number): Range {
+  return {
+    min: ROADMAP_GUTTER_MIN_PX,
+    max: Math.max(
+      Math.round(containerWidth * ROADMAP_GUTTER_MAX_SHARE),
+      ROADMAP_GUTTER_MIN_PX,
+    ),
+  };
 }
 
 /**

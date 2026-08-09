@@ -38,7 +38,7 @@ import type { Bead, BoardColumn, StatusCategory } from '../../shared/types';
 import { asRpcError, call } from '../bridge/rpc';
 import { BeadCard } from '../components/bead-card';
 import { EmptyState } from '../components/primitives';
-import { QuickFilterBar } from '../components/quick-filter-bar';
+import { QuickFilterBar } from '../components/filter-bar';
 import { useToast } from '../components/toast';
 import {
   CATEGORY_EMPTY_TEXT,

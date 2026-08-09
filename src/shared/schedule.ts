@@ -254,6 +254,18 @@ export function buildTimeline(
   return { epics, start, end, now, ticks: buildTicks(start, end, opts?.pxPerDay) };
 }
 
+/**
+ * The same timeline with its gridlines redrawn at a measured density.
+ *
+ * Tick spacing depends on how wide a day is on screen, and that cannot be known
+ * until the window is: the caller has to build, measure, then re-tick. Only the
+ * gridlines change, so the bars are reused rather than recomputed — a second
+ * full build would walk every epic and every child again on every render.
+ */
+export function withTickDensity(timeline: Timeline, pxPerDay: number): Timeline {
+  return { ...timeline, ticks: buildTicks(timeline.start, timeline.end, pxPerDay) };
+}
+
 /** A bar's position within the window, as percentages. */
 export function placement(span: { start: number; end: number }, timeline: Timeline): {
   left: number;

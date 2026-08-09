@@ -222,6 +222,24 @@
     );
   }
 
+  /*
+   * A popover arriving. Short and opacity-only: the panel is anchored under
+   * its trigger, so it needs to read as "this belongs to that button", not as
+   * a thing that flew in. The reduced-motion block below collapses it.
+   */
+  .popover-panel {
+    animation: popover-in 120ms var(--ease-out-quick);
+  }
+
+  @keyframes popover-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
   /* Loading placeholder. Pulses only when the user allows motion. */
   .skeleton {
     background: var(--color-surface-hover);

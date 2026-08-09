@@ -4,9 +4,13 @@ import {
   commitFor,
   DRAG_THRESHOLD_PX,
   ESTIMATE_STEP_MINUTES,
+  RESCHEDULE_STEPS,
+  editFieldFor,
   endFromDrag,
+  keyReschedule,
   pastDragThreshold,
   planBarEdit,
+  rescheduleRange,
   snapToDay,
   toDueDate,
 } from '../webview/lib/bar-drag';
@@ -17,6 +21,10 @@ const NOW = Date.parse('2026-08-04T12:00:00Z');
 
 function bead(partial: Partial<Bead> & Pick<Bead, 'id'>): Bead {
   return { title: partial.id, status: 'open', priority: 2, issue_type: 'task', ...partial };
+}
+
+function iso(at: number): string {
+  return new Date(at).toISOString();
 }
 
 function span(partial: Partial<Span> & { bead: Bead }): Span {
@@ -54,6 +62,99 @@ describe('endFromDrag', () => {
   it('returns the current end when the track has not been measured', () => {
     const s = span({ bead: bead({ id: 'a' }) });
     expect(endFromDrag(s, 400, 0, timeline)).toBe(s.end);
+  });
+
+  it('never lets the end run past the window the chart draws', () => {
+    // An unclamped preview is a bar wider than its own track: `placement`
+    // turns it into a width above 100% and the row overflows the chart.
+    const s = span({ bead: bead({ id: 'a' }) });
+    expect(endFromDrag(s, 100_000, 1000, timeline)).toBe(timeline.end);
+  });
+});
+
+describe('rescheduleRange', () => {
+  it('runs from a minute after the bar starts to the end of the window', () => {
+    const s = span({ bead: bead({ id: 'a' }) });
+    expect(rescheduleRange(s, timeline)).toEqual({ min: NOW + MINUTE, max: NOW + 10 * DAY });
+  });
+
+  it('collapses rather than inverting when the bar starts past the window', () => {
+    // A padded window always contains its bars, but the range is also the
+    // slider's advertised ARIA bounds — `min > max` there is invalid markup.
+    const s = span({ bead: bead({ id: 'a' }), start: NOW + 20 * DAY, end: NOW + 21 * DAY });
+    const range = rescheduleRange(s, timeline);
+
+    expect(range.min).toBe(NOW + 20 * DAY + MINUTE);
+    expect(range.max).toBe(range.min);
+  });
+});
+
+describe('editFieldFor', () => {
+  it('reports the field `planBarEdit` would write for this bar', () => {
+    expect(editFieldFor(span({ bead: bead({ id: 'a', due_at: iso(NOW) }) }))).toBe('due');
+    expect(editFieldFor(span({ bead: bead({ id: 'a', estimated_minutes: 60 }) }))).toBe('estimate');
+    expect(editFieldFor(span({ bead: bead({ id: 'a' }) }))).toBe('estimate');
+  });
+});
+
+describe('keyReschedule', () => {
+  // Started before the window opens, so a leftward nudge is bounded by the
+  // window rather than by the bar's own start.
+  const dueSpan = span({
+    bead: bead({ id: 'a', due_at: iso(NOW + DAY) }),
+    start: NOW - 5 * DAY,
+    end: NOW + DAY,
+    kind: 'due',
+  });
+  const estimateSpan = span({
+    bead: bead({ id: 'b', estimated_minutes: 480 }),
+    end: NOW + 8 * HOUR,
+    kind: 'estimated',
+  });
+
+  it('nudges a due-backed bar by a calendar day, and by a week with Shift', () => {
+    // bd's `--due` takes a calendar date, so anything finer than a day is
+    // thrown away by `snapToDay` and the bar would never appear to move.
+    expect(keyReschedule('ArrowRight', false, dueSpan.end, dueSpan, timeline)).toBe(NOW + 2 * DAY);
+    expect(keyReschedule('ArrowLeft', false, dueSpan.end, dueSpan, timeline)).toBe(NOW);
+    expect(keyReschedule('ArrowRight', true, dueSpan.end, dueSpan, timeline)).toBe(NOW + 8 * DAY);
+  });
+
+  it('nudges an estimate-backed bar by an hour, and by a working day with Shift', () => {
+    expect(keyReschedule('ArrowRight', false, estimateSpan.end, estimateSpan, timeline)).toBe(
+      NOW + 9 * HOUR,
+    );
+    expect(keyReschedule('ArrowRight', true, estimateSpan.end, estimateSpan, timeline)).toBe(
+      NOW + 16 * HOUR,
+    );
+  });
+
+  it('matches the documented steps rather than a second copy of them', () => {
+    expect(RESCHEDULE_STEPS.due).toEqual({ step: DAY, large: 7 * DAY });
+    expect(RESCHEDULE_STEPS.estimate).toEqual({ step: HOUR, large: 8 * HOUR });
+  });
+
+  it('treats the vertical arrows as the horizontal ones', () => {
+    expect(keyReschedule('ArrowUp', false, dueSpan.end, dueSpan, timeline)).toBe(NOW + 2 * DAY);
+    expect(keyReschedule('ArrowDown', false, dueSpan.end, dueSpan, timeline)).toBe(NOW);
+  });
+
+  it('jumps to the ends of the reschedule range on Home and End', () => {
+    expect(keyReschedule('Home', false, dueSpan.end, dueSpan, timeline)).toBe(NOW);
+    expect(keyReschedule('End', false, dueSpan.end, dueSpan, timeline)).toBe(NOW + 10 * DAY);
+  });
+
+  it('clamps a nudge to the same window a drag is clamped to', () => {
+    // Keyboard and pointer must not disagree about where a bar may end.
+    const late = span({ bead: bead({ id: 'a', due_at: iso(NOW + 10 * DAY) }), end: NOW + 10 * DAY });
+    expect(keyReschedule('ArrowRight', true, late.end, late, timeline)).toBe(timeline.end);
+    expect(keyReschedule('ArrowLeft', true, NOW + HOUR, late, timeline)).toBe(NOW + MINUTE);
+  });
+
+  it('returns undefined for keys it does not own', () => {
+    expect(keyReschedule('Enter', false, dueSpan.end, dueSpan, timeline)).toBeUndefined();
+    expect(keyReschedule('Escape', false, dueSpan.end, dueSpan, timeline)).toBeUndefined();
+    expect(keyReschedule('a', false, dueSpan.end, dueSpan, timeline)).toBeUndefined();
   });
 });
 
@@ -98,6 +199,36 @@ describe('planBarEdit', () => {
   it('does nothing when the drag lands on the same calendar day', () => {
     const due = new Date(2026, 7, 8).getTime();
     const s = span({ bead: bead({ id: 'a', due_at: new Date(due).toISOString() }), end: due, kind: 'due' });
+
+    expect(planBarEdit(s, due + 2 * HOUR)).toEqual({ field: 'none', reason: 'unchanged' });
+  });
+
+  it('measures "unchanged" against the stored due date, not the clamped bar end', () => {
+    // A due date that precedes the bar's start is drawn as a one-hour stub at
+    // the start (`spanOf` refuses a backwards bar), so `span.end` says nothing
+    // about what bd holds. Comparing against it swallows a real move and
+    // reports a genuine no-op as a change.
+    const start = new Date(2026, 7, 10).getTime();
+    const due = new Date(2026, 7, 1).getTime();
+    const s = span({
+      bead: bead({ id: 'a', due_at: new Date(due).toISOString() }),
+      start,
+      end: start + HOUR,
+      kind: 'due',
+    });
+
+    expect(planBarEdit(s, start + 2 * HOUR)).toEqual({ field: 'due', at: start });
+    expect(planBarEdit(s, due + HOUR)).toEqual({ field: 'none', reason: 'unchanged' });
+  });
+
+  it('falls back to the drawn end when bd sent a due date it cannot parse', () => {
+    const due = new Date(2026, 7, 8).getTime();
+    const s = span({
+      bead: bead({ id: 'a', due_at: 'not-a-date' }),
+      start: due - DAY,
+      end: due,
+      kind: 'due',
+    });
 
     expect(planBarEdit(s, due + 2 * HOUR)).toEqual({ field: 'none', reason: 'unchanged' });
   });

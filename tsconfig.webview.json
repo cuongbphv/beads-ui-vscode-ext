@@ -21,5 +21,10 @@
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src/webview/**/*.ts", "src/webview/**/*.tsx", "src/shared/**/*.ts"]
+  "include": [
+    "src/webview/**/*.ts",
+    "src/webview/**/*.tsx",
+    "src/shared/**/*.ts",
+    "src/test/**/*.test.tsx"
+  ]
 }

@@ -5,18 +5,15 @@ import type { Bead } from '../shared/types';
 import { barTitle, isEditable, previewSpan } from '../webview/lib/gantt-bar-layout';
 
 /**
- * `gantt-bar.tsx` is a `.tsx` module. The root tsconfig (which `npm run
- * typecheck` also runs) has no `--jsx` and no DOM lib, and `vitest.config.mts`
- * only picks up `src/test/**\/*.test.ts` — so a `.tsx` file can never be
- * statically imported here, and there is no honest way to import it
- * dynamically either (an untyped, non-literal `import()` would check nothing
- * about the real component's prop shape). `barTitle` and `previewSpan` are
- * therefore pure, DOM-free logic extracted to `../webview/lib/gantt-bar-layout`
- * — the same split `gantt-axis.tsx` uses for `gantt-axis-layout.ts` — so they
- * can be exercised directly instead. `gantt-bar.tsx` itself is left as JSX and
- * pointer wiring only, covered by the Playwright `test:webview` end-to-end
- * check rather than a unit test, the same as `gantt-axis.tsx`'s `GanttAxis`
- * and `GanttGrid`.
+ * The bar's pure display decisions.
+ *
+ * This file is a `.ts` suite compiled by the root tsconfig, which has no
+ * `--jsx` and no DOM lib, so `gantt-bar.tsx` cannot be imported here. That is
+ * the reason `barTitle`, `previewSpan` and `isEditable` live in
+ * `../webview/lib/gantt-bar-layout` — the same split `gantt-axis.tsx` uses for
+ * `gantt-axis-layout.ts`. The component's own behaviour (the drag, the
+ * keyboard edit, the capture handling) is exercised against the real thing in
+ * `gantt-bar-interaction.test.tsx`, which the webview tsconfig owns.
  */
 const NOW = Date.parse('2026-08-04T12:00:00Z');
 
