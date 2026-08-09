@@ -6,7 +6,7 @@
  * issue already carries. All of that decision lives here, pure, because the
  * failure mode is writing the wrong date into someone's tracker.
  */
-import { DAY, MINUTE, type Span, type Timeline } from '../../shared/schedule';
+import { DAY, HOUR, MINUTE, type Span, type Timeline } from '../../shared/schedule';
 
 /** bd stores minutes; a quarter hour is the finest grid a drag can honestly hit. */
 export const ESTIMATE_STEP_MINUTES = 15;
@@ -39,6 +39,25 @@ export function commitFor(edit: BarEdit): BarEdit | undefined {
 }
 
 /**
+ * The window a bar's end may be moved within, by pointer or by keyboard.
+ *
+ * The floor keeps a bar from folding through its own start; the ceiling is the
+ * chart's own window, because `placement` sizes a bar as a percentage of that
+ * window — an end beyond it is a bar wider than the track it is drawn in.
+ *
+ * `max` is held at or above `min` so the slider's ARIA bounds stay valid even
+ * for a bar that somehow starts after the window ends.
+ */
+export function rescheduleRange(span: Span, timeline: Timeline): { min: number; max: number } {
+  const min = Math.max(timeline.start, span.start + MINUTE);
+  return { min, max: Math.max(timeline.end, min) };
+}
+
+function clampEnd(at: number, range: { min: number; max: number }): number {
+  return Math.min(Math.max(at, range.min), range.max);
+}
+
+/**
  * Where the bar's end lands after its handle moves `deltaPx` across a track
  * `trackPx` wide. `trackPx` of 0 means nothing has been measured yet.
  */
@@ -50,7 +69,73 @@ export function endFromDrag(
 ): number {
   if (trackPx <= 0) return span.end;
   const msPerPx = (timeline.end - timeline.start) / trackPx;
-  return Math.max(span.start + MINUTE, span.end + deltaPx * msPerPx);
+  return clampEnd(span.end + deltaPx * msPerPx, rescheduleRange(span, timeline));
+}
+
+/** Which bd field this bar's end writes back to. `planBarEdit` takes the same branch. */
+export function editFieldFor(span: Span): 'due' | 'estimate' {
+  return span.bead.due_at ? 'due' : 'estimate';
+}
+
+/**
+ * The due date bd actually holds.
+ *
+ * Not `span.end`: `spanOf` refuses a backwards bar, so a due date earlier than
+ * the bar's start is drawn as a one-hour stub at the start. Falls back to the
+ * drawn end when there is no due date, or bd sent one that will not parse.
+ */
+export function currentDueAt(span: Span): number {
+  const stored = span.bead.due_at ? Date.parse(span.bead.due_at) : Number.NaN;
+  return Number.isNaN(stored) ? span.end : stored;
+}
+
+/**
+ * How far one arrow key moves a bar's end, per field.
+ *
+ * A due-backed bar writes `bd update --due`, which takes a calendar date, so
+ * anything finer than a day is discarded by `snapToDay` and the bar would sit
+ * still however long the key was held; Shift is a week. An estimate-backed bar
+ * writes minutes, so an hour is the coarsest step that still lands on the
+ * 15-minute grid, and Shift is an eight-hour working day — the same day
+ * `formatDuration` renders.
+ */
+export const RESCHEDULE_STEPS: Record<'due' | 'estimate', { step: number; large: number }> = {
+  due: { step: DAY, large: 7 * DAY },
+  estimate: { step: HOUR, large: 8 * HOUR },
+};
+
+/**
+ * A keyboard nudge of the bar's end. `undefined` means the key is not ours —
+ * leave the event alone.
+ *
+ * `current` is what the handle is showing, which during a keyboard edit is the
+ * uncommitted preview rather than `span.end`, so repeated presses accumulate.
+ */
+export function keyReschedule(
+  key: string,
+  shift: boolean,
+  current: number,
+  span: Span,
+  timeline: Timeline,
+): number | undefined {
+  const range = rescheduleRange(span, timeline);
+  const { step, large } = RESCHEDULE_STEPS[editFieldFor(span)];
+  const delta = shift ? large : step;
+
+  switch (key) {
+    case 'ArrowRight':
+    case 'ArrowUp':
+      return clampEnd(current + delta, range);
+    case 'ArrowLeft':
+    case 'ArrowDown':
+      return clampEnd(current - delta, range);
+    case 'Home':
+      return range.min;
+    case 'End':
+      return range.max;
+    default:
+      return undefined;
+  }
 }
 
 /** The nearer local midnight — bd's `--due` takes a calendar date, not a time. */
@@ -98,7 +183,11 @@ export function planBarEdit(span: Span, newEnd: number): BarEdit {
 
   if (span.bead.due_at) {
     const at = snapToDay(newEnd);
-    if (toDueDate(at) === toDueDate(span.end)) return { field: 'none', reason: 'unchanged' };
+    // Against what bd holds, never against the drawn end, or a real move is
+    // swallowed as "unchanged" and a genuine no-op is reported as a change.
+    if (toDueDate(at) === toDueDate(currentDueAt(span))) {
+      return { field: 'none', reason: 'unchanged' };
+    }
     return { field: 'due', at };
   }
 

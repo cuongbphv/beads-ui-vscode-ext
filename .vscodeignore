@@ -5,6 +5,8 @@
 .agents/**
 .claude/**
 .codex/**
+.cursor/**
+.superpowers/**
 .github/**
 .vscode/**
 design-system/**

@@ -5,11 +5,28 @@
  * draggable and clickable would swallow the selection. Only the right edge is
  * draggable, because beads has no `--start` to write a left edge back to.
  */
-import { useCallback, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 
 import { formatDuration, placement, type Span, type Timeline } from '../../../shared/schedule';
 import { typeStyle } from '../../../shared/types';
-import { commitFor, endFromDrag, pastDragThreshold, planBarEdit, toDueDate, type BarEdit } from '../../lib/bar-drag';
+import {
+  commitFor,
+  endFromDrag,
+  keyReschedule,
+  pastDragThreshold,
+  planBarEdit,
+  rescheduleRange,
+  toDueDate,
+  type BarEdit,
+} from '../../lib/bar-drag';
 import { shouldActOnPointerMove } from '../../lib/drag-resize';
 import { barTitle, isEditable, previewSpan } from '../../lib/gantt-bar-layout';
 import { cn } from '../../lib/utils';
@@ -33,7 +50,7 @@ export function GanttBar({
    * user to drag into a silent discard.
    */
   onCommit?: (edit: BarEdit) => void;
-  /** True between release and the host's next snapshot. */
+  /** True while this bead has a write in flight, from release until bd answers. */
   pending: boolean;
 }): ReactNode {
   const bead = span.bead;
@@ -45,6 +62,19 @@ export function GanttBar({
   const editable = isEditable(span, onCommit !== undefined);
   const shown = previewSpan(span, preview);
   const { left, width } = placement(shown, timeline);
+  const range = rescheduleRange(span, timeline);
+
+  // `commitFor` maps a `none` decision (unchanged, or a closed issue) to
+  // "nothing to send" — this must not spawn a bd subprocess. Both the pointer
+  // and the keyboard land here, so the two cannot drift apart about what a
+  // given end means.
+  const commitEnd = useCallback(
+    (end: number) => {
+      const payload = commitFor(planBarEdit(span, end));
+      if (payload) onCommit?.(payload);
+    },
+    [onCommit, span],
+  );
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
@@ -84,13 +114,9 @@ export function GanttBar({
       const end = preview;
       setPreview(undefined);
       if (!moved) return;
-
-      // `commitFor` maps a `none` decision (unchanged, or a closed issue) to
-      // "nothing to send" — this must not spawn a bd subprocess.
-      const payload = commitFor(planBarEdit(span, end));
-      if (payload) onCommit?.(payload);
+      commitEnd(end);
     },
-    [onCommit, preview, span],
+    [commitEnd, preview],
   );
 
   // The browser cancels a pointer gesture on window blur, alt-tab, or a
@@ -107,6 +133,47 @@ export function GanttBar({
     },
     [preview],
   );
+
+  // Capture can also be lost with no `pointercancel` at all — another element
+  // claiming the pointer, or the platform revoking it. This fires after our
+  // own release in `pointerup` too, which is why it only ever clears: the
+  // commit has already happened by then, and re-running it would double-write.
+  const onLostPointerCapture = useCallback(() => setPreview(undefined), []);
+
+  /**
+   * Keyboard editing, so the handle is not a mouse-only control wearing a
+   * `role="slider"`.
+   *
+   * Arrows move a preview and Enter writes it, rather than committing on every
+   * keystroke: each commit is a bd subprocess and a toast, and holding a key
+   * would queue a dozen writes for one intended change. Escape and losing
+   * focus both abandon the edit, so a preview can never outlive the gesture.
+   */
+  const onKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>) => {
+      const next = keyReschedule(event.key, event.shiftKey, preview ?? span.end, span, timeline);
+      if (next !== undefined) {
+        event.preventDefault();
+        setPreview(next);
+        return;
+      }
+
+      if (preview === undefined) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        setPreview(undefined);
+        commitEnd(preview);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setPreview(undefined);
+      }
+    },
+    [commitEnd, preview, span, timeline],
+  );
+
+  const onBlur = useCallback(() => setPreview(undefined), []);
 
   return (
     <div ref={trackRef} className="relative h-7 min-w-0 flex-1">
@@ -142,13 +209,21 @@ export function GanttBar({
         <span
           role="slider"
           aria-label={`Reschedule ${bead.id}`}
+          // Seconds, not milliseconds: assistive technology reads the number
+          // out, and the bounds have to be in whatever unit `aria-valuenow` is.
+          aria-valuemin={Math.round(range.min / 1000)}
+          aria-valuemax={Math.round(range.max / 1000)}
           aria-valuenow={Math.round(shown.end / 1000)}
           aria-valuetext={toDueDate(shown.end)}
+          title={`Reschedule ${bead.id} — drag, or use the arrow keys and press Enter`}
           tabIndex={0}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
+          onLostPointerCapture={onLostPointerCapture}
+          onKeyDown={onKeyDown}
+          onBlur={onBlur}
           className={cn(
             // Invisible until the row is hovered or the handle is focused: a
             // permanently visible grip on every bar would be noise, and an

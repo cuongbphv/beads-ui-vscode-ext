@@ -5,7 +5,7 @@
  * it is focusable and resizable from the keyboard, because a mouse-only resize
  * would make part of the UI unreachable.
  */
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 import { useDragResize } from '../hooks/use-drag-resize';
 import type { Range } from '../lib/drag-resize';
@@ -19,6 +19,7 @@ export function Splitter({
   label,
   onReset,
   className,
+  style,
 }: {
   size: number;
   range: Range;
@@ -29,11 +30,13 @@ export function Splitter({
   /** Double-click target. Omit to make double-click do nothing. */
   onReset?: () => void;
   className?: string;
+  style?: CSSProperties;
 }): ReactNode {
   const { dragging, ...handlers } = useDragResize({ size, range, sign, onChange });
 
   return (
     <div
+      style={style}
       role="separator"
       aria-orientation="vertical"
       aria-label={label}

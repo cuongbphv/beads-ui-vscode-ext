@@ -11,12 +11,25 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { BdError, BdService } from '../extension/bd/BdService';
 import { BdQueries } from '../extension/bd/queries';
 import { PARENT_CHILD, toCategory } from '../shared/types';
 import type { Bead } from '../shared/types';
+
+/**
+ * This file's own timeout, not the suite's.
+ *
+ * Every test here spawns the real `bd`, which opens Dolt; under a full
+ * `vitest run` it competes for CPU with 29 other files and a single spawn can
+ * take several seconds. Vitest's 5s default is right for those 29 files and
+ * raising it globally would hide a genuinely slow unit test, so the cost is
+ * paid only where it is real. `vi.setConfig` is scoped to this file — vitest
+ * resets the runtime config between files.
+ */
+const BD_SPAWN_TIMEOUT_MS = 30_000;
+vi.setConfig({ testTimeout: BD_SPAWN_TIMEOUT_MS, hookTimeout: BD_SPAWN_TIMEOUT_MS });
 
 const execFileAsync = promisify(execFile);
 

@@ -5,6 +5,7 @@ import {
   DETAIL_MIN_PX,
   detailMaxWidth,
   keyResize,
+  roadmapGutterRange,
   shouldActOnPointerMove,
   sizeFromDrag,
 } from '../webview/lib/drag-resize';
@@ -69,16 +70,11 @@ describe('keyResize', () => {
 describe('shouldActOnPointerMove', () => {
   it('returns true only when dragging and capture is held', () => {
     expect(shouldActOnPointerMove(true, true)).toBe(true);
+    // The middle case is the one that matters: a drag whose capture the
+    // browser silently dropped must not keep resizing on a plain hover.
     expect(shouldActOnPointerMove(true, false)).toBe(false);
     expect(shouldActOnPointerMove(false, true)).toBe(false);
     expect(shouldActOnPointerMove(false, false)).toBe(false);
-  });
-
-  it('prevents resize on hover after pointercancel (stuck drag scenario)', () => {
-    // Scenario: drag started (dragging=true, capture held=true), then pointercancel
-    // fires and the browser auto-releases capture while dragging state is stuck.
-    // Now user moves mouse without pressing button over the handle.
-    expect(shouldActOnPointerMove(true, false)).toBe(false);
   });
 });
 
@@ -100,5 +96,20 @@ describe('detailMaxWidth', () => {
     // Prevents inverted range before ResizeObserver fires
     expect(detailMaxWidth(0)).toBe(DETAIL_MIN_PX);
     expect(detailMaxWidth(0)).toBe(320);
+  });
+});
+
+describe('roadmapGutterRange', () => {
+  it('normalizes the unmeasured viewport to a valid minimum-only range', () => {
+    // Catches the initial `{ min: 120, max: 0 }` range that made the
+    // splitter's current ARIA value exceed its advertised maximum.
+    expect(roadmapGutterRange(0)).toEqual({ min: 120, max: 120 });
+  });
+
+  it('uses sixty percent of a measured viewport as the maximum', () => {
+    // Catches freezing the initial fallback after ResizeObserver reports or
+    // accidentally using the full viewport rather than the intended share.
+    expect(roadmapGutterRange(1000)).toEqual({ min: 120, max: 600 });
+    expect(roadmapGutterRange(641)).toEqual({ min: 120, max: 385 });
   });
 });
