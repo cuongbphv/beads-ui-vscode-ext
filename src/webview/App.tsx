@@ -5,23 +5,40 @@
  * the whole panel when it is not — same component, no duplicate markup.
  */
 import { AlertCircle, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 
 import type { BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
+import type { RoadmapSort } from '../shared/roadmap-sort';
 import type { StatusCategory } from '../shared/types';
 import { BeadDetail } from './components/bead-detail';
+import type { RoadmapZoom } from './components/gantt';
 import { Button, EmptyState, Skeleton } from './components/primitives';
+import { Splitter } from './components/splitter';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import { clamp, DETAIL_DEFAULT_PX, DETAIL_MIN_PX, detailMaxWidth, type Range } from './lib/drag-resize';
+import {
+  persistedRoadmapPreferences,
+  restoreRoadmapPreferences,
+  type PersistedRoadmapPreferences,
+} from './lib/roadmap-preferences';
 import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
-interface PersistedState {
+interface PersistedState extends PersistedRoadmapPreferences {
   tab: DashboardTab;
   query: BeadQuery;
   /** Absent until the user first folds or unfolds a board column. */
@@ -30,6 +47,8 @@ interface PersistedState {
   roadmapShowClosed?: boolean;
   /** Absent until the user picks a shape; the date range decides until then. */
   roadmapShape?: RoadmapShape;
+  /** Detail-pane width in px. Absent until the user first drags it. */
+  detailWidth?: number;
 }
 
 const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
@@ -40,6 +59,7 @@ const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
 
 export function App(): ReactNode {
   const saved = restore<PersistedState>();
+  const restoredRoadmap = restoreRoadmapPreferences(saved);
   const { snapshot, index, error, loading, focusedId, setFocusedId, refresh } = useBeads();
 
   const [tab, setTab] = useState<DashboardTab>(saved?.tab ?? 'overview');
@@ -49,6 +69,33 @@ export function App(): ReactNode {
   const [collapsedColumns, setCollapsedColumns] = useState(saved?.collapsedColumns);
   const [roadmapShowClosed, setRoadmapShowClosed] = useState(saved?.roadmapShowClosed ?? false);
   const [roadmapShape, setRoadmapShape] = useState(saved?.roadmapShape);
+  const [roadmapSort, setRoadmapSort] = useState<RoadmapSort>(restoredRoadmap.sort);
+  const [roadmapZoom, setRoadmapZoom] = useState<RoadmapZoom>(restoredRoadmap.zoom);
+  const [roadmapGutter, setRoadmapGutter] = useState(restoredRoadmap.gutter);
+  const [detailWidth, setDetailWidth] = useState(saved?.detailWidth ?? DETAIL_DEFAULT_PX);
+  const mainRef = useRef<HTMLElement>(null);
+  const [mainWidth, setMainWidth] = useState(0);
+
+  // The maximum is a share of the container, so it moves when the panel does.
+  const detailRange = useMemo<Range>(
+    () => ({ min: DETAIL_MIN_PX, max: detailMaxWidth(mainWidth) }),
+    [mainWidth],
+  );
+
+  // `detailWidth` is the width the user asked for and is never overwritten by
+  // the container; the clamp lives here, where it is drawn, so a pane squeezed
+  // by a narrow panel comes back to its full size when the panel widens again.
+  // Writing the clamped value into state instead would throw the preference
+  // away the first time the editor was ever made narrow.
+  const detailPx = clamp(detailWidth, detailRange);
+
+  useEffect(() => {
+    const node = mainRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => setMainWidth(entry.contentRect.width));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   // Survives the panel being closed and reopened in the same session.
   useEffect(
@@ -59,8 +106,24 @@ export function App(): ReactNode {
         collapsedColumns,
         roadmapShowClosed,
         roadmapShape,
+        ...persistedRoadmapPreferences({
+          sort: roadmapSort,
+          zoom: roadmapZoom,
+          gutter: roadmapGutter,
+        }),
+        detailWidth,
       }),
-    [tab, query, collapsedColumns, roadmapShowClosed, roadmapShape],
+    [
+      tab,
+      query,
+      collapsedColumns,
+      roadmapShowClosed,
+      roadmapShape,
+      roadmapSort,
+      roadmapZoom,
+      roadmapGutter,
+      detailWidth,
+    ],
   );
 
   // `beadsDashboard.showClosed` is a *default*, not an override: the first push
@@ -149,7 +212,11 @@ export function App(): ReactNode {
           </div>
         ) : null}
 
-        <main className="flex min-h-0 flex-1">
+        <main
+          ref={mainRef}
+          className="flex min-h-0 flex-1"
+          style={{ '--detail-w': `${detailPx}px` } as CSSProperties}
+        >
           <div className="min-w-0 flex-1">
             {!snapshot ? (
               loading ? (
@@ -186,6 +253,12 @@ export function App(): ReactNode {
                 onShowClosedChange={setRoadmapShowClosed}
                 shape={roadmapShape}
                 onShapeChange={setRoadmapShape}
+                sort={roadmapSort}
+                onSortChange={setRoadmapSort}
+                zoom={roadmapZoom}
+                onZoomChange={setRoadmapZoom}
+                gutter={roadmapGutter}
+                onGutterChange={setRoadmapGutter}
               />
             ) : (
               <BoardView
@@ -203,21 +276,31 @@ export function App(): ReactNode {
           </div>
 
           {selected ? (
-            <div
-              className={cn(
-                // Narrow: the detail pane covers the content. Wide: it docks.
-                'absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-96 @3xl:shrink-0',
-              )}
-            >
-              <BeadDetail
-                bead={selected}
-                beads={beads}
-                index={index}
-                onClose={() => setFocusedId(undefined)}
-                onSelect={onSelect}
-                refreshKey={snapshot?.fetchedAt}
+            <>
+              {/* Narrow: the pane covers the content, so there is nothing to split. */}
+              <Splitter
+                className="hidden @3xl:block"
+                label="Resize detail panel"
+                size={detailPx}
+                range={detailRange}
+                // The pane is right of the handle, so dragging right narrows it.
+                sign={-1}
+                // Both of these are the user speaking, so both become the new
+                // preference: the drag is already clamped to the live range.
+                onChange={setDetailWidth}
+                onReset={() => setDetailWidth(DETAIL_DEFAULT_PX)}
               />
-            </div>
+              <div className="absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-[var(--detail-w)] @3xl:shrink-0">
+                <BeadDetail
+                  bead={selected}
+                  beads={beads}
+                  index={index}
+                  onClose={() => setFocusedId(undefined)}
+                  onSelect={onSelect}
+                  refreshKey={snapshot?.fetchedAt}
+                />
+              </div>
+            </>
           ) : null}
         </main>
       </div>

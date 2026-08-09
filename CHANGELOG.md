@@ -4,6 +4,59 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-08-09
+
+### Added
+
+- **Roadmap timeline rebuilt as a frozen grid.** The task-name column stays put while the
+  time axis scrolls, and the seam between them is a splitter you can drag — or nudge with
+  the arrow keys, or double-click to send back to its default. The width is remembered
+  per panel.
+- **Time zoom** — Fit, Days, Weeks or Months. Fit still sizes the plan to the pane; the
+  other three pin a fixed scale so two epics can be compared at the same pixels-per-day.
+  Tick density follows the zoom, so an axis never crowds itself into unreadable labels.
+- **Sorting** — by date, by priority, or by type, applied to both the timeline and the
+  List shape so the two never disagree about order. The synthetic "No epic" group stays
+  last regardless.
+- **Reschedule by dragging a bar's edge.** Dropping it writes through `bd update`:
+  `--due` for an issue that already has a due date, `--estimate` for one that does not.
+  The bar shows as pending until `bd` confirms, and a rejected edit snaps back.
+- **Undo on the confirmation toast.** A reschedule that lands somewhere you did not mean
+  is one click from going back: the toast carries an **Undo** that writes the previous
+  date or estimate, queued behind anything already in flight on that issue, and stays up
+  long enough to be reached. An issue that had no estimate at all is the one case with no
+  Undo — `bd update --estimate` stores a zero rather than clearing the field, so there is
+  no call that puts it back.
+- **A date axis over the timeline**, with a today marker aligned to one clock reading per
+  render, so every bar agrees on where "now" is.
+- **Resizable detail pane.** Same splitter, same keyboard contract, also remembered.
+- Restored panel state is validated rather than trusted: a saved sort or zoom this build
+  no longer offers falls back to the default instead of rendering an empty picker, and a
+  saved width that is not a positive number falls back instead of reaching the layout as
+  `NaNpx`.
+
+### Changed
+
+- **The filter bar is one quiet band instead of eleven controls.** The Epic, Type,
+  Assignee and Priority pickers moved into a single **Filters** popover carrying a count
+  of what is applied; the band itself is now the search box, that button, and the view
+  controls, separated so narrowing the data reads differently from drawing it.
+- **Applied filters are listed as chips** under the band and each one removes itself in a
+  click, so a filter can no longer be forgotten inside a collapsed picker. "Clear all"
+  drops every filter but leaves closed issues showing — clearing must not hide rows you
+  asked to see.
+- The `Closed` checkbox moved into the popover. What is on screen instead is the
+  consequence: the Roadmap's "N closed hidden — show" pill when they are hidden, a
+  `Closed shown` chip when they are not.
+- Each picker in the popover now has a visible `<label>`. They previously carried an
+  `aria-label` and no visible text, which read as four unlabelled boxes.
+
+### Fixed
+
+- An epic filter surviving the disappearance of its epic — after a delete, or a refresh
+  that no longer carries it — left the picker looking unset while it went on hiding every
+  row. It is now listed by id in the chip row, and removable from there.
+
 ## [0.1.1] — 2026-08-04
 
 ### Fixed

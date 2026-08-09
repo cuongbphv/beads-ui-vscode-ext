@@ -9,6 +9,7 @@ import {
   formatDuration,
   placement,
   spanOf,
+  withTickDensity,
 } from '../shared/schedule';
 import type { Bead, EpicGroup } from '../shared/types';
 
@@ -205,5 +206,90 @@ describe('formatDuration', () => {
     [960, '2d'],
   ])('formats %s as %s', (minutes, expected) => {
     expect(formatDuration(minutes)).toBe(expected);
+  });
+});
+
+describe('buildTicks density', () => {
+  function windowOf(days: number, pxPerDay?: number) {
+    const groups: EpicGroup[] = [
+      {
+        epic: bead({ id: 'e', issue_type: 'epic' }),
+        children: [bead({ id: 't', created_at: iso(0), due_at: iso(days * DAY) })],
+        doneCount: 0,
+        totalCount: 1,
+      },
+    ];
+    return buildTimeline(groups, () => false, NOW, pxPerDay ? { pxPerDay } : undefined);
+  }
+
+  it('keeps every tick inside the window', () => {
+    const timeline = windowOf(30, 48);
+    expect(timeline.ticks.length).toBeGreaterThan(0);
+    for (const tick of timeline.ticks) {
+      expect(tick.at).toBeGreaterThanOrEqual(timeline.start);
+      expect(tick.at).toBeLessThanOrEqual(timeline.end);
+    }
+  });
+
+  it('never places two ticks closer than 44px at the given density', () => {
+    for (const pxPerDay of [4, 12, 48]) {
+      const timeline = windowOf(120, pxPerDay);
+      const perMs = pxPerDay / DAY;
+      for (let i = 1; i < timeline.ticks.length; i += 1) {
+        const gapPx = (timeline.ticks[i].at - timeline.ticks[i - 1].at) * perMs;
+        // Month ticks are irregular (28-31 days); allow the shortest month.
+        expect(gapPx).toBeGreaterThanOrEqual(44);
+      }
+    }
+  });
+
+  it('subdivides a zoomed-in day window into hours', () => {
+    const timeline = windowOf(2, 200);
+    expect(timeline.ticks.some((tick) => tick.label.includes(':'))).toBe(true);
+  });
+
+  it('falls back to a sane density when pxPerDay is omitted', () => {
+    const timeline = windowOf(30);
+    expect(timeline.ticks.length).toBeGreaterThan(1);
+    expect(timeline.ticks.length).toBeLessThan(20);
+  });
+
+  it('re-ticks an existing timeline without rebuilding a single bar', () => {
+    // The Roadmap needs the window before it can know the density, so it
+    // builds once, measures, then re-ticks. Re-running the whole build for the
+    // second pass walks every epic and every child again on every render.
+    const built = windowOf(30);
+    const rebuilt = buildTimeline(
+      [
+        {
+          epic: bead({ id: 'e', issue_type: 'epic' }),
+          children: [bead({ id: 't', created_at: iso(0), due_at: iso(30 * DAY) })],
+          doneCount: 0,
+          totalCount: 1,
+        },
+      ],
+      () => false,
+      built.now,
+      { pxPerDay: 48 },
+    );
+
+    const reticked = withTickDensity(built, 48);
+
+    expect(reticked.ticks).toEqual(rebuilt.ticks);
+    expect(reticked.epics).toBe(built.epics);
+    expect(reticked.start).toBe(built.start);
+    expect(reticked.end).toBe(built.end);
+    expect(reticked.now).toBe(built.now);
+  });
+
+  it('selects day-spaced ticks at the "day" zoom density (48px/day)', () => {
+    // Regression guard: if MIN_TICK_PX is ever raised again without checking
+    // against this zoom level, 48px/day silently falls through to weekly
+    // ticks again — a "Days" zoom that draws a weekly grid.
+    const timeline = windowOf(30, 48);
+    expect(timeline.ticks.length).toBeGreaterThan(1);
+    for (let i = 1; i < timeline.ticks.length; i += 1) {
+      expect(timeline.ticks[i].at - timeline.ticks[i - 1].at).toBe(DAY);
+    }
   });
 });
