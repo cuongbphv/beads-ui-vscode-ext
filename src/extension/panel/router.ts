@@ -16,6 +16,7 @@ import {
 import { toPriority } from '../../shared/types';
 import type { BeadsStore } from '../store';
 import { toRpcError } from '../store';
+import { requireDueDate } from './param-validation';
 
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
@@ -78,6 +79,22 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'closeBead':
       await mutations.close(id(), typeof params.reason === 'string' ? params.reason : undefined);
       return { ok: true };
+
+    case 'setDue':
+      // An empty string is meaningful here — it clears the due date — so this
+      // deliberately does not go through requireString. requireDueDate still
+      // narrows the value: only YYYY-MM-DD or '' reaches the bd argv.
+      await mutations.setDue(id(), requireDueDate(params.date, 'date'));
+      return { ok: true };
+
+    case 'setEstimate': {
+      const minutes = Number(params.minutes);
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        throw new Error('Missing required parameter "minutes".');
+      }
+      await mutations.setEstimate(id(), minutes);
+      return { ok: true };
+    }
 
     case 'revealBead':
       host.revealBead(id());

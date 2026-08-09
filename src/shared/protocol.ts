@@ -50,6 +50,16 @@ export interface RpcMethods {
     params: { id: string; reason?: string };
     result: { ok: true };
   };
+  /** Right-edge bar drag on an issue that carries a due date. `date` is YYYY-MM-DD. */
+  setDue: {
+    params: { id: string; date: string };
+    result: { ok: true };
+  };
+  /** Right-edge bar drag on an issue with no due date. Minutes, as bd stores them. */
+  setEstimate: {
+    params: { id: string; minutes: number };
+    result: { ok: true };
+  };
   /** Reveal an issue in the sidebar tree / focus it in the editor. */
   revealBead: {
     params: { id: string };
@@ -71,6 +81,8 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'setStatus',
   'setPriority',
   'setAssignee',
+  'setDue',
+  'setEstimate',
   'closeBead',
 ]);
 

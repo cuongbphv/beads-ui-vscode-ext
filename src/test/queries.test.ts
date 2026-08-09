@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BdQueries } from '../extension/bd/queries';
 import { BdMutations } from '../extension/bd/mutations';
 import type { BdService } from '../extension/bd/BdService';
+import { requireDueDate } from '../extension/panel/param-validation';
 
 /**
  * A stand-in for BdService that records argv and replays canned payloads —
@@ -240,5 +241,64 @@ describe('BdMutations', () => {
     await mutations.setStatus('bd-7', 'closed');
 
     expect(seen).toEqual([['bd-7']]);
+  });
+});
+
+describe('BdMutations schedule writes', () => {
+  function mutations(fake: FakeBd): BdMutations {
+    return new BdMutations(fake as unknown as BdService);
+  }
+
+  it('sets a due date in the format bd documents', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).setDue('bd-a1', '2026-09-01');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--due', '2026-09-01']]);
+  });
+
+  it('clears a due date with an empty string', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).setDue('bd-a1', '');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--due', '']]);
+  });
+
+  it('sends the estimate as whole minutes', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).setEstimate('bd-a1', 89.6);
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--estimate', '90']]);
+  });
+
+  it('notifies listeners with the changed id', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.setEstimate('bd-a1', 30);
+
+    expect(changed).toEqual([['bd-a1']]);
+  });
+});
+
+describe('requireDueDate (router param narrowing)', () => {
+  it('accepts a well-formed YYYY-MM-DD date', () => {
+    expect(requireDueDate('2026-09-01', 'date')).toBe('2026-09-01');
+  });
+
+  it('accepts an empty string, since that is how bd clears a due date', () => {
+    expect(requireDueDate('', 'date')).toBe('');
+  });
+
+  it('rejects a malformed date and names the parameter in the error', () => {
+    expect(() => requireDueDate('not-a-date', 'date')).toThrow(/"date"/);
+  });
+
+  it('rejects a value that is merely date-like but not YYYY-MM-DD', () => {
+    expect(() => requireDueDate('2026/09/01', 'date')).toThrow();
+    expect(() => requireDueDate('09-01-2026', 'date')).toThrow();
+  });
+
+  it('rejects a non-string value, including undefined', () => {
+    expect(() => requireDueDate(undefined, 'date')).toThrow();
+    expect(() => requireDueDate(12345, 'date')).toThrow();
   });
 });
