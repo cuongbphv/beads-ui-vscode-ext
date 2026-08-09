@@ -1,7 +1,7 @@
 /**
  * Every write the extension performs against beads.
  *
- * The scope is deliberately narrow — status, priority, assignee, close — which
+ * The scope is deliberately narrow — status, priority, assignee, due, estimate, close — which
  * is the "view + quick actions" contract. Creating, deleting and reparenting
  * issues stay in the `bd` CLI where the user can see exactly what they ran.
  *
@@ -46,6 +46,26 @@ export class BdMutations {
     const args = ['close', id];
     if (reason?.trim()) args.push('--reason', reason.trim());
     await this.run(args, id);
+  }
+
+  /**
+   * The bar's right edge, for an issue that carries a due date.
+   *
+   * `date` is `YYYY-MM-DD` in the user's local calendar. An empty string clears
+   * the due date, which is what bd documents for `--due ""`.
+   */
+  async setDue(id: string, date: string): Promise<void> {
+    await this.run(['update', id, '--due', date], id);
+  }
+
+  /**
+   * The bar's right edge, for an issue with no due date.
+   *
+   * bd stores an int, so the value is rounded here rather than trusting a
+   * float to survive `String()`.
+   */
+  async setEstimate(id: string, minutes: number): Promise<void> {
+    await this.run(['update', id, '--estimate', String(Math.round(minutes))], id);
   }
 
   /**

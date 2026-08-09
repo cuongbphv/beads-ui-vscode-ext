@@ -18,12 +18,20 @@ export function QuickFilterBar({
   query,
   onChange,
   className,
+  trailing,
 }: {
   beads: Bead[];
   epics: Bead[];
   query: BeadQuery;
   onChange: (next: BeadQuery) => void;
   className?: string;
+  /**
+   * Controls that belong to the owning tab — the Roadmap's shape and sort
+   * pickers. They live inside this flex container rather than beside it so they
+   * wrap with the selects; pinned outside, they leave a hole in the first row
+   * the moment the panel is too narrow for one line.
+   */
+  trailing?: ReactNode;
 }): ReactNode {
   const set = (patch: Partial<BeadQuery>): void => onChange({ ...query, ...patch });
   const active =
@@ -111,11 +119,14 @@ export function QuickFilterBar({
           Clear
         </button>
       ) : null}
+
+      {trailing}
     </div>
   );
 }
 
-function Select({
+/** Shared by the filter bar and by any tab-owned control passed in via `trailing`. */
+export function Select({
   label,
   value,
   onChange,

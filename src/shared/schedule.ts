@@ -138,57 +138,68 @@ function pad(start: number, end: number): [number, number] {
 }
 
 /**
- * Gridlines. The unit is chosen from the window's length so a two-week plan is
- * ticked by day and a two-year one by month, without a configuration knob.
+ * Narrower than this and a tick label collides with its neighbour. Sized to a
+ * `text-[10px]` date label like "Aug 4" (~33px), centred on its gridline via
+ * `-translate-x-1/2` — and, deliberately, low enough that the `day` zoom
+ * (48px per day) still clears the bar and selects day ticks rather than
+ * falling through to weekly ones.
  */
-function buildTicks(start: number, end: number): Timeline['ticks'] {
-  const span = end - start;
+const MIN_TICK_PX = 44;
+
+/**
+ * The density assumed when nobody has measured the track yet — one window
+ * across a typical editor pane. Only the first frame uses it.
+ */
+const FALLBACK_TRACK_PX = 900;
+
+function hourTicks(start: number, end: number): Timeline['ticks'] {
   const ticks: Timeline['ticks'] = [];
+  // Anchored to local midnight, not to the epoch: a 6-hour grid counted from
+  // 1970 lands on 07:00/13:00 in a +07 zone and never on a day boundary, so
+  // no tick would ever be the day label.
+  const anchor = new Date(start);
+  anchor.setHours(0, 0, 0, 0);
 
-  if (span <= 3 * DAY) {
-    const step = 6 * HOUR;
-    // Anchored to local midnight, not to the epoch: a 6-hour grid counted from
-    // 1970 lands on 07:00/13:00 in a +07 zone and never on a day boundary, so
-    // no tick would ever be the day label.
-    const anchor = new Date(start);
-    anchor.setHours(0, 0, 0, 0);
-
-    for (let at = anchor.getTime(); at <= end; at += step) {
-      if (at < start) continue;
-      const date = new Date(at);
-      const midnight = date.getHours() === 0;
-      ticks.push({
-        at,
-        // Bare clock times repeat every day and say nothing about which day it
-        // is, so midnight carries the date instead of reading "0:00".
-        label: midnight
-          ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-          : `${String(date.getHours()).padStart(2, '0')}:00`,
-        major: midnight,
-      });
-    }
-    return ticks;
+  for (let at = anchor.getTime(); at <= end; at += 6 * HOUR) {
+    if (at < start) continue;
+    const date = new Date(at);
+    const midnight = date.getHours() === 0;
+    ticks.push({
+      at,
+      // Bare clock times repeat every day and say nothing about which day it
+      // is, so midnight carries the date instead of reading "0:00".
+      label: midnight
+        ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+        : `${String(date.getHours()).padStart(2, '0')}:00`,
+      major: midnight,
+    });
   }
+  return ticks;
+}
 
-  if (span <= 90 * DAY) {
-    const step = span <= 21 * DAY ? DAY : 7 * DAY;
-    const first = new Date(start);
-    first.setHours(0, 0, 0, 0);
-    for (let at = first.getTime(); at <= end; at += step) {
-      if (at < start) continue;
-      const date = new Date(at);
-      ticks.push({
-        at,
-        label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-        major: date.getDate() === 1,
-      });
-    }
-    return ticks;
+function dayTicks(start: number, end: number, step: number): Timeline['ticks'] {
+  const ticks: Timeline['ticks'] = [];
+  const first = new Date(start);
+  first.setHours(0, 0, 0, 0);
+
+  for (let at = first.getTime(); at <= end; at += step) {
+    if (at < start) continue;
+    const date = new Date(at);
+    ticks.push({
+      at,
+      label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      major: date.getDate() === 1,
+    });
   }
+  return ticks;
+}
 
+function monthTicks(start: number, end: number): Timeline['ticks'] {
+  const ticks: Timeline['ticks'] = [];
   const cursor = new Date(start);
   cursor.setDate(1);
   cursor.setHours(0, 0, 0, 0);
+
   while (cursor.getTime() <= end) {
     const at = cursor.getTime();
     if (at >= start) {
@@ -203,11 +214,32 @@ function buildTicks(start: number, end: number): Timeline['ticks'] {
   return ticks;
 }
 
+/**
+ * Gridlines, chosen by how many pixels a day is worth rather than by how long
+ * the window is.
+ *
+ * The window does not change when the user zooms — only the track's width does —
+ * so a length-based rule would keep monthly gridlines on a chart zoomed to 48px
+ * per day. Density is the thing the reader actually experiences.
+ */
+function buildTicks(start: number, end: number, pxPerDay: number | undefined): Timeline['ticks'] {
+  const days = Math.max((end - start) / DAY, 1);
+  const perDay = pxPerDay && pxPerDay > 0 ? pxPerDay : FALLBACK_TRACK_PX / days;
+  const minMs = (MIN_TICK_PX / perDay) * DAY;
+
+  if (minMs <= 6 * HOUR) return hourTicks(start, end);
+  if (minMs <= DAY) return dayTicks(start, end, DAY);
+  if (minMs <= 7 * DAY) return dayTicks(start, end, 7 * DAY);
+  return monthTicks(start, end);
+}
+
 /** Build the whole timeline: epic bars, window, gridlines. */
 export function buildTimeline(
   groups: EpicGroup[],
   isDone: (bead: Bead) => boolean,
   now: number,
+  /** How wide a day is on screen. Omitted on the first frame, before measuring. */
+  opts?: { pxPerDay?: number },
 ): Timeline {
   const epics = groups.map((group) => epicSpan(group, isDone, now));
 
@@ -219,7 +251,7 @@ export function buildTimeline(
   const rawEnd = Math.max(now, ...(ends.length ? ends : [now + DAY]));
   const [start, end] = pad(rawStart, rawEnd);
 
-  return { epics, start, end, now, ticks: buildTicks(start, end) };
+  return { epics, start, end, now, ticks: buildTicks(start, end, opts?.pxPerDay) };
 }
 
 /** A bar's position within the window, as percentages. */
