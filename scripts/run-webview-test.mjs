@@ -9,17 +9,23 @@
  * webview DOM — the one thing the extension-host smoke test cannot see.
  *
  * The assertions cross-check the UI against the `bd` CLI: the header's issue
- * count must equal `bd stats`, so a webview that paints an empty or stale board
- * fails here rather than looking fine in a screenshot.
+ * count must equal `bd list --all`'s (not `bd stats`' `total_issues`, which
+ * also counts ad-hoc `gate` issues the dashboard itself never shows), so a
+ * webview that paints an empty or stale board fails here rather than looking
+ * fine in a screenshot.
  *
  * Isolated on purpose: `--user-data-dir` / `--extensions-dir` point at a temp
  * profile, so the editor window you already have open is never touched and no
- * reload is needed. Nothing here mutates the beads database.
+ * reload is needed. The one exception to "nothing here mutates the beads
+ * database" is the Gates assertion: it creates a throwaway human gate via
+ * `bd gate create` so the Gates section has something to render, and always
+ * resolves it again before the run ends (see `createTempGate` /
+ * `resolveAllGatesByReason` in `main`), even on failure.
  */
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -44,6 +50,18 @@ const artifactsDir = join(repoRoot, 'dist', 'test-artifacts');
 const LAUNCH_TIMEOUT = 180_000;
 const UI_TIMEOUT = 90_000;
 
+/**
+ * VS Code's default chord for the Command Palette is `Ctrl+Shift+P` on
+ * Windows/Linux but `Cmd+Shift+P` on macOS — hardcoding the former meant
+ * every keypress in this script silently no-opped on a Mac runner, hanging
+ * on the very first `.quick-input-widget` wait until `UI_TIMEOUT` with no
+ * clue why. Same story for the sidebar toggles.
+ */
+const MOD_KEY = process.platform === 'darwin' ? 'Meta' : 'Control';
+const PALETTE_KEY = `${MOD_KEY}+Shift+P`;
+const TOGGLE_SIDEBAR_KEY = `${MOD_KEY}+B`;
+const TOGGLE_SECONDARY_SIDEBAR_KEY = `${MOD_KEY}+Alt+B`;
+
 const failures = [];
 function check(label, condition, detail = '') {
   if (condition) {
@@ -54,23 +72,171 @@ function check(label, condition, detail = '') {
   }
 }
 
-/** Ground truth, read straight from the CLI rather than from the extension. */
-async function bdStats() {
+/**
+ * Every `bd` call below goes through this one spot, so the ENOENT → retry
+ * under a shell fallback (some CI images only resolve `bd` via the shell's
+ * PATH lookup, not execFile's direct exec) is written once rather than
+ * copy-pasted at each call site.
+ */
+async function execBd(args) {
   const options = {
     cwd: repoRoot,
     encoding: 'utf8',
     windowsHide: true,
     env: { ...process.env, BD_JSON_ENVELOPE: '0' },
   };
-  let stdout;
   try {
-    ({ stdout } = await execFileAsync('bd', ['stats', '--json'], options));
+    return await execFileAsync('bd', args, options);
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    ({ stdout } = await execFileAsync('bd', ['stats', '--json'], { ...options, shell: true }));
+    return await execFileAsync('bd', args, { ...options, shell: true });
   }
+}
+
+/** Ground truth, read straight from the CLI rather than from the extension. */
+async function bdStats() {
+  const { stdout } = await execBd(['stats', '--json']);
   const raw = JSON.parse(stdout);
   return raw.summary ?? raw;
+}
+
+/**
+ * Every issue `bd list` is willing to show (closed included, via `--all`) —
+ * deliberately *not* `bd stats`' `total_issues`, which also counts `gate`-type
+ * issues (`bd gate create`'s own ad-hoc issues) that `bd list`/the dashboard
+ * both hide by design. The header's "N issues" tracks the latter, so
+ * comparing it against `total_issues` looks right on a board that has never
+ * had a gate and quietly breaks forever after the first one is ever created
+ * (this file's own Gates assertion included) — discovered by that assertion
+ * doing exactly that during this file's own development.
+ */
+async function bdBoardIssues() {
+  const { stdout } = await execBd(['list', '--all', '--json']);
+  return JSON.parse(stdout);
+}
+
+/**
+ * Count of `blocks` / `parent-child` edges across the whole board — the same
+ * two kinds `graph-layout.ts` renders. The Graph tab's assertion branches on
+ * this instead of assuming the board either has or lacks dependencies: a
+ * board with none should show the EmptyState, a board with some should show
+ * nodes, and guessing wrong either way would make the check meaningless.
+ */
+function countGraphEdges(issues) {
+  const ids = new Set(issues.map((issue) => issue.id));
+  let count = 0;
+  for (const issue of issues) {
+    for (const dependency of issue.dependencies ?? []) {
+      const kind = dependency.type ?? dependency.dependency_type;
+      const targetId = dependency.id ?? dependency.depends_on_id;
+      if (!kind || !targetId) continue;
+      if (kind !== 'blocks' && kind !== 'parent-child') continue;
+      if (targetId === issue.id || !ids.has(targetId)) continue;
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * The one place this script is allowed to mutate the real board: an ad-hoc
+ * human gate created purely so the Gates section has something to render.
+ * Identifying it again for cleanup goes through `findOpenGateIdsByReason`
+ * rather than trusting `bd gate create --json`'s return shape (undocumented,
+ * and not worth pinning down when re-listing is just as cheap) — that way
+ * cleanup in `main`'s `finally` works even if this function's own return
+ * value is somehow wrong.
+ */
+async function createTempGate(blocksId, reason) {
+  await execBd(['gate', 'create', '--type=human', `--blocks=${blocksId}`, `--reason=${reason}`, '--json']);
+}
+
+/** Every currently-open gate whose reason matches — the reason string is
+ * stamped with `Date.now()` by the caller precisely so this lookup can never
+ * accidentally match a real, human-created gate. */
+async function findOpenGateIdsByReason(reason) {
+  const { stdout } = await execBd(['gate', 'list', '--json']);
+  let gates;
+  try {
+    gates = JSON.parse(stdout);
+  } catch {
+    gates = null;
+  }
+  const list = Array.isArray(gates) ? gates : (gates?.gates ?? []);
+  // `bd gate list --json` has no top-level `reason` field — `bd gate create
+  // --reason=...` only ever lands the text inside the gate issue's own
+  // `description` (as "Reason: <text>"), confirmed by inspecting a live gate.
+  // Matching on `gate.reason` here silently matched nothing on every past
+  // run of this script, which is exactly how a gate created by an earlier,
+  // buggy run of this test was left open on the real board — see the git
+  // history of this file for that incident and its manual cleanup.
+  const matches = (gate) =>
+    gate.reason === reason || (typeof gate.description === 'string' && gate.description.includes(reason));
+  return list.filter(matches).map((gate) => gate.id).filter(Boolean);
+}
+
+async function resolveGate(gateId) {
+  await execBd(['gate', 'resolve', gateId, '--reason=e2e cleanup']);
+}
+
+/** Resolve every open gate matching `reason`, tolerating a partial failure on
+ * one gate so the rest still get cleaned up, and reporting every failure
+ * back to the caller instead of swallowing it. */
+async function resolveAllGatesByReason(reason) {
+  const ids = await findOpenGateIdsByReason(reason);
+  const errors = [];
+  for (const id of ids) {
+    await resolveGate(id).catch((error) => errors.push(`${id}: ${error.message}`));
+  }
+  return errors;
+}
+
+/**
+ * The folder VS Code should open as its workspace — not always `repoRoot`.
+ * `src/extension/workspace.ts` only ever checks `<workspace folder>/.beads`
+ * (a plain `fs.stat`, no git-worktree awareness), but a `git worktree` checkout
+ * intentionally has no `.beads` of its own — beads' shared Dolt DB lives once,
+ * beside the main checkout, and every worktree's `bd` CLI resolves to it via
+ * git rather than a local copy. Opening `repoRoot` as the workspace when it IS
+ * such a worktree would make the extension activate against zero issues and
+ * every assertion here would either time out or false-fail. `--extensionDevelopmentPath`
+ * still stays pinned to `repoRoot`, so the code under test is exactly what
+ * this checkout has — only the *opened folder* moves, and only for reading:
+ * nothing in this script writes a file under it.
+ */
+async function findBeadsWorkspaceRoot() {
+  const hasOwnBeads = await stat(join(repoRoot, '.beads'))
+    .then((s) => s.isDirectory())
+    .catch(() => false);
+  if (hasOwnBeads) return repoRoot;
+
+  let mainRoot;
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    mainRoot = dirname(resolve(repoRoot, stdout.trim()));
+  } catch {
+    return repoRoot; // Not a git checkout at all; nothing more to try.
+  }
+
+  const mainHasBeads = await stat(join(mainRoot, '.beads'))
+    .then((s) => s.isDirectory())
+    .catch(() => false);
+  return mainHasBeads ? mainRoot : repoRoot;
+}
+
+/** The first ready issue is as good a target as any for the throwaway gate —
+ * dynamic on purpose, so this does not hard-code a board state that later
+ * changes out from under it. */
+async function pickGateBlockCandidate() {
+  const { stdout } = await execBd(['ready', '--json']);
+  const ready = JSON.parse(stdout);
+  const list = Array.isArray(ready) ? ready : (ready?.issues ?? []);
+  const candidate = list[0];
+  if (!candidate?.id) throw new Error('bd ready returned nothing to gate for the Gates assertion');
+  return candidate.id;
 }
 
 async function main() {
@@ -86,7 +252,19 @@ async function main() {
   void build;
 
   const stats = await bdStats();
-  console.log(`› bd reports ${stats.total_issues} issues (${stats.ready_issues} ready)`);
+  console.log(`› bd reports ${stats.total_issues} issues total (${stats.ready_issues} ready)`);
+
+  const boardIssues = await bdBoardIssues();
+  const visibleIssueCount = boardIssues.length;
+  console.log(`› bd list shows ${visibleIssueCount} issues (what the dashboard itself renders)`);
+
+  const graphEdgeCount = countGraphEdges(boardIssues);
+  console.log(`› bd reports ${graphEdgeCount} blocks/parent-child edge(s) for the Graph tab`);
+
+  const workspaceRoot = await findBeadsWorkspaceRoot();
+  if (workspaceRoot !== repoRoot) {
+    console.log(`› ${repoRoot} has no .beads of its own (a worktree); opening ${workspaceRoot} instead`);
+  }
 
   console.log(`› resolving VS Code ${testVersion}`);
   const executablePath = await downloadAndUnzipVSCode(testVersion);
@@ -114,14 +292,19 @@ async function main() {
       `--extensionDevelopmentPath=${repoRoot}`,
       `--user-data-dir=${profileDir}`,
       `--extensions-dir=${extensionsDir}`,
-      '--disable-extensions',
+      // NOT `--disable-extensions`: on this VS Code build that flag also
+      // disables the extension loaded via `--extensionDevelopmentPath`, so
+      // the dashboard's own commands never registered and every assertion
+      // below timed out waiting on UI that could never appear. `--user-data-dir`
+      // / `--extensions-dir` already point at fresh, empty temp directories,
+      // so there is nothing else installed left to disable anyway.
       '--disable-workspace-trust',
       '--disable-gpu',
       '--no-sandbox',
       '--skip-welcome',
       '--skip-release-notes',
       '--disable-updates',
-      repoRoot,
+      workspaceRoot,
     ],
     env: cleanEnv({ BD_JSON_ENVELOPE: '0' }),
   });
@@ -147,7 +330,7 @@ async function main() {
 
     // Drive the palette rather than calling the command directly: this is the
     // same path a user takes, so a broken `when` clause would show up.
-    await window.keyboard.press('Control+Shift+P');
+    await window.keyboard.press(PALETTE_KEY);
     const palette = window.locator('.quick-input-widget');
     await palette.waitFor({ state: 'visible' });
     await window.locator('.quick-input-box input').fill('>Beads: Open Dashboard');
@@ -163,12 +346,12 @@ async function main() {
     const rendered = Number(headerText.match(/(\d+)\s+issues/)?.[1]);
 
     check(
-      `header issue count matches bd (${rendered} vs ${stats.total_issues})`,
-      rendered === stats.total_issues,
+      `header issue count matches bd (${rendered} vs ${visibleIssueCount})`,
+      rendered === visibleIssueCount,
       `webview header read "${headerText}"`,
     );
 
-    for (const tab of ['Overview', 'Roadmap', 'Board']) {
+    for (const tab of ['Overview', 'Roadmap', 'Board', 'Graph']) {
       check(
         `"${tab}" tab is rendered`,
         await inner
@@ -250,10 +433,28 @@ async function main() {
       `looked in the ${where}; found: ${activityLabels.join(' / ') || '(no items)'}`,
     );
 
+    // `createBeadsStatusBar` (src/extension/status-bar.ts) registers the item
+    // with the bare id `beadsDashboard.status`, but VS Code stamps the DOM
+    // node's own `id` with the full `<publisher>.<extension-name>.<id>` —
+    // confirmed by dumping the real `#workbench.parts.statusbar` markup while
+    // writing this assertion, not guessed — hence matching on a suffix
+    // instead of the bare id verbatim.
+    const statusBarItem = window.locator('[id$="beadsDashboard.status"]');
+    await statusBarItem.first().waitFor({ state: 'visible' });
+    const statusBarText = await statusBarItem
+      .first()
+      .innerText()
+      .catch(() => '');
+    check(
+      'status bar shows the ready count',
+      /\d+\s*ready/i.test(statusBarText),
+      `status bar item read "${statusBarText}"`,
+    );
+
     // The sidebar is the other half of the UI. It is two views now — "Needs
     // You" and "Epics & Milestones" — so the headings are pane titles, and
     // "Unassigned" rides inside the plan view as its triage queue.
-    await window.keyboard.press('Control+Shift+P');
+    await window.keyboard.press(PALETTE_KEY);
     await window.locator('.quick-input-box input').fill('>Beads: Focus on Epics');
     await window.locator('.quick-input-list .monaco-list-row').first().waitFor();
     await window.keyboard.press('Enter');
@@ -295,12 +496,84 @@ async function main() {
       treeText.slice(0, 400),
     );
 
+    // Gates: the real board has nothing open right now, so asserting the
+    // section is *present* would always be vacuously true — this checks it
+    // is correctly absent instead, which a shell that always renders the
+    // section regardless of gate count would fail.
+    check(
+      'no Gates section when the board has no open gates',
+      !/Gates\s*\(\d+\)/.test(treeText),
+      `tree read: ${treeText.slice(0, 400)}`,
+    );
+
+    // `bd` round-trips (Dolt-backed) and the store's own refresh fetch are
+    // not instant, and both run again on every `Beads: Refresh`, so a single
+    // fixed wait either reads stale state or races the *next* refresh's
+    // still-in-flight fetch. Polling for the actual expected shape (up to
+    // `timeoutMs`) is the only version of this that isn't a coin flip.
+    const readTreeText = () =>
+      window
+        .locator('.pane-body .monaco-list-row')
+        .allInnerTexts()
+        .then((rows) => rows.join(' | '))
+        .catch(() => '');
+
+    async function refreshAndWaitForTree(predicate, timeoutMs = 20_000) {
+      await window.keyboard.press(PALETTE_KEY);
+      await window.locator('.quick-input-box input').fill('>Beads: Refresh');
+      await window.locator('.quick-input-list .monaco-list-row').first().waitFor();
+      await window.keyboard.press('Enter');
+
+      const deadline = Date.now() + timeoutMs;
+      let text = await readTreeText();
+      while (!predicate(text) && Date.now() < deadline) {
+        await window.waitForTimeout(500);
+        text = await readTreeText();
+      }
+      return text;
+    }
+
+    // Then prove the section really does light up: a throwaway gate is
+    // created on whatever `bd ready` offers first, resolved in `finally` no
+    // matter what happens in between so the real board is never left with
+    // test debris even if an assertion below throws or fails.
+    const gateBlockTarget = await pickGateBlockCandidate();
+    const gateReason = `e2e run-webview-test.mjs probe ${Date.now()}`;
+    await createTempGate(gateBlockTarget, gateReason);
+    try {
+      const treeTextWithGate = await refreshAndWaitForTree((text) => /Gates\s*\(1\)/.test(text));
+      check(
+        'Gates (1) section appears once a gate is open',
+        /Gates\s*\(1\)/.test(treeTextWithGate),
+        `tree read: ${treeTextWithGate.slice(0, 400)}`,
+      );
+    } finally {
+      // Surfaced as a hard failure, not swallowed: a gate left open on the
+      // real board is worse than a noisy log line. Matches by reason rather
+      // than a returned id, so this cleans up even if something above threw
+      // before an id was ever captured.
+      const cleanupErrors = await resolveAllGatesByReason(gateReason);
+      for (const message of cleanupErrors) {
+        failures.push(`could not resolve the temporary gate ${message}`);
+        console.error(`✘ cleanup: could not resolve gate ${message}`);
+      }
+    }
+
+    // Confirm the cleanup actually took: back to the same absent-section
+    // shape the very first Gates check relied on.
+    const treeTextAfterCleanup = await refreshAndWaitForTree((text) => !/Gates\s*\(\d+\)/.test(text));
+    check(
+      'Gates section is gone again after the temporary gate is resolved',
+      !/Gates\s*\(\d+\)/.test(treeTextAfterCleanup),
+      `tree read: ${treeTextAfterCleanup.slice(0, 400)}`,
+    );
+
     await window.screenshot({ path: join(artifactsDir, 'sidebar.png') });
 
     // Collapse the side bars so the screenshots show the dashboard, not the
     // explorer. Ctrl+B is the primary side bar, Ctrl+Alt+B the secondary one.
-    await window.keyboard.press('Control+B');
-    await window.keyboard.press('Control+Alt+B');
+    await window.keyboard.press(TOGGLE_SIDEBAR_KEY);
+    await window.keyboard.press(TOGGLE_SECONDARY_SIDEBAR_KEY);
     await window.waitForTimeout(600);
 
     await window.screenshot({ path: join(artifactsDir, 'overview.png') });
@@ -336,6 +609,37 @@ async function main() {
       (await inner.locator('text="Drop an issue here"').count()) === 0,
     );
 
+    // Swimlanes: the toggle has a title (no aria-label) and reports its own
+    // state via aria-pressed (BoardView.tsx). Off, no lane section exists at
+    // all — the `[aria-label*=" lane, "]` pattern is what `SwimlaneSection`
+    // stamps on each lane (e.g. `"auto-ok lane, 3 issues"`), so its absence
+    // is the flat-layout signal, not just an empty string.
+    const swimlaneToggle = inner.locator('button[title="Group columns into taxonomy-label lanes"]');
+    const swimlaneLanes = inner.locator('[aria-label*=" lane, "]');
+    check('swimlane toggle is rendered on the Board tab', (await swimlaneToggle.count()) > 0);
+
+    if ((await swimlaneToggle.count()) > 0) {
+      check(
+        'board starts in the flat (no-swimlane) layout',
+        (await swimlaneLanes.count()) === 0 && (await swimlaneToggle.getAttribute('aria-pressed')) === 'false',
+      );
+
+      await swimlaneToggle.first().click();
+      await window.waitForTimeout(500);
+      check(
+        'clicking the toggle switches the board into taxonomy-label lanes',
+        (await swimlaneLanes.count()) > 0 && (await swimlaneToggle.getAttribute('aria-pressed')) === 'true',
+      );
+      await window.screenshot({ path: join(artifactsDir, 'board-swimlanes.png') });
+
+      await swimlaneToggle.first().click();
+      await window.waitForTimeout(500);
+      check(
+        'clicking it again returns the board to the flat layout',
+        (await swimlaneLanes.count()) === 0 && (await swimlaneToggle.getAttribute('aria-pressed')) === 'false',
+      );
+    }
+
     // The detail pane: Assignee applies on commit like Status and Priority, so
     // there is no Save button left to be inconsistent with them.
     // `:visible` matters: the narrow single-column layout renders the same
@@ -362,8 +666,47 @@ async function main() {
         'the assignee field says when it applies',
         (await detail.locator('text=/Applies on Enter/').count()) > 0,
       );
+
+      // Comment composer: rendered unconditionally by bead-detail.tsx, even
+      // at zero comments, so its presence must not depend on this issue
+      // already having any. No submission here — reading the board is fine,
+      // writing to it through the UI is not something this e2e run should do.
+      const commentDraft = detail.locator('#comment-draft');
+      check(
+        'the comment composer is visible in the detail pane',
+        await commentDraft
+          .first()
+          .isVisible()
+          .catch(() => false),
+      );
+      check(
+        'the comment composer has an "Add a comment" label',
+        (await detail.locator('label', { hasText: 'Add a comment' }).count()) > 0,
+      );
+
       await window.keyboard.press('Escape');
       await window.waitForTimeout(300);
+    }
+
+    // Graph: only beads carrying a `blocks` / `parent-child` edge are drawn
+    // at all (graph-layout.ts), so which branch is correct — nodes or the
+    // EmptyState — depends on whether the real board has any such edge right
+    // now, hence branching on `graphEdgeCount` measured up front rather than
+    // assuming either shape.
+    await inner.locator('[role="tab"]:has-text("Graph")').first().click();
+    await window.waitForTimeout(1000);
+    if (graphEdgeCount > 0) {
+      check('Graph tab renders an svg', (await inner.locator('svg').count()) > 0);
+      check(
+        'Graph tab renders at least one dependency node',
+        (await inner.locator('svg [role="button"]').count()) > 0,
+      );
+      await window.screenshot({ path: join(artifactsDir, 'graph.png') });
+    } else {
+      check(
+        'Graph tab shows the EmptyState when the board has no dependency edges',
+        (await inner.locator('text=/No dependencies to show/').count()) > 0,
+      );
     }
 
     await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
