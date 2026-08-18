@@ -4,7 +4,33 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.3] — 2026-08-18
+
+### Added
+
+- **Gates panel in the sidebar.** The "Needs You" section now lists open human gates
+  ahead of assigned issues — a gate blocks real work until someone clears it, so it
+  outranks an ordinary row. Each one carries a **Resolve Gate…** action inline and in
+  the context menu, and the same list feeds the new status bar gate count.
+- **Dependency graph tab.** A fourth tab, **Graph**, draws an issue's blocked-by
+  relationships as a layered SVG DAG with a Sugiyama-lite auto-layout. Nodes can be
+  dragged to a preferred position, nudged with the arrow keys, and a **Reset layout**
+  button drops everything back to the computed positions.
+- **Board swimlanes.** A toggle on the Board groups its columns into lanes by taxonomy
+  label — `auto-ok`, `auto-partial`, `needs-human` — plus an `unlabeled` lane for
+  anything a review pipeline has not tagged yet, ordered so the lanes read left to
+  right as "safer to needs attention."
+- **Comment and append-notes composer in the detail pane.** Comments render inline with
+  a composer underneath, present even at zero comments so it never has to appear out of
+  nowhere; a separate "Append to notes" affordance adds to the notes field without
+  overwriting what is already there.
+- **Status bar item.** Shows the ready-to-work count, plus an open-gate count once any
+  exist, and opens the dashboard on click. It stays hidden until the first successful
+  load rather than showing a fake zero.
+- **Live refresh now watches `.beads/last-touched` directly**, instead of relying only
+  on a fixed 5-second poll. An outside change is picked up as soon as the file changes;
+  the interval-based poll itself relaxes to six times slower once the watcher has
+  proven it fires, rather than disappearing outright.
 
 ### Removed
 
