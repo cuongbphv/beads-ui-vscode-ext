@@ -13,6 +13,10 @@
   <img src="https://img.shields.io/badge/VS%20Code-%5E1.105-007ACC" alt="VS Code ^1.105" />
 </p>
 
+<p align="center">
+  <b>English</b> | <a href="README.vi.md">Tiếng Việt</a> | <a href="README.zh-cn.md">中文</a>
+</p>
+
 ---
 
 ![Beads Dashboard: the sidebar, the roadmap, dragging a card across the board, and the board updating itself when an agent files and starts an issue from the terminal](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/demo.gif)
