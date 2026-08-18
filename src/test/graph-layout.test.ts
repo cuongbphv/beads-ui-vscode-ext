@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Bead } from '../shared/types';
-import { buildGraphLayout, COL_W } from '../webview/lib/graph-layout';
+import {
+  arrowNudge,
+  buildGraphLayout,
+  COL_W,
+  edgeEndpoints,
+  NODE_H,
+  NODE_W,
+  NUDGE_PX,
+  ROW_H,
+} from '../webview/lib/graph-layout';
 
 function bead(partial: Partial<Bead> & Pick<Bead, 'id'>): Bead {
   return {
@@ -156,5 +165,47 @@ describe('buildGraphLayout', () => {
     expect(layout.edges).toEqual([]);
     expect(layout.width).toBe(0);
     expect(layout.height).toBe(0);
+  });
+});
+
+describe('edgeEndpoints', () => {
+  it('connects the right edge of the source box to the left edge of the target box', () => {
+    const points = edgeEndpoints({ x: 0, y: 0 }, { x: COL_W, y: 0 });
+
+    expect(points).toEqual([
+      { x: NODE_W, y: NODE_H / 2 },
+      { x: COL_W, y: NODE_H / 2 },
+    ]);
+  });
+
+  it('follows arbitrary (e.g. dragged) positions rather than only grid-aligned ones', () => {
+    const points = edgeEndpoints({ x: 37, y: 15 }, { x: 401, y: 260 });
+
+    expect(points).toEqual([
+      { x: 37 + NODE_W, y: 15 + NODE_H / 2 },
+      { x: 401, y: 260 + NODE_H / 2 },
+    ]);
+  });
+});
+
+describe('arrowNudge', () => {
+  it('moves 8px per arrow key press without shift', () => {
+    expect(arrowNudge('ArrowRight', false)).toEqual({ dx: NUDGE_PX, dy: 0 });
+    expect(arrowNudge('ArrowLeft', false)).toEqual({ dx: -NUDGE_PX, dy: 0 });
+    expect(arrowNudge('ArrowDown', false)).toEqual({ dx: 0, dy: NUDGE_PX });
+    expect(arrowNudge('ArrowUp', false)).toEqual({ dx: 0, dy: -NUDGE_PX });
+  });
+
+  it('jumps a full grid cell with shift held', () => {
+    expect(arrowNudge('ArrowRight', true)).toEqual({ dx: COL_W, dy: 0 });
+    expect(arrowNudge('ArrowLeft', true)).toEqual({ dx: -COL_W, dy: 0 });
+    expect(arrowNudge('ArrowDown', true)).toEqual({ dx: 0, dy: ROW_H });
+    expect(arrowNudge('ArrowUp', true)).toEqual({ dx: 0, dy: -ROW_H });
+  });
+
+  it('returns undefined for a non-arrow key so callers do not preventDefault it', () => {
+    expect(arrowNudge('Enter', false)).toBeUndefined();
+    expect(arrowNudge(' ', false)).toBeUndefined();
+    expect(arrowNudge('Tab', false)).toBeUndefined();
   });
 });

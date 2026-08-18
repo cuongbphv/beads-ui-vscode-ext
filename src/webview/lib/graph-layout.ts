@@ -30,9 +30,52 @@ export interface GraphNode {
   bead: Bead;
 }
 
+/** Keyboard nudge step for a node without Shift held (see `arrowNudge`). */
+export const NUDGE_PX = 8;
+
 export interface GraphEdgePoint {
   x: number;
   y: number;
+}
+
+/**
+ * Where an edge attaches to its two endpoint boxes, given *any* two
+ * positions — not only the ones `buildGraphLayout` assigned.
+ *
+ * Pulled out of the layout pass so `GraphView` can recompute an edge's route
+ * live while a node is being dragged, without re-running the whole
+ * Sugiyama-lite algorithm: the edge always leaves the right-center of `from`
+ * and arrives at the left-center of `to`, mirroring the fixed formula this
+ * replaced (previously inlined at layout-build time only).
+ */
+export function edgeEndpoints(from: GraphEdgePoint, to: GraphEdgePoint): GraphEdgePoint[] {
+  return [
+    { x: from.x + NODE_W, y: from.y + NODE_H / 2 },
+    { x: to.x, y: to.y + NODE_H / 2 },
+  ];
+}
+
+/**
+ * Keyboard equivalent of dragging a node: arrow keys nudge by `NUDGE_PX`,
+ * Shift+arrow jumps a full grid cell (`COL_W`/`ROW_H`) — the mandatory
+ * non-pointer path for repositioning a node, per this project's rule that no
+ * interaction is mouse/touch-only. Returns `undefined` for any other key so
+ * the caller knows not to `preventDefault()` it (Enter/Space selection, Tab
+ * focus movement, etc. must pass through untouched).
+ */
+export function arrowNudge(key: string, shift: boolean): { dx: number; dy: number } | undefined {
+  switch (key) {
+    case 'ArrowRight':
+      return { dx: shift ? COL_W : NUDGE_PX, dy: 0 };
+    case 'ArrowLeft':
+      return { dx: shift ? -COL_W : -NUDGE_PX, dy: 0 };
+    case 'ArrowDown':
+      return { dx: 0, dy: shift ? ROW_H : NUDGE_PX };
+    case 'ArrowUp':
+      return { dx: 0, dy: shift ? -ROW_H : -NUDGE_PX };
+    default:
+      return undefined;
+  }
 }
 
 export interface GraphEdge {
@@ -220,10 +263,7 @@ export function buildGraphLayout(beads: Bead[]): GraphLayout {
       from: edge.from,
       to: edge.to,
       kind: edge.kind,
-      points: [
-        { x: from.x + NODE_W, y: from.y + NODE_H / 2 },
-        { x: to.x, y: to.y + NODE_H / 2 },
-      ],
+      points: edgeEndpoints(from, to),
     };
   });
 
