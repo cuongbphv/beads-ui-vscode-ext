@@ -29,6 +29,30 @@ export function pollingEnabled(seconds: number, observers: number, focused: bool
   return seconds > 0 && observers > 0 && focused;
 }
 
+/**
+ * The fallback poll cadence relaxes to this multiple of the configured
+ * interval once the `.beads/last-touched` watcher has proven it fires — see
+ * `effectivePollSeconds`.
+ */
+export const WATCHER_ACTIVE_CADENCE_MULTIPLIER = 6;
+
+/**
+ * The interval the plain `setInterval` fallback should actually run at.
+ *
+ * The watcher is the fast path once it is known to work (an event fires the
+ * probe immediately), so the timer only needs to be a backstop at that point
+ * — six times slower rather than the original headline cadence. `0` (or
+ * less) still means "never poll", watcher or not: that is the one setting
+ * that must stay an absolute off switch.
+ *
+ * @param configuredSeconds the user's `pollIntervalSeconds` setting
+ * @param watcherActive     whether the file watcher has fired at least once
+ */
+export function effectivePollSeconds(configuredSeconds: number, watcherActive: boolean): number {
+  if (configuredSeconds <= 0) return configuredSeconds;
+  return watcherActive ? configuredSeconds * WATCHER_ACTIVE_CADENCE_MULTIPLIER : configuredSeconds;
+}
+
 export class PollGate {
   /** `undefined` = unknown; adopt the next fingerprint without refreshing. */
   private watermark: string | undefined;
@@ -57,5 +81,35 @@ export class PollGate {
     const moved = this.watermark !== undefined && mark !== this.watermark;
     this.watermark = mark;
     return moved;
+  }
+}
+
+/** Default coalescing window for `Debouncer`, matched to a `bd` write burst. */
+export const DEFAULT_DEBOUNCE_MS = 300;
+
+/**
+ * Leading-edge coalescing for the file-watcher doorbell.
+ *
+ * The point of the watcher is to react *immediately* rather than wait for the
+ * next poll tick, so the first signal of a burst is accepted right away. A
+ * `bd` write is rarely a single filesystem event, though, so every further
+ * signal inside the window is swallowed as the same burst; a signal that
+ * lands after the window has elapsed starts a new burst and is accepted
+ * again. The clock is injectable so tests can drive it without real timers.
+ */
+export class Debouncer {
+  private lastAcceptedAt: number | undefined;
+
+  constructor(
+    private readonly windowMs: number = DEFAULT_DEBOUNCE_MS,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  /** Record a signal; true when it should trigger a probe, false when coalesced. */
+  signal(): boolean {
+    const at = this.now();
+    if (this.lastAcceptedAt !== undefined && at - this.lastAcceptedAt < this.windowMs) return false;
+    this.lastAcceptedAt = at;
+    return true;
   }
 }

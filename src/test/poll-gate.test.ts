@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PollGate, pollingEnabled } from '../extension/poll-gate';
+import { Debouncer, PollGate, effectivePollSeconds, pollingEnabled } from '../extension/poll-gate';
 
 describe('pollingEnabled', () => {
   it('polls only when someone is looking at a focused window', () => {
@@ -88,5 +88,69 @@ describe('PollGate resync backstop', () => {
     let ticks = 0;
     while (!gate.dueForResync()) ticks += 1;
     expect(ticks).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('effectivePollSeconds', () => {
+  it('leaves the cadence alone when the watcher has not proven itself', () => {
+    expect(effectivePollSeconds(5, false)).toBe(5);
+  });
+
+  it('backs the cadence off once the watcher is proven active', () => {
+    expect(effectivePollSeconds(5, true)).toBe(30);
+  });
+
+  it('scales any configured interval by the same factor', () => {
+    expect(effectivePollSeconds(10, true)).toBe(60);
+  });
+
+  it('stays fully disabled at 0 even with an active watcher', () => {
+    expect(effectivePollSeconds(0, true)).toBe(0);
+  });
+
+  it('stays disabled for a negative interval even with an active watcher', () => {
+    expect(effectivePollSeconds(-1, true)).toBe(-1);
+  });
+});
+
+describe('Debouncer', () => {
+  it('accepts the first signal of a burst', () => {
+    const now = 1_000;
+    const debouncer = new Debouncer(300, () => now);
+    expect(debouncer.signal()).toBe(true);
+  });
+
+  it('swallows further signals inside the same burst window', () => {
+    let now = 1_000;
+    const debouncer = new Debouncer(300, () => now);
+    expect(debouncer.signal()).toBe(true);
+    now += 50;
+    expect(debouncer.signal()).toBe(false);
+    now += 200;
+    expect(debouncer.signal()).toBe(false);
+  });
+
+  it('coalesces ten rapid signals into exactly one accepted fire', () => {
+    let now = 0;
+    const debouncer = new Debouncer(300, () => now);
+    let fires = 0;
+    for (let i = 0; i < 10; i += 1) {
+      now += 20; // a burst of writes ~20ms apart, well inside the 300ms window
+      if (debouncer.signal()) fires += 1;
+    }
+    expect(fires).toBe(1);
+  });
+
+  it('accepts a second signal once it lands outside the window', () => {
+    let now = 0;
+    const debouncer = new Debouncer(300, () => now);
+    expect(debouncer.signal()).toBe(true);
+    now += 300;
+    expect(debouncer.signal()).toBe(true);
+  });
+
+  it('defaults to a real clock when none is injected', () => {
+    const debouncer = new Debouncer(300);
+    expect(debouncer.signal()).toBe(true);
   });
 });

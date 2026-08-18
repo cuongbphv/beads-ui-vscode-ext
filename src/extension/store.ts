@@ -12,7 +12,7 @@ import type { RpcError } from '../shared/protocol';
 import { BdService, BdError } from './bd/BdService';
 import { BdQueries } from './bd/queries';
 import { BdMutations } from './bd/mutations';
-import { PollGate, pollingEnabled } from './poll-gate';
+import { Debouncer, PollGate, effectivePollSeconds, pollingEnabled } from './poll-gate';
 
 export interface StoreState {
   snapshot?: DashboardSnapshot;
@@ -93,6 +93,17 @@ export class BeadsStore implements vscode.Disposable {
   /** Fingerprint bookkeeping — the part worth testing without an editor. */
   private readonly gate = new PollGate(FULL_RESYNC_TICKS);
 
+  /**
+   * Whether the `.beads/last-touched` watcher has fired at least once.
+   *
+   * Stays false — and the fallback timer stays at the headline cadence — until
+   * an event actually proves the watcher works on this filesystem. See
+   * `effectivePollSeconds`.
+   */
+  private watcherActive = false;
+  /** Coalesces a burst of writes behind one `.beads/last-touched` event into one probe. */
+  private readonly watchDebouncer = new Debouncer();
+
   private readonly emitter = new vscode.EventEmitter<StoreState>();
   /** Fires on every state transition: loading, loaded, failed. */
   readonly onDidChange = this.emitter.event;
@@ -112,9 +123,21 @@ export class BeadsStore implements vscode.Disposable {
     this.mutations = new BdMutations(this.bd);
 
     // Any write we make invalidates the cache immediately — this is the
-    // "refresh after mutation" half of DEC-004 (there is no file watcher,
-    // because the JSONL export does not reflect Dolt writes).
+    // "refresh after mutation" half of DEC-004.
     this.disposables.push({ dispose: this.mutations.onChanged(() => void this.refresh()) });
+
+    // The doorbell for *someone else's* write (DEC-001: a signal only — never
+    // read the file's contents, the real data always comes back through `bd`).
+    // `.beads/last-touched` may not exist yet when the watcher is created, so
+    // both onDidChange and onDidCreate feed the same handler.
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(workspaceFolder, '.beads/last-touched'),
+    );
+    this.disposables.push(
+      watcher,
+      watcher.onDidChange(this.handleWatcherSignal),
+      watcher.onDidCreate(this.handleWatcherSignal),
+    );
 
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
@@ -131,6 +154,27 @@ export class BeadsStore implements vscode.Disposable {
 
     this.restartPolling();
   }
+
+  /**
+   * The watcher fired. Nobody is looking (`observers === 0`) means nothing
+   * spawns; otherwise the debouncer coalesces a burst into one probe, which
+   * runs through `tick()` — never a direct `refresh()` — so the existing
+   * watermark check and 12-tick backstop stay the single source of truth for
+   * whether anything actually changed.
+   *
+   * `watcherActive` flips on the first event of any kind, observed or not: it
+   * is proof the watcher works on this filesystem, which is what the fallback
+   * cadence in `restartPolling` cares about.
+   */
+  private readonly handleWatcherSignal = (): void => {
+    const provenJustNow = !this.watcherActive;
+    this.watcherActive = true;
+    if (provenJustNow) this.restartPolling();
+
+    if (this.observers === 0) return;
+    if (!this.watchDebouncer.signal()) return;
+    void this.tick();
+  };
 
   get current(): StoreState {
     return this.state;
@@ -227,9 +271,13 @@ export class BeadsStore implements vscode.Disposable {
     // `0` still means "never poll" — the escape hatch for anyone who wants the
     // extension to spawn nothing it was not asked to spawn. Nobody looking, or a
     // window in the background, costs no process either.
-    const seconds = config().get<number>('pollIntervalSeconds') ?? DEFAULT_POLL_SECONDS;
-    if (!pollingEnabled(seconds, this.observers, vscode.window.state.focused)) return;
+    const configured = config().get<number>('pollIntervalSeconds') ?? DEFAULT_POLL_SECONDS;
+    if (!pollingEnabled(configured, this.observers, vscode.window.state.focused)) return;
 
+    // Once the watcher has proven it fires, the timer is only a backstop for
+    // the changes it cannot see (another workspace's `bd`, a clock skewed
+    // filesystem, …), so it can afford to run six times slower.
+    const seconds = effectivePollSeconds(configured, this.watcherActive);
     this.pollTimer = setInterval(() => void this.tick(), seconds * 1000);
   }
 
