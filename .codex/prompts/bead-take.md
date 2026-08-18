@@ -1,8 +1,8 @@
 ---
-name: bead-take
-description: Dùng khi user gõ /bead-take, hoặc yêu cầu nhận việc/claim/làm một bead cụ thể từ board beads (bd). Nhận một bead, làm trong worktree riêng, đóng bằng bằng chứng.
-disable-model-invocation: true
+description: Nhận một bead, làm trong worktree riêng, đóng bằng bằng chứng
+argument-hint: "<bead-id> [ghi chú thêm]"
 ---
+
 
 # bead-take
 

@@ -1,8 +1,8 @@
 ---
-name: bead-audit
-description: Dùng khi user gõ /bead-audit, hoặc yêu cầu audit/rà soát/verify board beads, kiểm tra epic nào thật sự xong, dọn bead treo, đối chiếu bead với repo. PM fan-out subagent đo bằng chứng (read-only), đóng nợ tập trung.
-disable-model-invocation: true
+description: PM rà soát board beads — fan-out agent đo bằng chứng, đóng nợ tập trung, sinh prompt song song
+argument-hint: "[epic-id | label | danh sách bead-id] (bỏ trống = cả board)"
 ---
+
 
 # bead-audit
 
