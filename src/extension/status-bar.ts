@@ -12,6 +12,7 @@
  */
 import type * as vscode from 'vscode';
 
+import { humanGates } from '../shared/model';
 import type { StoreState } from './store';
 
 export interface StatusBarContent {
@@ -23,10 +24,11 @@ export interface StatusBarContent {
  * Decide what the status bar item should show for a given store state.
  *
  * `gatesInSnapshot` is accepted as a separate, optional argument rather than
- * read off `state.snapshot` directly: `DashboardSnapshot` does not carry a
- * `gates` field yet (that lands with a sibling feature), so this function is
- * not coupled to that field existing. Once it does, the caller can read
- * `snapshot.gates` defensively and pass it through here unchanged.
+ * read off `state.snapshot` directly so this function stays testable without
+ * constructing a full `DashboardSnapshot`. `createBeadsStatusBar` below is
+ * the real caller — it passes `humanGates(state.snapshot?.gates ?? [])`, not
+ * the raw gate list, so the count matches the "Needs You" tree's definition
+ * of a gate that actually needs a person (not a timer/gh gate).
  *
  * Priority, highest first:
  *   1. `state.error` — a live failure must never be hidden behind a stale
@@ -91,7 +93,7 @@ export function createBeadsStatusBar(
   item.command = 'beadsDashboard.openDashboard';
 
   const apply = (state: StoreState): void => {
-    const content = statusBarContent(state);
+    const content = statusBarContent(state, humanGates(state.snapshot?.gates ?? []));
     if (!content) {
       item.hide();
       return;
