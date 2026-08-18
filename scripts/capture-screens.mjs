@@ -153,7 +153,22 @@ try {
   for (const tab of ['Overview', 'Roadmap', 'Board']) {
     await inner.locator(`[role="tab"]:has-text("${tab}")`).first().click();
     await shot(window, tab.toLowerCase());
+
+    if (tab === 'Board') {
+      // Swimlanes: 'board' above is the default, unposed view. Toggle the
+      // taxonomy-lane grouping on for a second shot, then back off — leaving
+      // it on would pose Board differently for anything that revisits the tab
+      // later (there isn't anything today, but this is cheap insurance).
+      const swimlaneToggle = inner.getByRole('button', { name: 'Swimlanes' });
+      await swimlaneToggle.click();
+      await shot(window, 'board-swimlanes');
+      await swimlaneToggle.click();
+    }
   }
+
+  // ── Graph: the dependency DAG ───────────────────────────────────────────────
+  await inner.locator('[role="tab"]:has-text("Graph")').first().click();
+  await shot(window, 'graph');
 
   // A selected issue opens the detail pane, which is its own layout branch.
   await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
@@ -166,6 +181,14 @@ try {
     .click({ timeout: 10_000 })
     .catch(() => {});
   await shot(window, 'roadmap-detail');
+
+  // The comment/append-note composer lives at the bottom of the detail pane —
+  // always rendered (so it is reachable with zero comments), but below the
+  // fold on first open. Scroll it into frame for a shot dedicated to it,
+  // rather than assuming roadmap-detail.png caught it by accident.
+  const commentDraft = inner.getByPlaceholder('Write a comment…');
+  await commentDraft.scrollIntoViewIfNeeded().catch(() => {});
+  await shot(window, 'detail-comments');
 
   // ── Settings the extension contributes ─────────────────────────────────────
   await runCommand(window, 'Preferences: Open Settings (UI)');
