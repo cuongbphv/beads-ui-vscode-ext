@@ -261,7 +261,8 @@
           "enum": [
             "overview",
             "roadmap",
-            "board"
+            "board",
+            "graph"
           ],
           "default": "overview",
           "description": "Tab the dashboard opens on."
