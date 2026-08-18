@@ -21,6 +21,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -29,6 +30,7 @@ import {
   HelpCircle,
   Inbox,
   PauseCircle,
+  Rows3,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
@@ -45,6 +47,8 @@ import {
   collapsedSet,
   toggleCollapsed as nextCollapsed,
 } from '../lib/board-columns';
+import { buildSwimlanes, laneDropId, parseLaneDropId, type Swimlane } from '../lib/board-swimlanes';
+import { labelChipStyle } from '../lib/label-color';
 import { cn } from '../lib/utils';
 
 /** A column's accent, so the board reads as a gradient from open to done. */
@@ -81,6 +85,8 @@ export function BoardView({
   blockedIds,
   collapsedColumns,
   onCollapsedColumnsChange,
+  swimlanes: swimlanesEnabled,
+  onSwimlanesChange,
 }: {
   beads: Bead[];
   index: StatusIndex;
@@ -92,6 +98,9 @@ export function BoardView({
   /** `undefined` means the user has never chosen — fall back to the default. */
   collapsedColumns?: StatusCategory[];
   onCollapsedColumnsChange: (next: StatusCategory[]) => void;
+  /** Group columns into taxonomy-label lanes instead of one flat board. Default off. */
+  swimlanes?: boolean;
+  onSwimlanesChange: (next: boolean) => void;
 }): ReactNode {
   const { notify } = useToast();
   const [dragging, setDragging] = useState<Bead>();
@@ -118,12 +127,25 @@ export function BoardView({
 
   const epics = useMemo(() => beads.filter((bead) => bead.issue_type === 'epic'), [beads]);
 
-  const columns = useMemo(() => {
-    const visible = filterBeads(beads, query, index).map((bead) =>
-      optimistic[bead.id] ? { ...bead, status: optimistic[bead.id] } : bead,
-    );
-    return buildColumns(visible, index);
-  }, [beads, query, index, optimistic]);
+  // One filtered snapshot feeds both the flat board and the swimlane grouping
+  // below — never re-filter per lane.
+  const visible = useMemo(
+    () =>
+      filterBeads(beads, query, index).map((bead) =>
+        optimistic[bead.id] ? { ...bead, status: optimistic[bead.id] } : bead,
+      ),
+    [beads, query, index, optimistic],
+  );
+
+  const columns = useMemo(() => buildColumns(visible, index), [visible, index]);
+
+  // Only built when the toggle is on — buildSwimlanes runs buildColumns once
+  // per lane, so skipping it entirely on the (default) flat path is what keeps
+  // that path exactly as cheap as it is today.
+  const swimlanes = useMemo(
+    () => (swimlanesEnabled ? buildSwimlanes(visible, index) : undefined),
+    [swimlanesEnabled, visible, index],
+  );
 
   // A pointer must travel a few pixels before a drag starts, otherwise clicking
   // a card to open its details would be swallowed by the drag sensor.
@@ -142,8 +164,14 @@ export function BoardView({
   async function onDragEnd(event: DragEndEvent): Promise<void> {
     setDragging(undefined);
     const id = String(event.active.id);
-    const targetCategory = event.over?.id ? String(event.over.id) : undefined;
-    if (!targetCategory) return;
+    const overId = event.over?.id ? String(event.over.id) : undefined;
+    if (!overId) return;
+
+    // Swimlane droppables are `lane::category`; the flat board's are a bare
+    // category. Either way only the category decides the next status — a
+    // card dropped in a different lane never mutates its label, because the
+    // lane is discarded right here.
+    const targetCategory = parseLaneDropId(overId)?.category ?? overId;
 
     const bead = beads.find((candidate) => candidate.id === id);
     const column = columns.find((candidate) => candidate.category === targetCategory);
@@ -186,9 +214,33 @@ export function BoardView({
   return (
     <div className="@container flex h-full min-h-0 flex-col">
       <div className="border-border border-b px-3 py-2">
-        <QuickFilterBar beads={beads} epics={epics} query={query} onChange={onQueryChange} />
+        <QuickFilterBar
+          beads={beads}
+          epics={epics}
+          query={query}
+          onChange={onQueryChange}
+          trailing={
+            <button
+              type="button"
+              title="Group columns into taxonomy-label lanes"
+              aria-pressed={Boolean(swimlanesEnabled)}
+              onClick={() => onSwimlanesChange(!swimlanesEnabled)}
+              className={cn(
+                'surface-interactive inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs',
+                swimlanesEnabled
+                  ? 'bg-surface-active text-fg-strong'
+                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+              )}
+            >
+              <Rows3 aria-hidden="true" className="size-3.5" />
+              Swimlanes
+            </button>
+          }
+        />
 
-        {/* Column switcher: only rendered where a multi-column board will not fit. */}
+        {/* Column switcher: only rendered where a multi-column board will not fit.
+            Doubles as the per-lane narrow selector when swimlanes are on — one
+            picker for "which category" rather than one per lane. */}
         <div className="mt-2 flex gap-1 overflow-x-auto @2xl:hidden">
           {columns.map((column) => (
             <button
@@ -211,40 +263,61 @@ export function BoardView({
       </div>
 
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={(e) => void onDragEnd(e)}>
-        {/* Narrow: one column. Wide: all of them, scroll-snapped. */}
-        {/* One column at a time: the user picked it from the switcher, so it is
-            never folded away. */}
-        <div className="min-h-0 flex-1 @2xl:hidden">
-          {narrowColumn ? (
-            <Column
-              column={narrowColumn}
-              onSelect={onSelect}
-              selectedId={selectedId}
-              blockedIds={blockedIds}
-              className="h-full"
-            />
-          ) : null}
-        </div>
+        {swimlanes ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {swimlanes.map((swimlane) => (
+              <SwimlaneSection
+                key={swimlane.lane}
+                swimlane={swimlane}
+                narrowCategory={narrowColumn?.category}
+                onSelect={onSelect}
+                selectedId={selectedId}
+                blockedIds={blockedIds}
+                collapsed={collapsed}
+                onToggleCollapsed={(category) =>
+                  onCollapsedColumnsChange(nextCollapsed(collapsedColumns, category))
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <>
+            {/* Narrow: one column. Wide: all of them, scroll-snapped. */}
+            {/* One column at a time: the user picked it from the switcher, so it is
+                never folded away. */}
+            <div className="min-h-0 flex-1 @2xl:hidden">
+              {narrowColumn ? (
+                <Column
+                  column={narrowColumn}
+                  onSelect={onSelect}
+                  selectedId={selectedId}
+                  blockedIds={blockedIds}
+                  className="h-full"
+                />
+              ) : null}
+            </div>
 
-        <div className="hidden min-h-0 flex-1 snap-x snap-mandatory gap-2 overflow-x-auto px-3 py-3 @2xl:flex">
-          {columns.map((column) => (
-            <Column
-              key={column.category}
-              column={column}
-              onSelect={onSelect}
-              selectedId={selectedId}
-              blockedIds={blockedIds}
-              collapsed={collapsed.has(column.category)}
-              onToggleCollapsed={() =>
-                onCollapsedColumnsChange(nextCollapsed(collapsedColumns, column.category))
-              }
-              className={cn(
-                'shrink-0 snap-start',
-                collapsed.has(column.category) ? 'w-52' : 'w-72 @5xl:flex-1',
-              )}
-            />
-          ))}
-        </div>
+            <div className="hidden min-h-0 flex-1 snap-x snap-mandatory gap-2 overflow-x-auto px-3 py-3 @2xl:flex">
+              {columns.map((column) => (
+                <Column
+                  key={column.category}
+                  column={column}
+                  onSelect={onSelect}
+                  selectedId={selectedId}
+                  blockedIds={blockedIds}
+                  collapsed={collapsed.has(column.category)}
+                  onToggleCollapsed={() =>
+                    onCollapsedColumnsChange(nextCollapsed(collapsedColumns, column.category))
+                  }
+                  className={cn(
+                    'shrink-0 snap-start',
+                    collapsed.has(column.category) ? 'w-52' : 'w-72 @5xl:flex-1',
+                  )}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         <DragOverlay dropAnimation={null}>
           {dragging ? <BeadCard bead={dragging} className="w-64 shadow-lg" /> : null}
@@ -254,8 +327,92 @@ export function BoardView({
   );
 }
 
+/**
+ * One lane's worth of the board: a header naming the lane, then that lane's
+ * columns. Narrow uses the same category switcher as the flat board (one
+ * column per lane, stacked); wide repeats the flat board's row, once per lane
+ * — a real swimlane grid, lanes as rows and status categories as columns.
+ */
+function SwimlaneSection({
+  swimlane,
+  narrowCategory,
+  onSelect,
+  selectedId,
+  blockedIds,
+  collapsed,
+  onToggleCollapsed,
+}: {
+  swimlane: Swimlane;
+  narrowCategory?: StatusCategory;
+  onSelect: (id: string) => void;
+  selectedId?: string;
+  blockedIds: Set<string>;
+  collapsed: Set<StatusCategory>;
+  onToggleCollapsed: (category: StatusCategory) => void;
+}): ReactNode {
+  const narrowColumn =
+    swimlane.columns.find((column) => column.category === narrowCategory) ?? swimlane.columns[0];
+  const total = swimlane.columns.reduce((sum, column) => sum + column.beads.length, 0);
+
+  return (
+    <section aria-label={`${swimlane.lane} lane, ${total} issues`} className="border-border border-b">
+      <header className="flex items-center gap-2 px-3 py-2">
+        {swimlane.warning ? (
+          // Color is never the only signal here: the dashed border, the icon,
+          // and the "unlabeled" text all say the same thing independently.
+          <span className="text-warning border-warning inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs">
+            <AlertTriangle aria-hidden="true" className="size-3" />
+            {swimlane.lane}
+          </span>
+        ) : (
+          <span
+            className="label-chip rounded-full px-2 py-0.5 text-xs"
+            style={labelChipStyle(swimlane.lane) as CSSProperties}
+          >
+            {swimlane.lane}
+          </span>
+        )}
+        <span className="text-fg-muted text-xs tabular-nums">{total}</span>
+      </header>
+
+      <div className="pb-3 @2xl:hidden">
+        {narrowColumn ? (
+          <Column
+            column={narrowColumn}
+            dropId={laneDropId(swimlane.lane, narrowColumn.category)}
+            onSelect={onSelect}
+            selectedId={selectedId}
+            blockedIds={blockedIds}
+            className="mx-3 h-72"
+          />
+        ) : null}
+      </div>
+
+      <div className="hidden gap-2 overflow-x-auto px-3 pb-3 @2xl:flex">
+        {swimlane.columns.map((column) => (
+          <Column
+            key={column.category}
+            column={column}
+            dropId={laneDropId(swimlane.lane, column.category)}
+            onSelect={onSelect}
+            selectedId={selectedId}
+            blockedIds={blockedIds}
+            collapsed={collapsed.has(column.category)}
+            onToggleCollapsed={() => onToggleCollapsed(column.category)}
+            className={cn(
+              'h-80 shrink-0',
+              collapsed.has(column.category) ? 'w-52' : 'w-72 @5xl:flex-1',
+            )}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Column({
   column,
+  dropId,
   onSelect,
   selectedId,
   blockedIds,
@@ -264,6 +421,8 @@ function Column({
   onToggleCollapsed,
 }: {
   column: BoardColumn;
+  /** Droppable id. Defaults to the bare category — the flat board's id, unchanged. */
+  dropId?: string;
   onSelect: (id: string) => void;
   selectedId?: string;
   blockedIds: Set<string>;
@@ -271,7 +430,7 @@ function Column({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }): ReactNode {
-  const { setNodeRef, isOver } = useDroppable({ id: column.category });
+  const { setNodeRef, isOver } = useDroppable({ id: dropId ?? column.category });
   const [limit, setLimit] = useState(PAGE);
   const accent = CATEGORY_ACCENT[column.category] ?? 'var(--color-fg-muted)';
 
