@@ -70,6 +70,16 @@ export interface RpcMethods {
     params: { text: string };
     result: { ok: true };
   };
+  /** Post a comment (`bd comment id text`). `text` must be non-blank. */
+  addComment: {
+    params: { id: string; text: string };
+    result: { ok: true };
+  };
+  /** Append to notes (`bd update id --append-notes text`), newline-joined by bd. */
+  appendNotes: {
+    params: { id: string; text: string };
+    result: { ok: true };
+  };
 }
 
 export type RpcMethodName = keyof RpcMethods;
@@ -84,6 +94,8 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'setDue',
   'setEstimate',
   'closeBead',
+  'addComment',
+  'appendNotes',
 ]);
 
 export interface RpcRequest<M extends RpcMethodName = RpcMethodName> {

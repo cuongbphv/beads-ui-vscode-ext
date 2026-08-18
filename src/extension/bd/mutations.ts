@@ -87,6 +87,26 @@ export class BdMutations {
     await this.run(args, id);
   }
 
+  /**
+   * Post a comment. The router rejects an empty/whitespace-only `text` before
+   * it ever reaches here, so this trusts the caller and passes it through.
+   */
+  async comment(id: string, text: string): Promise<void> {
+    await this.run(['comment', id, text], id);
+  }
+
+  /**
+   * Append to `notes` rather than replace it. bd 1.2.2 joins with a newline
+   * (`--append-notes`, verified via `bd update --help` on this board), which
+   * is what makes this safe to expose from the UI without a read-modify-write
+   * race: two concurrent appends both land, in whatever order bd receives
+   * them, instead of one clobbering the other the way a full `--notes`
+   * overwrite would.
+   */
+  async appendNotes(id: string, text: string): Promise<void> {
+    await this.run(['update', id, '--append-notes', text], id);
+  }
+
   private async run(args: string[], ...changedIds: string[]): Promise<void> {
     await this.bd.exec(args);
     for (const listener of this.listeners) listener(changedIds);
