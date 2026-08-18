@@ -50,9 +50,19 @@ const idPrefix = flag('--id-prefix') ?? (demo ? DEMO_ID_PREFIX : 'beads-ui-vscod
 
 const LAUNCH_TIMEOUT = 180_000;
 
+/**
+ * VS Code's default chord for the Command Palette is `Ctrl+Shift+P` on
+ * Windows/Linux but `Cmd+Shift+P` on macOS — hardcoding the former means every
+ * keypress here silently no-ops on a Mac runner, hanging on `.quick-input-widget`
+ * until its own wait times out with no clue why. Same fix as
+ * `run-webview-test.mjs`'s `PALETTE_KEY`, ported here since this script has its
+ * own separate `runCommand`.
+ */
+const PALETTE_KEY = process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P';
+
 /** Run a command through the palette, the way a user would. */
 async function runCommand(window, title) {
-  await window.keyboard.press('Control+Shift+P');
+  await window.keyboard.press(PALETTE_KEY);
   await window.locator('.quick-input-widget').waitFor({ state: 'visible' });
   await window.locator('.quick-input-box input').fill(`>${title}`);
   await window.locator('.quick-input-list .monaco-list-row').first().waitFor();
