@@ -65,6 +65,25 @@ function rows<T>(payload: unknown, key = 'issues'): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+/**
+ * `bd list --all` excludes `issue_type: 'gate'` issues entirely — open or
+ * closed (verified on bd 1.2.2: gate lifecycle issues are workflow plumbing,
+ * not board items) — but `bd stats`' `total_issues` and `closed_issues` both
+ * count every issue including gates. A board with zero gates never notices;
+ * this one does, since `beads-ui-vscode-ext-43p.2` carries a closed ad-hoc
+ * gate from an earlier capture step. `queries.list` has no reason to grow a
+ * "gates" mode just for this cross-check, so gate counts are fetched
+ * directly, the same way `rawJson` already bypasses `BdQueries` for the
+ * other independent-path assertions in this file.
+ */
+async function gateIssueCounts(): Promise<{ total: number; closed: number }> {
+  const gates = rows<{ id: string; status: string }>(
+    await rawJson(['gate', 'list', '--all']),
+    'gates',
+  );
+  return { total: gates.length, closed: gates.filter((g) => g.status === 'closed').length };
+}
+
 const service = new BdService({ cwd: CWD });
 const queries = new BdQueries(service);
 
@@ -139,10 +158,18 @@ describe('stats match the CLI', () => {
   });
 
   it('agrees with the issue list it will be shown next to', async () => {
-    const [stats, all] = await Promise.all([queries.stats(), queries.list({ all: true })]);
-    // The dashboard prints both; a mismatch means one of them is lying.
-    expect(all.length).toBe(stats.total_issues);
-    expect(all.filter((b) => b.status === 'closed').length).toBe(stats.closed_issues);
+    const [stats, all, gates] = await Promise.all([
+      queries.stats(),
+      queries.list({ all: true }),
+      gateIssueCounts(),
+    ]);
+    // The dashboard prints both; a mismatch means one of them is lying. `all`
+    // undercounts both totals by exactly the gate issues on the board — see
+    // `gateIssueCounts`'s doc comment.
+    expect(all.length + gates.total).toBe(stats.total_issues);
+    expect(all.filter((b) => b.status === 'closed').length + gates.closed).toBe(
+      stats.closed_issues,
+    );
   });
 });
 
@@ -308,12 +335,14 @@ describe('ready / blocked', () => {
 
 describe('dashboard snapshot', () => {
   it('is internally consistent — this is exactly what the webview receives', async () => {
-    const snapshot = await queries.snapshot();
+    const [snapshot, gates] = await Promise.all([queries.snapshot(), gateIssueCounts()]);
     const ids = new Set(snapshot.beads.map((b) => b.id));
 
     expect(snapshot.context.bd_version).toMatch(/\d+\.\d+/);
     expect(snapshot.vocabulary.statuses.length).toBeGreaterThan(0);
-    expect(snapshot.beads.length).toBe(snapshot.stats.total_issues);
+    // snapshot.beads comes from `bd list --all`, which excludes gate issues —
+    // see `gateIssueCounts`'s doc comment above.
+    expect(snapshot.beads.length + gates.total).toBe(snapshot.stats.total_issues);
     expect(snapshot.truncated).toBe(false);
     expect(Number.isNaN(Date.parse(snapshot.fetchedAt))).toBe(false);
 
