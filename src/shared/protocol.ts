@@ -168,9 +168,9 @@ export type HostEvent =
   | { kind: 'event'; name: 'settings'; settings: DashboardSettings }
   | { kind: 'event'; name: 'error'; error: RpcError };
 
-export type DashboardTab = 'overview' | 'roadmap' | 'board';
+export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'graph';
 
-export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board'];
+export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board', 'graph'];
 
 /** Anything the webview may post to the host. */
 export type WebviewMessage = RpcRequest | { kind: 'ready' };
