@@ -4,6 +4,32 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-08-18
+
+Documentation and repository housekeeping only — not one line under `src/` differs from
+0.1.3. The release exists so the Marketplace and Open VSX pages carry the new README.
+
+### Added
+
+- **A public roadmap in the README**, in all three languages. Three tiers on purpose:
+  **Planned** links the six issues now open in the tracker, **Exploring** states the
+  gate-as-remote-approval direction as a direction — nothing designed, nothing promised —
+  and **Not planned** says outright that orchestrating work stays out of scope, so a
+  proposal in that direction is not a surprise rejection.
+- **`CONTRIBUTING.md`** — the three rules that decide whether a PR is mergeable at all
+  (`bd --json` is the only interface, the call chain is one-directional, the design system
+  is binding), how to run each suite, and the trap a fresh clone hits: this repo's own
+  `.beads/` is gitignored, so `npm run demo:seed` or `bd init` is what gives the dev host
+  something to open.
+- **Issue templates.** The bug form asks for `bd --version` and the `Beads: Show bd Output
+  Log` lines, because nearly every failure here is a `bd` call returning something the UI
+  did not expect; the feature form asks which `bd … --json` call would feed the proposal;
+  the config routes bugs in `bd` itself upstream instead of into this tracker.
+
+### Changed
+
+- `CONTRIBUTING.md` is excluded from the `.vsix` — nothing at runtime reads it.
+
 ## [0.1.3] — 2026-08-18
 
 ### Added
