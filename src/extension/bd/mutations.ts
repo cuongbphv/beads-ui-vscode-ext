@@ -76,37 +76,6 @@ export class BdMutations {
     await this.run(['update', id, '--claim'], id);
   }
 
-  /**
-   * Create one issue and return its id.
-   *
-   * Only the Velox import path uses this, and only after the user has approved
-   * an explicit preview of what will be created — issue creation is otherwise
-   * out of scope for a "view + quick actions" extension.
-   *
-   * `--silent` makes bd print the new id and nothing else.
-   */
-  async create(draft: {
-    title: string;
-    description?: string;
-    type?: string;
-    priority?: number;
-    labels?: string[];
-    parent?: string;
-    externalRef?: string;
-  }): Promise<string> {
-    const args = ['create', draft.title, '--silent'];
-    if (draft.description) args.push('--description', draft.description);
-    if (draft.type) args.push('--type', draft.type);
-    if (draft.priority !== undefined) args.push('--priority', String(draft.priority));
-    if (draft.labels?.length) args.push('--labels', draft.labels.join(','));
-    if (draft.parent) args.push('--parent', draft.parent);
-    if (draft.externalRef) args.push('--external-ref', draft.externalRef);
-
-    const id = (await this.bd.exec(args)).trim().split(/\s+/).pop() ?? '';
-    for (const listener of this.listeners) listener([id]);
-    return id;
-  }
-
   private async run(args: string[], ...changedIds: string[]): Promise<void> {
     await this.bd.exec(args);
     for (const listener of this.listeners) listener(changedIds);

@@ -14,7 +14,6 @@ import { registerCommands } from './commands';
 import { DashboardPanel } from './panel/DashboardPanel';
 import { BeadsStore, bindVisibility } from './store';
 import { BeadsTreeProvider } from './tree/BeadsTreeProvider';
-import { VeloxSync } from './velox/VeloxSync';
 import { pickBeadsFolder, resolveBeadsFolder } from './workspace';
 
 let store: BeadsStore | undefined;
@@ -109,8 +108,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (mineNode) void mineView.reveal(mineNode, { select: true, focus: false, expand: true });
   };
 
-  const velox = new VeloxSync({ store, output, folder: () => folder });
-
   /**
    * Switching the tracked folder rebuilds the store, the tree and the panel, so
    * it is done by reloading the window rather than by re-threading every
@@ -136,7 +133,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       output,
       openDashboard,
       panel: () => DashboardPanel.active,
-      velox,
       selectFolder,
     }),
   );

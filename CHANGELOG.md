@@ -4,6 +4,14 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- The external roadmap sync commands (sync status report, export to roadmap, import
+  roadmap tasks) and the roadmap seeding script. The capability moves to internal
+  development; the extension stays a viewer with quick actions over `bd`.
+
 ## [0.1.2] — 2026-08-09
 
 ### Added
@@ -66,7 +74,7 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
   time, and `HEAD` resolves to whatever the default branch happens to be when the
   page is viewed — so the screenshots and the demo GIF could render as broken images
   on the Marketplace listing.
-- Dropped two links to `.velox/`, which is git-ignored and therefore resolves on no
+- Dropped two links to a git-ignored directory, which therefore resolved on no
   branch at all.
 
 ## [0.1.0] — 2026-08-04
@@ -91,7 +99,8 @@ First public release.
   single `bd list --limit 1`; the full reload runs only when something changed, and
   nothing is checked while every Beads view is hidden or the window is in the
   background. Set `beadsDashboard.pollIntervalSeconds` to `0` to switch it off.
-- **Velox sync commands** — status report, export to roadmap, import roadmap tasks.
+- Roadmap sync commands — status report, export to roadmap, import roadmap tasks
+  (removed after 0.1.2).
 - Settings: `bdPath`, `defaultTab`, `issueLimit`, `pollIntervalSeconds`, `showClosed`,
   `assignee`.
 
