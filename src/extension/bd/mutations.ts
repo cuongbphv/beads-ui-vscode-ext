@@ -76,6 +76,17 @@ export class BdMutations {
     await this.run(['update', id, '--claim'], id);
   }
 
+  /**
+   * Resolve a human gate. `bd gate resolve --json` still only prints a text
+   * confirmation line (verified on bd 1.2.2), so this goes through `exec()`
+   * rather than `json()` like every other write.
+   */
+  async resolveGate(id: string, reason?: string): Promise<void> {
+    const args = ['gate', 'resolve', id];
+    if (reason?.trim()) args.push('--reason', reason.trim());
+    await this.run(args, id);
+  }
+
   private async run(args: string[], ...changedIds: string[]): Promise<void> {
     await this.bd.exec(args);
     for (const listener of this.listeners) listener(changedIds);

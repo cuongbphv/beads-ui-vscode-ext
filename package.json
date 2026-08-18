@@ -141,6 +141,12 @@
         "icon": "$(copy)"
       },
       {
+        "command": "beadsDashboard.resolveGate",
+        "title": "Resolve Gate…",
+        "category": "Beads",
+        "icon": "$(pass)"
+      },
+      {
         "command": "beadsDashboard.selectFolder",
         "title": "Select Beads Folder…",
         "category": "Beads",
@@ -200,6 +206,11 @@
           "command": "beadsDashboard.copyId",
           "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "9_copy@1"
+        },
+        {
+          "command": "beadsDashboard.resolveGate",
+          "when": "view == beadsDashboard.needsYou && viewItem == gate",
+          "group": "inline@1"
         }
       ],
       "commandPalette": [
@@ -229,6 +240,10 @@
         },
         {
           "command": "beadsDashboard.copyId",
+          "when": "false"
+        },
+        {
+          "command": "beadsDashboard.resolveGate",
           "when": "false"
         }
       ]
