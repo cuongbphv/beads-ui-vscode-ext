@@ -150,6 +150,48 @@ extension spawn nothing you did not ask for.
 | `Beads: Show bd Output Log` | Palette — every argv and every failure lands here |
 | Change status / priority / assignee, Claim, Close, Copy ID | Tree context menu, detail pane |
 
+## Roadmap
+
+No dates, and nothing below is a promise. What the list is for: every planned item is an open
+issue, so "where would I even start?" has an answer.
+
+**Planned** — designed against the architecture that already exists:
+
+- **Molecule progress** — `bd mol` has no UI at all today. A progress strip for the running
+  molecule and the wisps about to expire. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
+- **Fleet monitor** — the worktrees and `work/bead-*` branches on disk, lined up against the beads
+  they are carrying, so a stale one is visible. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
+- **Keyboard-movable cards** — the board's drag is pointer-only, while the card already announces
+  itself as draggable to a screen reader. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7) — good first issue)
+- **A workflow that runs on pull requests** — nothing does today, because part of the suite drives
+  a real `bd` binary. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
+- **Windows, confirmed by someone on Windows** — the `.cmd` shim fallback and the Git-Bash paths are
+  written but never verified on a real box. ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
+- **Troubleshooting docs** — the four degraded states the code deliberately handles are
+  undocumented. ([#8](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/8) — good first issue)
+
+**Exploring** — a direction, not a commitment. Nothing is designed and no issue is open yet.
+
+A `human` gate in beads is already a "wait for a person" primitive, which makes remote approval
+possible without changing beads core: an agent fleet stops on a gate, and whoever is on the hook
+sees it, reads the context, and resolves it — not necessarily at their desk. That would make this
+extension the in-editor half of something larger, with notifications when a gate opens or work goes
+blocked. Arguing with that direction is useful; open an issue and say so.
+
+**Not planned:** orchestrating work. This is a viewer with quick actions — it shows what `bd` knows
+and writes back through `bd`. What runs next is `bd`'s business, and that of whatever drives it.
+
+## Contributing
+
+[CONTRIBUTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/CONTRIBUTING.md) has the setup, the three rules a PR has to respect,
+and how to run each suite. The short version: `npm install`, `npm run watch`, **F5** — then
+`npm run demo:seed` for something to point the dev host at, because this repo's own `.beads/` is
+gitignored and cloning gets you no database.
+
+Unclaimed work is tagged [`help wanted`](https://github.com/cuongbphv/beads-ui-vscode-ext/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22); the entries scoped to one file or one workflow are
+[`good first issue`](https://github.com/cuongbphv/beads-ui-vscode-ext/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). Bugs want the output of `Beads: Show bd Output Log` and your
+`bd --version` — the issue template asks for exactly that.
+
 ## Development
 
 ```bash
