@@ -43,6 +43,8 @@ interface PersistedState extends PersistedRoadmapPreferences {
   query: BeadQuery;
   /** Absent until the user first folds or unfolds a board column. */
   collapsedColumns?: StatusCategory[];
+  /** Group board columns into taxonomy-label lanes. Absent means off. */
+  boardSwimlanes?: boolean;
   /** The Roadmap answers "show closed" for itself; the Board keeps `query`. */
   roadmapShowClosed?: boolean;
   /** Absent until the user picks a shape; the date range decides until then. */
@@ -67,6 +69,7 @@ export function App(): ReactNode {
   // connect; this is only what the first frame renders with.
   const [query, setQuery] = useState<BeadQuery>(saved?.query ?? { includeClosed: true });
   const [collapsedColumns, setCollapsedColumns] = useState(saved?.collapsedColumns);
+  const [boardSwimlanes, setBoardSwimlanes] = useState(saved?.boardSwimlanes ?? false);
   const [roadmapShowClosed, setRoadmapShowClosed] = useState(saved?.roadmapShowClosed ?? false);
   const [roadmapShape, setRoadmapShape] = useState(saved?.roadmapShape);
   const [roadmapSort, setRoadmapSort] = useState<RoadmapSort>(restoredRoadmap.sort);
@@ -104,6 +107,7 @@ export function App(): ReactNode {
         tab,
         query,
         collapsedColumns,
+        boardSwimlanes,
         roadmapShowClosed,
         roadmapShape,
         ...persistedRoadmapPreferences({
@@ -117,6 +121,7 @@ export function App(): ReactNode {
       tab,
       query,
       collapsedColumns,
+      boardSwimlanes,
       roadmapShowClosed,
       roadmapShape,
       roadmapSort,
@@ -271,6 +276,8 @@ export function App(): ReactNode {
                 blockedIds={blockedIds}
                 collapsedColumns={collapsedColumns}
                 onCollapsedColumnsChange={setCollapsedColumns}
+                swimlanes={boardSwimlanes}
+                onSwimlanesChange={setBoardSwimlanes}
               />
             )}
           </div>
