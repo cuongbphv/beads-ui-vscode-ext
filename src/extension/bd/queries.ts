@@ -9,6 +9,7 @@ import type {
   BeadComment,
   BeadFilters,
   BdContext,
+  BdGate,
   BdStats,
   BdVocabulary,
   DashboardSnapshot,
@@ -175,6 +176,14 @@ export class BdQueries {
   }
 
   /**
+   * Open gates. `bd gate list --json` answers with a bare array, or `null`
+   * when the project has none — `pickArray` turns both into `[]`/the array.
+   */
+  async gates(): Promise<BdGate[]> {
+    return pickArray<BdGate>(await this.bd.jsonShared<unknown>(['gate', 'list']), 'gates', 'issues');
+  }
+
+  /**
    * "Has anything changed?" in one `bd` call.
    *
    * A full snapshot is a six-way fan-out; asking that on a timer would spawn six
@@ -210,13 +219,14 @@ export class BdQueries {
    * so they run concurrently; BdService coalesces the ones the tree also wants.
    */
   async snapshot(limit = DEFAULT_ISSUE_LIMIT): Promise<DashboardSnapshot> {
-    const [context, vocabulary, stats, beads, ready, blocked] = await Promise.all([
+    const [context, vocabulary, stats, beads, ready, blocked, gates] = await Promise.all([
       this.context(),
       this.vocabulary(),
       this.stats(),
       this.list({ all: true, limit }),
       this.ready(),
       this.blocked(),
+      this.gates(),
     ]);
 
     return {
@@ -226,6 +236,7 @@ export class BdQueries {
       beads,
       readyIds: ready.map((b) => b.id),
       blockedIds: blocked.map((b) => b.id),
+      gates,
       truncated: beads.length >= limit,
       fetchedAt: new Date().toISOString(),
     };

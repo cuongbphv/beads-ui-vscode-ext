@@ -65,6 +65,7 @@ vi.mock('../webview/hooks/use-beads', () => ({
       ],
       readyIds: ['epic-a'],
       blockedIds: [],
+      gates: [],
       truncated: false,
       fetchedAt: '2026-08-09T00:00:00.000Z',
     },

@@ -158,6 +158,30 @@ export interface Bead {
   comments?: BeadComment[];
 }
 
+/** What a gate is blocked on. `human` is the only kind the sidebar surfaces. */
+export type GateAwaitType = 'human' | 'timer' | 'gh:run' | 'gh:pr' | 'bead';
+
+/**
+ * A gate, as returned by `bd gate list --json` (verified against bd 1.2.2).
+ *
+ * A gate is a real issue rather than a separate collection — `issue_type` is
+ * always `'gate'` — so it carries the same core fields as `Bead`. The field
+ * that names what it is waiting on is `await_type`, not `type`.
+ */
+export interface BdGate {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: number;
+  issue_type: 'gate';
+  owner?: string;
+  created_at?: string;
+  created_by?: string;
+  updated_at?: string;
+  await_type: GateAwaitType;
+}
+
 /** A comment attached to an issue (`bd show --include-comments`). */
 export interface BeadComment {
   id?: string | number;
@@ -283,6 +307,8 @@ export interface DashboardSnapshot {
   beads: Bead[];
   readyIds: string[];
   blockedIds: string[];
+  /** Open gates from `bd gate list --json`. Empty on a project with none. */
+  gates: BdGate[];
   /** True when `beadsDashboard.issueLimit` truncated the list. */
   truncated: boolean;
   fetchedAt: string;
