@@ -4,7 +4,14 @@
  * The detail pane docks beside the content when the container is wide and takes
  * the whole panel when it is not — same component, no duplicate markup.
  */
-import { AlertCircle, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
+import {
+  AlertCircle,
+  LayoutDashboard,
+  Map as MapIcon,
+  RefreshCw,
+  Columns3,
+  Waypoints,
+} from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -35,6 +42,7 @@ import {
 import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
+import { GraphView } from './views/GraphView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
@@ -43,6 +51,8 @@ interface PersistedState extends PersistedRoadmapPreferences {
   query: BeadQuery;
   /** Absent until the user first folds or unfolds a board column. */
   collapsedColumns?: StatusCategory[];
+  /** Group board columns into taxonomy-label lanes. Absent means off. */
+  boardSwimlanes?: boolean;
   /** The Roadmap answers "show closed" for itself; the Board keeps `query`. */
   roadmapShowClosed?: boolean;
   /** Absent until the user picks a shape; the date range decides until then. */
@@ -55,6 +65,7 @@ const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
   overview: { label: 'Overview', icon: <LayoutDashboard aria-hidden="true" className="size-4" /> },
   roadmap: { label: 'Roadmap', icon: <MapIcon aria-hidden="true" className="size-4" /> },
   board: { label: 'Board', icon: <Columns3 aria-hidden="true" className="size-4" /> },
+  graph: { label: 'Graph', icon: <Waypoints aria-hidden="true" className="size-4" /> },
 };
 
 export function App(): ReactNode {
@@ -67,6 +78,7 @@ export function App(): ReactNode {
   // connect; this is only what the first frame renders with.
   const [query, setQuery] = useState<BeadQuery>(saved?.query ?? { includeClosed: true });
   const [collapsedColumns, setCollapsedColumns] = useState(saved?.collapsedColumns);
+  const [boardSwimlanes, setBoardSwimlanes] = useState(saved?.boardSwimlanes ?? false);
   const [roadmapShowClosed, setRoadmapShowClosed] = useState(saved?.roadmapShowClosed ?? false);
   const [roadmapShape, setRoadmapShape] = useState(saved?.roadmapShape);
   const [roadmapSort, setRoadmapSort] = useState<RoadmapSort>(restoredRoadmap.sort);
@@ -104,6 +116,7 @@ export function App(): ReactNode {
         tab,
         query,
         collapsedColumns,
+        boardSwimlanes,
         roadmapShowClosed,
         roadmapShape,
         ...persistedRoadmapPreferences({
@@ -117,6 +130,7 @@ export function App(): ReactNode {
       tab,
       query,
       collapsedColumns,
+      boardSwimlanes,
       roadmapShowClosed,
       roadmapShape,
       roadmapSort,
@@ -260,7 +274,7 @@ export function App(): ReactNode {
                 gutter={roadmapGutter}
                 onGutterChange={setRoadmapGutter}
               />
-            ) : (
+            ) : tab === 'board' ? (
               <BoardView
                 beads={beads}
                 index={index}
@@ -271,6 +285,15 @@ export function App(): ReactNode {
                 blockedIds={blockedIds}
                 collapsedColumns={collapsedColumns}
                 onCollapsedColumnsChange={setCollapsedColumns}
+                swimlanes={boardSwimlanes}
+                onSwimlanesChange={setBoardSwimlanes}
+              />
+            ) : (
+              <GraphView
+                beads={beads}
+                onSelect={onSelect}
+                selectedId={focusedId}
+                blockedIds={blockedIds}
               />
             )}
           </div>

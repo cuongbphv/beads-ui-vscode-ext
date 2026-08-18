@@ -15,6 +15,7 @@ import {
   isPlanType,
   toCategory,
   type Bead,
+  type BdGate,
   type BeadDependency,
   type BoardColumn,
   type EpicGroup,
@@ -219,6 +220,18 @@ export function assigneesOf(beads: Bead[]): string[] {
   const seen = new Set<string>();
   for (const bead of beads) if (bead.assignee) seen.add(bead.assignee);
   return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Gates actionable from the sidebar: only `human` ones. Timer and CI
+ * (`gh:run` / `gh:pr` / `bead`) gates clear themselves, so surfacing them in
+ * "Needs You" would be noise nobody can act on.
+ *
+ * Pulled out as a pure function — rather than inlined in the tree provider —
+ * so it is unit-testable without the `vscode` module the provider requires.
+ */
+export function humanGates(gates: BdGate[]): BdGate[] {
+  return gates.filter((gate) => gate.await_type === 'human');
 }
 
 /**

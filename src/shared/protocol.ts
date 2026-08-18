@@ -70,6 +70,16 @@ export interface RpcMethods {
     params: { text: string };
     result: { ok: true };
   };
+  /** Post a comment (`bd comment id text`). `text` must be non-blank. */
+  addComment: {
+    params: { id: string; text: string };
+    result: { ok: true };
+  };
+  /** Append to notes (`bd update id --append-notes text`), newline-joined by bd. */
+  appendNotes: {
+    params: { id: string; text: string };
+    result: { ok: true };
+  };
 }
 
 export type RpcMethodName = keyof RpcMethods;
@@ -84,6 +94,8 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'setDue',
   'setEstimate',
   'closeBead',
+  'addComment',
+  'appendNotes',
 ]);
 
 export interface RpcRequest<M extends RpcMethodName = RpcMethodName> {
@@ -156,9 +168,9 @@ export type HostEvent =
   | { kind: 'event'; name: 'settings'; settings: DashboardSettings }
   | { kind: 'event'; name: 'error'; error: RpcError };
 
-export type DashboardTab = 'overview' | 'roadmap' | 'board';
+export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'graph';
 
-export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board'];
+export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board', 'graph'];
 
 /** Anything the webview may post to the host. */
 export type WebviewMessage = RpcRequest | { kind: 'ready' };

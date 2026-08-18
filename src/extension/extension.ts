@@ -12,9 +12,9 @@ import type { DashboardTab } from '../shared/protocol';
 import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
 import { DashboardPanel } from './panel/DashboardPanel';
+import { createBeadsStatusBar } from './status-bar';
 import { BeadsStore, bindVisibility } from './store';
 import { BeadsTreeProvider } from './tree/BeadsTreeProvider';
-import { VeloxSync } from './velox/VeloxSync';
 import { pickBeadsFolder, resolveBeadsFolder } from './workspace';
 
 let store: BeadsStore | undefined;
@@ -109,8 +109,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (mineNode) void mineView.reveal(mineNode, { select: true, focus: false, expand: true });
   };
 
-  const velox = new VeloxSync({ store, output, folder: () => folder });
-
   /**
    * Switching the tracked folder rebuilds the store, the tree and the panel, so
    * it is done by reloading the window rather than by re-threading every
@@ -136,7 +134,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       output,
       openDashboard,
       panel: () => DashboardPanel.active,
-      velox,
       selectFolder,
     }),
   );
@@ -149,6 +146,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       treeView.description = state.error ? 'bd unavailable' : undefined;
     }),
   );
+
+  // Same affordance as the tree badge, but visible without the sidebar open.
+  context.subscriptions.push(createBeadsStatusBar(store, vscode));
 
   const state = await store.refresh();
   if (state.error) {

@@ -77,34 +77,34 @@ export class BdMutations {
   }
 
   /**
-   * Create one issue and return its id.
-   *
-   * Only the Velox import path uses this, and only after the user has approved
-   * an explicit preview of what will be created — issue creation is otherwise
-   * out of scope for a "view + quick actions" extension.
-   *
-   * `--silent` makes bd print the new id and nothing else.
+   * Resolve a human gate. `bd gate resolve --json` still only prints a text
+   * confirmation line (verified on bd 1.2.2), so this goes through `exec()`
+   * rather than `json()` like every other write.
    */
-  async create(draft: {
-    title: string;
-    description?: string;
-    type?: string;
-    priority?: number;
-    labels?: string[];
-    parent?: string;
-    externalRef?: string;
-  }): Promise<string> {
-    const args = ['create', draft.title, '--silent'];
-    if (draft.description) args.push('--description', draft.description);
-    if (draft.type) args.push('--type', draft.type);
-    if (draft.priority !== undefined) args.push('--priority', String(draft.priority));
-    if (draft.labels?.length) args.push('--labels', draft.labels.join(','));
-    if (draft.parent) args.push('--parent', draft.parent);
-    if (draft.externalRef) args.push('--external-ref', draft.externalRef);
+  async resolveGate(id: string, reason?: string): Promise<void> {
+    const args = ['gate', 'resolve', id];
+    if (reason?.trim()) args.push('--reason', reason.trim());
+    await this.run(args, id);
+  }
 
-    const id = (await this.bd.exec(args)).trim().split(/\s+/).pop() ?? '';
-    for (const listener of this.listeners) listener([id]);
-    return id;
+  /**
+   * Post a comment. The router rejects an empty/whitespace-only `text` before
+   * it ever reaches here, so this trusts the caller and passes it through.
+   */
+  async comment(id: string, text: string): Promise<void> {
+    await this.run(['comment', id, text], id);
+  }
+
+  /**
+   * Append to `notes` rather than replace it. bd 1.2.2 joins with a newline
+   * (`--append-notes`, verified via `bd update --help` on this board), which
+   * is what makes this safe to expose from the UI without a read-modify-write
+   * race: two concurrent appends both land, in whatever order bd receives
+   * them, instead of one clobbering the other the way a full `--notes`
+   * overwrite would.
+   */
+  async appendNotes(id: string, text: string): Promise<void> {
+    await this.run(['update', id, '--append-notes', text], id);
   }
 
   private async run(args: string[], ...changedIds: string[]): Promise<void> {

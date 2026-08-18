@@ -18,17 +18,18 @@
  */
 import * as vscode from 'vscode';
 
-import { StatusIndex, buildSidebarSections, progressOf } from '../../shared/model';
+import { StatusIndex, buildSidebarSections, humanGates, progressOf } from '../../shared/model';
 import {
   PRIORITY_LABELS,
   type Bead,
+  type BdGate,
   type DashboardSnapshot,
   type EpicGroup,
 } from '../../shared/types';
 import type { ActorResolver } from '../actor';
 import type { BeadsStore } from '../store';
 
-type NodeKind = 'section' | 'epic' | 'bead' | 'message';
+type NodeKind = 'section' | 'epic' | 'bead' | 'message' | 'gate';
 
 /** Which of the container's views a provider instance feeds. */
 export type SidebarScope = 'mine' | 'plan';
@@ -51,6 +52,9 @@ interface LeafOptions {
 }
 
 export class BeadNode extends vscode.TreeItem {
+  /** Set on `gate` rows only, since a gate is not a `Bead`. */
+  gateId?: string;
+
   constructor(
     readonly kind: NodeKind,
     readonly bead: Bead | undefined,
@@ -81,6 +85,10 @@ function iconForType(type: string): vscode.ThemeIcon {
       return new vscode.ThemeIcon('book');
     case 'milestone':
       return new vscode.ThemeIcon('flag');
+    case 'gate':
+      // A checkpoint that blocks progress until a human clears it — distinct
+      // from every work-item glyph above, which all represent doable work.
+      return new vscode.ThemeIcon('shield');
     default:
       return new vscode.ThemeIcon('circle-outline');
   }
@@ -189,11 +197,30 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
     // contents — the view title carries the heading the wrapper node used to.
     if (this.scope === 'mine') {
       if (!me) return [whoAreYouNode()];
-      return mine.length > 0
+
+      const issueNodes = mine.length > 0
         ? this.capped(mine, index, { scope: 'mine', ready: readySet, hideAssignee: true })
         : // Names the identity it resolved: an empty queue and a wrong name look
           // identical otherwise.
           [messageNode(`Nothing is assigned to ${me}.`, 'check')];
+
+      // Gates block real work until a human clears them, so they outrank the
+      // rest of the queue and sit above it.
+      const actionableGates = humanGates(snapshot.gates);
+      // Hidden entirely rather than showing "(0)": a project with no open
+      // gates should not carry a permanent empty section.
+      const gatesSection = actionableGates.length > 0
+        ? [
+            section(
+              `Gates (${actionableGates.length})`,
+              actionableGates.map((gate) => this.gateNode(gate, index)),
+              'shield',
+              'blocking progress',
+            ),
+          ]
+        : [];
+
+      return [...gatesSection, ...issueNodes];
     }
 
     // Unassigned rides along in the plan view rather than claiming a third one:
@@ -249,6 +276,22 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
       nodes.push(more);
     }
     return nodes;
+  }
+
+  /** One human gate, actionable via the inline Resolve icon / context menu. */
+  private gateNode(gate: BdGate, index: StatusIndex): BeadNode {
+    const node = new BeadNode('gate', undefined, gate.title, vscode.TreeItemCollapsibleState.None);
+    node.id = `gate:${gate.id}`;
+    node.gateId = gate.id;
+
+    const statusDef = index.def(gate.status);
+    node.description = [statusDef?.icon, `P${gate.priority}`].filter(Boolean).join(' ');
+    node.iconPath = new vscode.ThemeIcon(iconForType('gate').id, colorForPriority(gate.priority));
+    node.tooltip = tooltipForGate(gate);
+    // Distinct from `beadOpen`/`beadClosed` so the bead-only context menu
+    // items (claim, set status, close…) never appear on a gate row.
+    node.contextValue = 'gate';
+    return node;
   }
 
   private leaf(bead: Bead, index: StatusIndex, options: LeafOptions): BeadNode {
@@ -351,6 +394,17 @@ function tooltipFor(bead: Bead, index: StatusIndex): vscode.MarkdownString {
   if (bead.assignee) lines.push(`Assignee: ${bead.assignee}`);
   if (bead.labels?.length) lines.push(`Labels: ${bead.labels.join(', ')}`);
   if (bead.blocked_by_count) lines.push(`Blocked by ${bead.blocked_by_count} issue(s)`);
+
+  const markdown = new vscode.MarkdownString(lines.join('\n'));
+  markdown.supportThemeIcons = true;
+  return markdown;
+}
+
+function tooltipForGate(gate: BdGate): vscode.MarkdownString {
+  const lines = [`**${gate.id}** · gate`, '', gate.title];
+  if (gate.description) lines.push('', gate.description);
+  lines.push('', `Priority: ${PRIORITY_LABELS[gate.priority] ?? `P${gate.priority}`}`);
+  if (gate.owner) lines.push(`Owner: ${gate.owner}`);
 
   const markdown = new vscode.MarkdownString(lines.join('\n'));
   markdown.supportThemeIcons = true;

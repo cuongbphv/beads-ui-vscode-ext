@@ -157,6 +157,20 @@ if (imported !== summary.total) {
   throw new Error(`imported ${imported} issues, expected ${summary.total}`);
 }
 
+// One ad-hoc human gate, so the sidebar's "Needs You" section — the whole
+// point of that view — has something to show besides the issue queue. This
+// runs after the count check above: `bd gate create` files its own gate
+// issue, which would otherwise throw off the imported-vs-expected count.
+console.log(`› creating a sample human gate`);
+bd([
+  'gate',
+  'create',
+  '--blocks',
+  'harbor-306',
+  '--reason',
+  'Confirm final tax-inclusive pricing copy with legal before this ships.',
+]);
+
 const stats = JSON.parse(bd(['stats', '--json']));
 console.log('\n✔ demo workspace ready');
 console.log(`  path       ${outDir}`);

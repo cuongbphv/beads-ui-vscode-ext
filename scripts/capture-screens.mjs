@@ -50,9 +50,19 @@ const idPrefix = flag('--id-prefix') ?? (demo ? DEMO_ID_PREFIX : 'beads-ui-vscod
 
 const LAUNCH_TIMEOUT = 180_000;
 
+/**
+ * VS Code's default chord for the Command Palette is `Ctrl+Shift+P` on
+ * Windows/Linux but `Cmd+Shift+P` on macOS — hardcoding the former means every
+ * keypress here silently no-ops on a Mac runner, hanging on `.quick-input-widget`
+ * until its own wait times out with no clue why. Same fix as
+ * `run-webview-test.mjs`'s `PALETTE_KEY`, ported here since this script has its
+ * own separate `runCommand`.
+ */
+const PALETTE_KEY = process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P';
+
 /** Run a command through the palette, the way a user would. */
 async function runCommand(window, title) {
-  await window.keyboard.press('Control+Shift+P');
+  await window.keyboard.press(PALETTE_KEY);
   await window.locator('.quick-input-widget').waitFor({ state: 'visible' });
   await window.locator('.quick-input-box input').fill(`>${title}`);
   await window.locator('.quick-input-list .monaco-list-row').first().waitFor();
@@ -153,7 +163,22 @@ try {
   for (const tab of ['Overview', 'Roadmap', 'Board']) {
     await inner.locator(`[role="tab"]:has-text("${tab}")`).first().click();
     await shot(window, tab.toLowerCase());
+
+    if (tab === 'Board') {
+      // Swimlanes: 'board' above is the default, unposed view. Toggle the
+      // taxonomy-lane grouping on for a second shot, then back off — leaving
+      // it on would pose Board differently for anything that revisits the tab
+      // later (there isn't anything today, but this is cheap insurance).
+      const swimlaneToggle = inner.getByRole('button', { name: 'Swimlanes' });
+      await swimlaneToggle.click();
+      await shot(window, 'board-swimlanes');
+      await swimlaneToggle.click();
+    }
   }
+
+  // ── Graph: the dependency DAG ───────────────────────────────────────────────
+  await inner.locator('[role="tab"]:has-text("Graph")').first().click();
+  await shot(window, 'graph');
 
   // A selected issue opens the detail pane, which is its own layout branch.
   await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
@@ -166,6 +191,14 @@ try {
     .click({ timeout: 10_000 })
     .catch(() => {});
   await shot(window, 'roadmap-detail');
+
+  // The comment/append-note composer lives at the bottom of the detail pane —
+  // always rendered (so it is reachable with zero comments), but below the
+  // fold on first open. Scroll it into frame for a shot dedicated to it,
+  // rather than assuming roadmap-detail.png caught it by accident.
+  const commentDraft = inner.getByPlaceholder('Write a comment…');
+  await commentDraft.scrollIntoViewIfNeeded().catch(() => {});
+  await shot(window, 'detail-comments');
 
   // ── Settings the extension contributes ─────────────────────────────────────
   await runCommand(window, 'Preferences: Open Settings (UI)');

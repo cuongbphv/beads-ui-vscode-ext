@@ -10,12 +10,15 @@ import type { DashboardPanel } from './panel/DashboardPanel';
 import type { BeadsStore } from './store';
 import { toRpcError } from './store';
 import type { BeadNode } from './tree/BeadsTreeProvider';
-import type { VeloxSync } from './velox/VeloxSync';
 
-/** Tree nodes arrive as the argument; the palette passes a bare id. */
+/**
+ * Tree nodes arrive as the argument; the palette passes a bare id.
+ *
+ * A gate row is not a `Bead`, so its id lives on `gateId` instead of `bead.id`.
+ */
 function resolveId(target: BeadNode | string | undefined): string | undefined {
   if (typeof target === 'string') return target;
-  return target?.bead?.id;
+  return target?.gateId ?? target?.bead?.id;
 }
 
 function beadOf(store: BeadsStore, id: string): Bead | undefined {
@@ -41,7 +44,6 @@ export interface CommandDeps {
   output: vscode.OutputChannel;
   openDashboard: (id?: string) => void;
   panel: () => DashboardPanel | undefined;
-  velox: VeloxSync;
   /** Re-runs the multi-root picker and reloads against the chosen folder. */
   selectFolder: () => Promise<void>;
 }
@@ -151,20 +153,21 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       await guard(() => store.mutations.close(id, reason), output);
     }),
 
+    register('beadsDashboard.resolveGate', async (target: BeadNode | string) => {
+      const id = resolveId(target);
+      if (!id) return;
+
+      const reason = await vscode.window.showInputBox({
+        title: `Resolve gate ${id}`,
+        prompt: 'Reason (optional). Press Escape to cancel.',
+        placeHolder: 'e.g. approved in review',
+      });
+      // Escape cancels; an empty string is a deliberate "no reason".
+      if (reason === undefined) return;
+
+      await guard(() => store.mutations.resolveGate(id, reason), output);
+    }),
+
     register('beadsDashboard.selectFolder', () => void deps.selectFolder()),
-
-    // Velox sync. Each of the three previews before it writes anything, and
-    // none of them runs unless the user picks it from the palette.
-    register('beadsDashboard.veloxStatus', async () => {
-      await guard(() => deps.velox.showStatus(), output);
-    }),
-
-    register('beadsDashboard.veloxExport', async () => {
-      await guard(() => deps.velox.exportToRoadmap(), output);
-    }),
-
-    register('beadsDashboard.veloxImport', async () => {
-      await guard(() => deps.velox.importToBeads(), output);
-    }),
   ];
 }

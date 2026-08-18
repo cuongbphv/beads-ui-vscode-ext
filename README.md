@@ -13,6 +13,10 @@
   <img src="https://img.shields.io/badge/VS%20Code-%5E1.105-007ACC" alt="VS Code ^1.105" />
 </p>
 
+<p align="center">
+  <b>English</b> | <a href="README.vi.md">Tiếng Việt</a> | <a href="README.zh-cn.md">中文</a>
+</p>
+
 ---
 
 ![Beads Dashboard: the sidebar, the roadmap, dragging a card across the board, and the board updating itself when an agent files and starts an issue from the terminal](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/demo.gif)
@@ -22,16 +26,20 @@
 
 ## What it does
 
-Beads Dashboard reads your local beads database through the `bd` CLI and renders it three ways:
+Beads Dashboard reads your local beads database through the `bd` CLI and renders it four ways:
 
 - **Overview** — totals, a status breakdown, epic progress, and the two lists that matter on
   arrival: what is ready to start, and what is blocked.
 - **Roadmap** — Epic → Task drill-down with progress bars and per-epic counts.
 - **Board** — a kanban board whose columns are derived from your project's status *categories* at
-  runtime. Drag a card to change its status.
+  runtime. Drag a card to change its status, or toggle swimlanes to group the columns by
+  taxonomy label (`auto-ok` / `auto-partial` / `needs-human`).
+- **Graph** — an issue's blocked-by dependencies as a dependency DAG, auto-laid-out and
+  draggable node by node.
 
-Plus an **Epics & Tasks** sidebar with a "Needs You" section, and quick actions (status, priority,
-assignee, claim, close) available from the tree, the board and the detail pane.
+Plus an **Epics & Tasks** sidebar with a "Needs You" section — open gates alongside your assigned
+issues, each with an inline Resolve action — and quick actions (status, priority, assignee, claim,
+close) available from the tree, the board and the detail pane.
 
 Everything is read and written through `bd --json`. The extension never reads `.beads/issues.jsonl`
 or the Dolt files directly — that export has auto-refresh off by default, and upstream declares
@@ -58,14 +66,28 @@ status lands in the right column. Done starts folded:
 
 ![Kanban board with Open 19, In Progress 9, On Hold 4 and a folded Done 14; cards carry type, id, title, labels, priority, due date and assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board.png)
 
+**Board, swimlanes on** — the same board, one toggle away from grouped by taxonomy
+label instead of one long column: `auto-ok`, `auto-partial` and `needs-human`, four
+issues apiece in this project:
+
+![Board with Swimlanes toggled on: three taxonomy lanes — auto-ok, auto-partial, needs-human — each showing 4 issues, columns still split by status inside every lane](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board-swimlanes.png)
+
+**Graph** — an issue's blocked-by dependencies as a DAG. Nodes are dragged to a
+preferred spot, nudged with the arrow keys, or sent back with **Reset layout**; blocked
+issues are flagged red wherever they sit in the layout:
+
+![Graph tab: a layered dependency DAG with several blocked issues outlined in red, zoom and reset-layout controls in the toolbar, and the sidebar's Gates(1) entry alongside it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
+
 **Detail pane** — the full issue without leaving the board. Status, priority and
-assignee apply as you set them:
+assignee apply as you set them, and comments plus an append-only notes composer sit
+below the fields, present even with zero comments so far:
 
-![Detail pane for a feature showing status and priority selects, an assignee field that applies on Enter, estimate, due date, parent epic and dependencies](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap-detail.png)
+![Detail pane for a feature showing status and priority selects, an assignee field that applies on Enter, estimate, due date, parent epic, dependencies, an Append note link, and a Comments (0) composer with a Ctrl/Cmd+Enter-to-submit textarea](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap-detail.png)
 
-**Sidebar** — what needs you on top, then the plan:
+**Sidebar** — what needs you on top, then the plan. An open gate now outranks even
+your own assigned issues, since it blocks real work until someone clears it:
 
-![Sidebar with a Needs You section listing five issues assigned to you, then Epics & Milestones expanded to show child tasks with type icons and priorities](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/sidebar-tree-expanded.png)
+![Sidebar with a Needs You section topped by a Gates(1) entry and a Resolve action, five issues assigned to you below it, then Epics & Milestones expanded to show child tasks with type icons and priorities; the status bar reads 16 ready and a shield icon with 1](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/sidebar-tree-expanded.png)
 
 ## Requirements
 
