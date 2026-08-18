@@ -1,22 +1,46 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type * as vscode from 'vscode';
 
-import { statusBarContent } from '../extension/status-bar';
+import { createBeadsStatusBar, statusBarContent } from '../extension/status-bar';
 import type { StoreState } from '../extension/store';
-import type { DashboardSnapshot } from '../shared/types';
+import type { BdGate, DashboardSnapshot } from '../shared/types';
 
 /**
  * Just enough of a snapshot for the status bar to read `readyIds` from.
  * Cast rather than filled out in full: the other fields are irrelevant here
  * and `statusBarContent` never touches them.
  */
-function snapshot(readyIds: string[]): DashboardSnapshot {
+function snapshot(readyIds: string[], gates: BdGate[] = []): DashboardSnapshot {
   return {
     beads: [],
     readyIds,
     blockedIds: [],
+    gates,
     truncated: false,
     fetchedAt: '2026-08-18T00:00:00Z',
   } as unknown as DashboardSnapshot;
+}
+
+function gate(id: string, awaitType: BdGate['await_type']): BdGate {
+  return { id, title: `Gate: ${awaitType}`, status: 'open', priority: 2, issue_type: 'gate', await_type: awaitType };
+}
+
+/** A fake `vscode` namespace just capable enough to drive `createBeadsStatusBar`. */
+function fakeVscodeApi() {
+  const item = { text: '', tooltip: '', show: vi.fn(), hide: vi.fn(), dispose: vi.fn() };
+  const api = {
+    window: { createStatusBarItem: vi.fn(() => item) },
+    StatusBarAlignment: { Left: 1 },
+  } as unknown as typeof vscode;
+  return { api, item };
+}
+
+/** A store double exposing just the surface `createBeadsStatusBar` reads. */
+function fakeStore(state: StoreState): {
+  current: StoreState;
+  onDidChange: (listener: (state: StoreState) => void) => vscode.Disposable;
+} {
+  return { current: state, onDidChange: vi.fn(() => ({ dispose: vi.fn() })) };
 }
 
 describe('statusBarContent', () => {
@@ -80,5 +104,29 @@ describe('statusBarContent', () => {
     const state: StoreState = { loading: true };
 
     expect(statusBarContent(state)).toBeUndefined();
+  });
+});
+
+describe('createBeadsStatusBar', () => {
+  it('counts only human gates from the live snapshot, not timer/gh gates', () => {
+    const { api, item } = fakeVscodeApi();
+    const state: StoreState = {
+      snapshot: snapshot(['a'], [gate('g1', 'human'), gate('g2', 'timer'), gate('g3', 'human')]),
+      loading: false,
+    };
+    createBeadsStatusBar(fakeStore(state), api);
+
+    expect(item.text).toBe('$(dashboard) 1 ready · $(shield) 2');
+  });
+
+  it('omits the gate segment when no gate on the snapshot is a human gate', () => {
+    const { api, item } = fakeVscodeApi();
+    const state: StoreState = {
+      snapshot: snapshot(['a'], [gate('g1', 'timer')]),
+      loading: false,
+    };
+    createBeadsStatusBar(fakeStore(state), api);
+
+    expect(item.text).toBe('$(dashboard) 1 ready');
   });
 });
