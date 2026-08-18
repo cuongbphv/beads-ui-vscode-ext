@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.vi.md">Tiếng Việt</a> | <b>中文</b>
+  <a href="https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/README.md">English</a> | <a href="https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/README.vi.md">Tiếng Việt</a> | <b>中文</b>
 </p>
 
 ---
@@ -148,6 +148,46 @@ npm run install:local     # 构建 → 打包 → 安装；然后 reload window
 | `Beads: Refresh` | Palette、view title |
 | `Beads: Show bd Output Log` | Palette —— 每一次调用参数和每一次失败都记录在这里 |
 | 修改状态 / 优先级 / 指派人，Claim，Close，Copy ID | 树视图右键菜单、详情面板 |
+
+## 路线图
+
+没有时间表，下面也没有任何一条是承诺。这份清单的用途是让"我该从哪里下手"有答案：Planned 里的每一项
+都对应一个已经开着的 issue。
+
+**Planned** —— 完全贴合现有架构的设计：
+
+- **Molecule 进度** —— `bd mol` 目前在界面上毫无体现。为正在运行的 molecule 和即将自动消失的 wisp
+  加一条进度条。（[#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10)）
+- **Fleet monitor** —— 把磁盘上的 worktree 和 `work/bead-*` 分支与它们各自承载的 bead 对齐排列，
+  让被遗忘的 worktree 显形。（[#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11)）
+- **用键盘移动卡片** —— Board 上的拖拽目前只认指针，而卡片已经向屏幕阅读器自称"可拖拽"。
+  （[#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7) —— good first issue）
+- **在 pull request 上运行的 workflow** —— 目前一个都没有，因为测试套件里有一部分直接驱动真实的
+  `bd` 可执行文件。（[#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9)）
+- **Windows，由 Windows 用户亲自确认** —— `.cmd` shim 的回退路径和 Git-Bash 下的路径都已写好，
+  但从未在真实 Windows 机器上验证过。（[#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12)）
+- **Troubleshooting 文档** —— 代码认真处理过的四种降级状态，一处文档都没有。
+  （[#8](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/8) —— good first issue）
+
+**Exploring** —— 一个方向，不是承诺。尚未设计，也还没有对应的 issue。
+
+beads 里的 `human` gate 本身就是"等人确认"的原语，因此远程审批不需要改动 beads 核心：一支 agent
+编队在 gate 前停下，负责人看到它、读完上下文再 resolve —— 不一定要坐在电脑前。那样一来，这个扩展
+就是更大一件事的编辑器内那一半，再加上 gate 出现或工作被 blocked 时的通知。欢迎反驳这个方向：开一个
+issue 说出来。
+
+**不在计划内：** 编排工作。这是一个带快捷操作的查看器 —— 它显示 `bd` 所知道的，并通过 `bd` 写回。
+接下来跑什么，是 `bd` 以及驱动 `bd` 的那套工具的事。
+
+## 参与贡献
+
+[CONTRIBUTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/CONTRIBUTING.md) 写了环境准备、每个 PR 都必须遵守的三条规则，以及
+各个测试套件怎么跑。简版：`npm install`、`npm run watch`、**F5** —— 然后 `npm run demo:seed` 造一个
+工作区给开发宿主打开，因为本仓库自己的 `.beads/` 是被 gitignore 的，clone 下来并没有数据库。
+
+还没人认领的活儿标了 [`help wanted`](https://github.com/cuongbphv/beads-ui-vscode-ext/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)；范围只在一个文件或一条 workflow 内的标了
+[`good first issue`](https://github.com/cuongbphv/beads-ui-vscode-ext/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)。报 bug 请附上 `Beads: Show bd Output Log` 的输出和 `bd --version` ——
+issue 模板问的正是这些。
 
 ## 开发
 

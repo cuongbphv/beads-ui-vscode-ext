@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: bd CLI itself (beads)
+    url: https://github.com/steveyegge/beads/issues
+    about: Wrong data, a broken flag, or a crash in `bd` belongs upstream — this extension only renders what `bd --json` returns.
+  - name: Where to start contributing
+    url: https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/CONTRIBUTING.md
+    about: Setup, the three rules a PR has to respect, and how to run the suites.
