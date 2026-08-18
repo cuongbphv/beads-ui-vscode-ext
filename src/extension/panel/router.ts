@@ -104,6 +104,14 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       await vscode.env.clipboard.writeText(String(params.text ?? ''));
       return { ok: true };
 
+    case 'addComment':
+      await mutations.comment(id(), requireString(params.text, 'text'));
+      return { ok: true };
+
+    case 'appendNotes':
+      await mutations.appendNotes(id(), requireString(params.text, 'text'));
+      return { ok: true };
+
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);
   }

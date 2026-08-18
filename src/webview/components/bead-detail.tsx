@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Pin,
   Snowflake,
+  StickyNote,
   Timer,
   User,
   X,
@@ -60,8 +61,19 @@ export function BeadDetail({
   const { bead, comments, loading } = useBeadDetail(summary, refreshKey);
   const [busy, setBusy] = useState(false);
   const [assignee, setAssignee] = useState(bead.assignee ?? '');
+  const [commentDraft, setCommentDraft] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
 
   useEffect(() => setAssignee(bead.assignee ?? ''), [bead.id, bead.assignee]);
+
+  // Switching to a different issue abandons any in-progress draft — a comment
+  // typed for one issue appearing under another would be a silent misfire.
+  useEffect(() => {
+    setCommentDraft('');
+    setNoteDraft('');
+    setNoteOpen(false);
+  }, [bead.id]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -71,15 +83,43 @@ export function BeadDetail({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  async function mutate(action: () => Promise<unknown>, success: string): Promise<void> {
+  /** Returns whether the write succeeded, so a caller can decide what to reset. */
+  async function mutate(action: () => Promise<unknown>, success: string): Promise<boolean> {
     setBusy(true);
     try {
       await action();
       notify(success);
+      return true;
     } catch (error) {
       notify(asRpcError(error).message, 'error');
+      return false;
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Clears the draft only once bd has actually accepted the comment. */
+  async function submitComment(): Promise<void> {
+    const text = commentDraft.trim();
+    if (!text) return;
+    const ok = await mutate(
+      () => call('addComment', { id: bead.id, text }),
+      `${bead.id} comment added`,
+    );
+    if (ok) setCommentDraft('');
+  }
+
+  /** Same shape as `submitComment`, but also folds the composer back up on success. */
+  async function submitNote(): Promise<void> {
+    const text = noteDraft.trim();
+    if (!text) return;
+    const ok = await mutate(
+      () => call('appendNotes', { id: bead.id, text }),
+      `${bead.id} notes updated`,
+    );
+    if (ok) {
+      setNoteDraft('');
+      setNoteOpen(false);
     }
   }
 
@@ -338,6 +378,68 @@ export function BeadDetail({
         <LongText title="Acceptance criteria" text={bead.acceptance_criteria} />
         <LongText title="Notes" text={bead.notes} />
 
+        {/*
+          Deliberately outside `LongText`: that component returns null for
+          empty notes, so an "Append note" affordance living inside it would
+          vanish exactly when an issue has no notes yet to append to.
+        */}
+        <div className="@container mt-1">
+          {noteOpen ? (
+            <div className="border-border grid gap-1.5 rounded-md border p-2">
+              <label htmlFor="note-draft" className="text-fg-muted text-xs">
+                Append to notes
+              </label>
+              <textarea
+                id="note-draft"
+                rows={2}
+                autoFocus
+                disabled={busy}
+                value={noteDraft}
+                placeholder="New note text…"
+                onChange={(event) => setNoteDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    // Fold the composer back up without also closing the pane.
+                    event.stopPropagation();
+                    setNoteDraft('');
+                    setNoteOpen(false);
+                    return;
+                  }
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    void submitNote();
+                  }
+                }}
+                className="bg-input-bg border-input-border text-fg min-w-0 resize-y rounded-md border px-2 py-1 text-sm"
+              />
+              <div className="flex flex-col gap-1.5 @xs:flex-row @xs:items-center @xs:justify-end">
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setNoteDraft('');
+                    setNoteOpen(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={busy || noteDraft.trim() === ''}
+                  onClick={() => void submitNote()}
+                >
+                  Save note
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button variant="ghost" disabled={busy} onClick={() => setNoteOpen(true)}>
+              <StickyNote aria-hidden="true" className="size-3.5" />
+              Append note
+            </Button>
+          )}
+        </div>
+
         {parent ? (
           <Section title="Parent">
             <LinkRow id={parent.id} beads={beads} onSelect={onSelect} index={index} />
@@ -386,18 +488,66 @@ export function BeadDetail({
           index={index}
         />
 
-        {comments.length > 0 ? (
-          <Section
-            title={`Comments (${comments.length})`}
-            icon={<MessageSquare aria-hidden="true" className="size-3" />}
-          >
+        {/*
+          Always rendered — including at zero comments — so the composer is
+          reachable without waiting for a first comment to exist.
+        */}
+        <Section
+          title={`Comments (${comments.length})`}
+          icon={<MessageSquare aria-hidden="true" className="size-3" />}
+        >
+          {comments.length > 0 ? (
             <ul className="grid gap-2">
               {comments.map((comment, position) => (
                 <CommentRow key={comment.id ?? position} comment={comment} />
               ))}
             </ul>
-          </Section>
-        ) : null}
+          ) : (
+            <p className="text-fg-muted text-xs">No comments yet.</p>
+          )}
+
+          <div className="@container mt-2 grid gap-1.5">
+            <label htmlFor="comment-draft" className="text-fg-muted text-xs">
+              Add a comment
+            </label>
+            <textarea
+              id="comment-draft"
+              rows={2}
+              disabled={busy}
+              value={commentDraft}
+              placeholder="Write a comment…"
+              onChange={(event) => setCommentDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  // Abandon the draft without also closing the pane, which is
+                  // what the window-level Escape handler would otherwise do.
+                  event.stopPropagation();
+                  setCommentDraft('');
+                  event.currentTarget.blur();
+                  return;
+                }
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  event.preventDefault();
+                  void submitComment();
+                }
+              }}
+              className="bg-input-bg border-input-border text-fg min-w-0 resize-y rounded-md border px-2 py-1 text-sm"
+            />
+            <div className="flex flex-col gap-1.5 @xs:flex-row @xs:items-center @xs:justify-between">
+              <span className="text-fg-muted text-xs opacity-70">
+                Ctrl/Cmd+Enter to submit. Escape clears.
+              </span>
+              <Button
+                variant="primary"
+                disabled={busy || commentDraft.trim() === ''}
+                className="justify-center @xs:self-end"
+                onClick={() => void submitComment()}
+              >
+                Comment
+              </Button>
+            </div>
+          </div>
+        </Section>
 
         {bead.metadata !== undefined && bead.metadata !== null ? (
           <Section title="Metadata">

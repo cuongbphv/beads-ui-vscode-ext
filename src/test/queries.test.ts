@@ -279,6 +279,46 @@ describe('BdMutations schedule writes', () => {
   });
 });
 
+describe('BdMutations comment and notes writes', () => {
+  function mutations(fake: FakeBd): BdMutations {
+    return new BdMutations(fake as unknown as BdService);
+  }
+
+  it('posts a comment as a positional argv, not a flag', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).comment('bd-a1', 'looks good');
+    expect(fake.argv).toEqual([['comment', 'bd-a1', 'looks good']]);
+  });
+
+  it('appends to notes with --append-notes, which bd joins with a newline', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).appendNotes('bd-a1', 'second line');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--append-notes', 'second line']]);
+  });
+
+  it('notifies listeners with the changed id after a comment', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.comment('bd-a1', 'hi');
+
+    expect(changed).toEqual([['bd-a1']]);
+  });
+
+  it('notifies listeners with the changed id after an append-notes', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.appendNotes('bd-a1', 'more context');
+
+    expect(changed).toEqual([['bd-a1']]);
+  });
+});
+
 describe('requireDueDate (router param narrowing)', () => {
   it('accepts a well-formed YYYY-MM-DD date', () => {
     expect(requireDueDate('2026-09-01', 'date')).toBe('2026-09-01');
