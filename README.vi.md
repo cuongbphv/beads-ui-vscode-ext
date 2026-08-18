@@ -149,6 +149,49 @@ không yêu cầu.
 | `Beads: Show bd Output Log` | Palette — mọi argv và mọi lỗi đều nằm ở đây |
 | Đổi status / priority / assignee, Claim, Close, Copy ID | Menu chuột phải trên cây, detail pane |
 
+## Roadmap
+
+Không có deadline, và không có gạch đầu dòng nào dưới đây là lời hứa. Danh sách này tồn tại để câu
+"bắt đầu từ đâu?" có câu trả lời: mỗi hạng mục Planned đều là một issue đang mở.
+
+**Planned** — thiết kế bám đúng kiến trúc đã có:
+
+- **Tiến độ molecule** — `bd mol` hiện chưa có UI nào. Một thanh tiến độ cho molecule đang chạy và
+  những wisp sắp tự hủy. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
+- **Fleet monitor** — các worktree và nhánh `work/bead-*` trên đĩa, xếp cạnh đúng bead chúng đang
+  mang, để một worktree bỏ quên trở nên nhìn thấy được. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
+- **Di chuyển card bằng bàn phím** — kéo thả trên Board hiện chỉ chạy bằng con trỏ, trong khi card
+  đã tự giới thiệu là "draggable" với screen reader. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7) — good first issue)
+- **Workflow chạy trên pull request** — hiện chưa có, vì một phần test suite gọi thẳng binary `bd`
+  thật. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
+- **Windows, do người dùng Windows xác nhận** — nhánh fallback cho `.cmd` shim và đường dẫn Git-Bash
+  đã viết nhưng chưa ai chạy thử trên máy Windows thật. ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
+- **Tài liệu Troubleshooting** — bốn trạng thái lỗi mà code đã xử lý tử tế lại chưa được ghi ở đâu
+  cả. ([#8](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/8) — good first issue)
+
+**Exploring** — là một hướng đi, không phải cam kết. Chưa thiết kế, chưa mở issue.
+
+Gate `human` trong beads vốn đã là primitive "chờ người duyệt", nên có thể làm phê duyệt từ xa mà
+không cần sửa beads core: một phi đội agent dừng lại ở gate, người chịu trách nhiệm thấy nó, đọc
+context rồi resolve — không nhất thiết phải đang ngồi trước máy. Khi đó extension này là nửa
+trong-editor của một thứ lớn hơn, kèm thông báo khi có gate mới hoặc khi việc bị blocked. Phản biện
+hướng này rất hữu ích — cứ mở issue và nói ra.
+
+**Không nằm trong kế hoạch:** điều phối công việc. Đây là một viewer kèm quick action — nó hiển thị
+những gì `bd` biết và ghi lại qua `bd`. Chạy gì tiếp theo là việc của `bd` và của thứ đang điều
+khiển `bd`.
+
+## Đóng góp
+
+[CONTRIBUTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/CONTRIBUTING.md) có phần cài đặt, ba luật mà mọi PR phải tôn trọng,
+và cách chạy từng suite. Bản ngắn: `npm install`, `npm run watch`, **F5** — rồi `npm run demo:seed`
+để có một workspace cho dev host trỏ vào, vì `.beads/` của chính repo này bị gitignore, clone về sẽ
+không có database nào.
+
+Việc chưa ai nhận được gắn nhãn [`help wanted`](https://github.com/cuongbphv/beads-ui-vscode-ext/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22); những việc gói trong một file hoặc một
+workflow là [`good first issue`](https://github.com/cuongbphv/beads-ui-vscode-ext/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). Báo lỗi thì cần log của `Beads: Show bd Output Log` và
+`bd --version` — issue template hỏi đúng những thứ đó.
+
 ## Phát triển
 
 ```bash

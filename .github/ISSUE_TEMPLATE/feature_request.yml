@@ -1,0 +1,60 @@
+name: Feature request
+description: Something the dashboard should show or let you do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The extension is a **viewer with quick actions** over the `bd` CLI. It never reads
+        `.beads/issues.jsonl` or the Dolt files, and it does not orchestrate work. Proposals
+        that fit inside that shape move fastest — see
+        [CONTRIBUTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/CONTRIBUTING.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are doing today instead, and why it is worse. Concrete beats abstract.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would build
+      description: Where it lives in the UI, and what it looks like at 420px as well as 1440px.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the extension
+      multiple: true
+      options:
+        - Overview tab
+        - Roadmap tab (timeline)
+        - Board tab (kanban)
+        - Graph tab (dependency DAG)
+        - Sidebar tree / Needs You
+        - Detail pane
+        - Status bar
+        - bd layer (queries / mutations / BdService)
+        - Docs, screenshots, CI
+        - Something new
+    validations:
+      required: true
+  - type: input
+    id: bd-commands
+    attributes:
+      label: Which bd commands it needs
+      description: Everything the UI shows has to come from a `bd … --json` call. Name the ones you would use — `bd mol current --json`, `bd dep tree --json`, …
+      placeholder: bd gate list --json
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: This can be built without reading `.beads/issues.jsonl` or the Dolt files directly
+          required: false
+        - label: I searched the open issues and the Roadmap section of the README
+          required: true

@@ -25,6 +25,7 @@ node_modules/**
 
 AGENTS.md
 CLAUDE.md
+CONTRIBUTING.md
 esbuild.mjs
 eslint.config.mjs
 package-lock.json
