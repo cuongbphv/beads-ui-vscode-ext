@@ -5,7 +5,9 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { Bead } from '../shared/types';
+import { COL_W } from '../webview/lib/graph-layout';
 import { GraphView } from '../webview/views/GraphView';
+import { installPointerCapture, pointerEvent } from './support/dom-harness';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -16,6 +18,7 @@ let container: HTMLDivElement | undefined;
 
 beforeAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  installPointerCapture();
 });
 
 afterEach(async () => {
@@ -118,5 +121,159 @@ describe('GraphView', () => {
     const summary = root.querySelector('p.sr-only');
     expect(summary?.textContent).toMatch(/2 issues?/);
     expect(summary?.textContent).toMatch(/1 dependency link/);
+  });
+
+  describe('dragging a node', () => {
+    /** `translate(x, y)` off the node group's own `transform` attribute. */
+    function transformOf(node: Element): { x: number; y: number } {
+      const match = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(node.getAttribute('transform') ?? '');
+      if (!match) throw new Error(`no translate() on ${node.outerHTML}`);
+      return { x: Number(match[1]), y: Number(match[2]) };
+    }
+
+    it('moves the node transform live as the pointer drags past the threshold', async () => {
+      const root = await mount();
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      expect(node).not.toBeNull();
+      const start = transformOf(node!);
+
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointermove', { clientX: 30 })));
+
+      expect(transformOf(node!)).toEqual({ x: start.x + 30, y: start.y });
+    });
+
+    it('does not move the node before the drag threshold is crossed', async () => {
+      const root = await mount();
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      const start = transformOf(node!);
+
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointermove', { clientX: 2 })));
+
+      expect(transformOf(node!)).toEqual(start);
+    });
+
+    it('suppresses the click that follows a drag past the threshold', async () => {
+      const onSelect = vi.fn();
+      const root = await mount({ onSelect });
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointermove', { clientX: 30 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerup', { clientX: 30 })));
+      // The browser fires `click` right after `pointerup` on a real drag.
+      await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('still selects on a press-and-release that never crosses the threshold', async () => {
+      const onSelect = vi.fn();
+      const root = await mount({ onSelect });
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerup', { clientX: 1 })));
+      await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(onSelect).toHaveBeenCalledWith('b');
+    });
+
+    it('drops the in-progress drag when the browser takes the capture away', async () => {
+      const root = await mount();
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      const start = transformOf(node!);
+
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointermove', { clientX: 30 })));
+      expect(transformOf(node!)).toEqual({ x: start.x + 30, y: start.y });
+
+      await act(async () => node?.dispatchEvent(pointerEvent('lostpointercapture')));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointermove', { clientX: 60 })));
+
+      // The move after capture is lost must not keep dragging the node.
+      expect(transformOf(node!)).toEqual({ x: start.x + 30, y: start.y });
+    });
+  });
+
+  describe('keyboard nudge', () => {
+    function transformOf(node: Element): { x: number; y: number } {
+      const match = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(node.getAttribute('transform') ?? '');
+      if (!match) throw new Error(`no translate() on ${node.outerHTML}`);
+      return { x: Number(match[1]), y: Number(match[2]) };
+    }
+
+    it('nudges a focused node 8px per arrow key press', async () => {
+      const root = await mount();
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      const start = transformOf(node!);
+
+      await act(async () =>
+        node?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
+      );
+
+      expect(transformOf(node!)).toEqual({ x: start.x + 8, y: start.y });
+    });
+
+    it('jumps a full grid cell with Shift+arrow', async () => {
+      const root = await mount();
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      const start = transformOf(node!);
+
+      await act(async () =>
+        node?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true }),
+        ),
+      );
+
+      expect(transformOf(node!)).toEqual({ x: start.x + COL_W, y: start.y });
+    });
+
+    it('still selects on Enter/Space after adding the arrow-key handling', async () => {
+      const onSelect = vi.fn();
+      const root = await mount({ onSelect });
+      const node = root.querySelector<SVGElement>('[aria-label^="a:"]');
+
+      await act(async () =>
+        node?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })),
+      );
+
+      expect(onSelect).toHaveBeenCalledWith('a');
+    });
+  });
+
+  describe('reset layout', () => {
+    it('starts disabled with nothing dragged', async () => {
+      const root = await mount();
+      const resetButton = root.querySelector<HTMLButtonElement>('button[title="Reset layout"]');
+      expect(resetButton).not.toBeNull();
+      expect(resetButton?.disabled).toBe(true);
+    });
+
+    it('enables once a node has been moved and restores its original position on click', async () => {
+      const root = await mount();
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      const transformOf = (): { x: number; y: number } => {
+        const match = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(node!.getAttribute('transform') ?? '');
+        return { x: Number(match?.[1]), y: Number(match?.[2]) };
+      };
+      const before = transformOf();
+
+      await act(async () =>
+        node?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
+      );
+      expect(transformOf()).toEqual({ x: before.x + 8, y: before.y });
+
+      const resetButton = root.querySelector<HTMLButtonElement>('button[title="Reset layout"]');
+      expect(resetButton?.disabled).toBe(false);
+
+      await act(async () => resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(transformOf()).toEqual(before);
+      expect(root.querySelector<HTMLButtonElement>('button[title="Reset layout"]')?.disabled).toBe(
+        true,
+      );
+    });
   });
 });
