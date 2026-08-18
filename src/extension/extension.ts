@@ -12,6 +12,7 @@ import type { DashboardTab } from '../shared/protocol';
 import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
 import { DashboardPanel } from './panel/DashboardPanel';
+import { createBeadsStatusBar } from './status-bar';
 import { BeadsStore, bindVisibility } from './store';
 import { BeadsTreeProvider } from './tree/BeadsTreeProvider';
 import { pickBeadsFolder, resolveBeadsFolder } from './workspace';
@@ -145,6 +146,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       treeView.description = state.error ? 'bd unavailable' : undefined;
     }),
   );
+
+  // Same affordance as the tree badge, but visible without the sidebar open.
+  context.subscriptions.push(createBeadsStatusBar(store, vscode));
 
   const state = await store.refresh();
   if (state.error) {
