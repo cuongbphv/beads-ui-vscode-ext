@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.vi.md">Tiếng Việt</a> | <b>中文</b>
+  <a href="https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/README.md">English</a> | <a href="https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/README.vi.md">Tiếng Việt</a> | <b>中文</b>
 </p>
 
 ---
