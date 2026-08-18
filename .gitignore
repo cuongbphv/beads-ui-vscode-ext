@@ -62,8 +62,6 @@ Vent
 .claude/CODEBASE.md
 .claude/.agentifind-checksum
 
-.velox
-
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

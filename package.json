@@ -145,24 +145,6 @@
         "title": "Select Beads Folder…",
         "category": "Beads",
         "icon": "$(folder-opened)"
-      },
-      {
-        "command": "beadsDashboard.veloxStatus",
-        "title": "Velox: Sync Status Report",
-        "category": "Beads",
-        "icon": "$(git-compare)"
-      },
-      {
-        "command": "beadsDashboard.veloxExport",
-        "title": "Velox: Export Status to Roadmap…",
-        "category": "Beads",
-        "icon": "$(export)"
-      },
-      {
-        "command": "beadsDashboard.veloxImport",
-        "title": "Velox: Import Roadmap Tasks…",
-        "category": "Beads",
-        "icon": "$(cloud-download)"
       }
     ],
     "menus": {
@@ -186,21 +168,6 @@
           "command": "beadsDashboard.selectFolder",
           "when": "view == beadsDashboard.tree",
           "group": "1_diagnostics@2"
-        },
-        {
-          "command": "beadsDashboard.veloxStatus",
-          "when": "view == beadsDashboard.tree",
-          "group": "2_velox@1"
-        },
-        {
-          "command": "beadsDashboard.veloxExport",
-          "when": "view == beadsDashboard.tree",
-          "group": "2_velox@2"
-        },
-        {
-          "command": "beadsDashboard.veloxImport",
-          "when": "view == beadsDashboard.tree",
-          "group": "2_velox@3"
         }
       ],
       "view/item/context": [
