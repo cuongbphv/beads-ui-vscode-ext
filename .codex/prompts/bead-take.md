@@ -1,61 +1,72 @@
 ---
-description: Nhận một bead, làm trong worktree riêng, đóng bằng bằng chứng
-argument-hint: "<bead-id> [ghi chú thêm]"
+description: Take one bead, implement it in a dedicated worktree, close it with evidence
+argument-hint: "<bead-id> [extra notes]"
 ---
 
 
 # bead-take
 
-Bạn nhận việc theo bead **user gõ sau `/bead-take`** (`<bead-id> [ghi chú thêm]`).
-Không có id → chạy `bd ready --json`, đề xuất bead ưu tiên cao nhất và hỏi trước khi claim.
+You are taking the bead **the user typed after `/bead-take`** (`<bead-id> [extra notes]`).
+No id given → run `bd ready --json`, propose the highest-priority bead, and ask before claiming.
 
-## 0. Đọc trước khi làm
+## 0. Read before you touch anything
 
-- `bd show <bead-id>` — đọc KỸ cả description lẫn NOTES: **điều kiện đóng nằm ở đó**,
-  và note RE-MEASURE mới nhất (nếu có) là số đo đáng tin hơn description.
-- Đọc doc quy ước của repo (`CLAUDE.md`/`AGENTS.md`… nếu có). Khi bead và doc mâu
-  thuẫn: bead thắng cho tới khi đo lại.
-- Nếu bead là bug → làm theo quy trình debug có hệ thống (skill
-  `systematic-debugging` nếu môi trường có) trước khi sửa. Nếu là feature/refactor →
-  TDD (skill `test-driven-development` nếu có).
+- `bd show <bead-id>` — read the description AND the NOTES carefully: **the closing
+  conditions live in the notes**, and the most recent RE-MEASURE note (if there is one)
+  is a more trustworthy measurement than the description.
+- Read the repo's convention docs (`CLAUDE.md` / `AGENTS.md` / … if present). When the
+  bead and the docs disagree: the bead wins until someone measures again.
+- Bug → follow a systematic debugging process (the `systematic-debugging` skill if your
+  environment has one) before changing anything. Feature or refactor → TDD (the
+  `test-driven-development` skill if available).
 
-## 1. Claim + worktree riêng
+## 1. Claim, then a dedicated worktree
 
 ```bash
 bd update <bead-id> --claim
 git worktree add -b work/bead-<bead-id> ../wt-<bead-id> <BASE>
 ```
 
-- `<BASE>` = **nhánh tích hợp của dự án**: nhánh user chỉ định, hoặc nhánh hiện tại
-  của cây chính (`git branch --show-current`). Đừng mặc định `origin/main` khi dự án
-  đang tích hợp trên nhánh khác.
-- Công cụ worktree tự động của harness chỉ dùng khi chắc chắn nó nhánh từ đúng
-  `<BASE>` — nhiều harness mặc định nhánh từ `origin/main`, thiếu commit của nhánh
-  tích hợp. Không chắc thì tự `git worktree add` như trên.
-- Worktree mới **không có artefact bị gitignore** (venv, `node_modules`, build
-  cache). Cài đặt thật trong worktree trước khi tin bất kỳ kết quả build/test nào.
-- Cây chính có thể đang có session khác: không đụng file ngoài scope bead.
+- `<BASE>` = **the project's integration branch**: whichever branch the user names, or
+  the main tree's current branch (`git branch --show-current`). Do not default to
+  `origin/main` when the project integrates somewhere else.
+- The harness's automatic worktree tool is only safe when you are certain it branches
+  from the right `<BASE>` — many harnesses default to branching from `origin/main` and
+  so miss the integration branch's commits. When unsure, run `git worktree add`
+  yourself as above.
+- A fresh worktree has **none of the gitignored artefacts** (venv, `node_modules`, build
+  caches). Install for real inside the worktree before trusting any build or test result.
+- The main tree may have another session live in it: do not touch files outside this
+  bead's scope.
 
-## 2. Làm việc
+## 2. Do the work
 
-- Đo hiện trạng TRƯỚC khi sửa (grep/LOC/chạy test) — nếu số đo khác note bead,
-  append đính chính vào bead rồi mới làm tiếp.
-- Theo pattern hiện có của repo (đọc doc kiến trúc nếu có) — reuse trước, invention
-  sau; abstraction mới cần ≥2 caller thật ngay hôm nay.
-- Việc phát sinh ngoài scope → `bd create` ngay, KHÔNG mở rộng scope bead đang làm,
-  KHÔNG dùng todo tool/markdown checkbox thay cho board.
+- Measure the current state BEFORE changing anything (grep / LOC / run the tests). If
+  what you measure disagrees with the bead's notes, append the correction to the bead
+  first, then carry on.
+- Follow the repo's existing patterns (read the architecture docs if present) — reuse
+  first, invention second; a new abstraction needs ≥2 real callers today.
+- Work you discover outside the scope → `bd create` immediately. Do NOT widen the current
+  bead's scope, and do NOT use a todo tool or markdown checkboxes in place of the board.
 
-## 3. Trả việc — bằng chứng trước, tuyên bố sau
+## 3. Hand back — evidence first, claims second
 
-- Chạy test thật, đọc **exit code** (không `echo OK`; `rc=0` mà không có output là
-  tín hiệu lỗi, không phải pass). Ghi lại lệnh + kết quả. Verdict đọc từ output
-  máy-đọc-được của test runner (junitxml, JSON reporter…) khi có — dòng summary
-  cuối có thể bị truncate khi capture.
-- Snapshot/file sinh tự động bị trip → regenerate **trong cùng commit**.
-- Commit: `git add <đúng path>` ngay trước commit, và `git commit --only <path>…` —
-  tuyệt đối không `git add -A`, không stage sớm.
-- Đóng: `bd close <bead-id> --reason "<bằng chứng: file:line, tên test đã chạy + kết quả, commit hash>"`.
-  - Điều kiện đóng chưa đủ → **KHÔNG đóng**: `bd update <bead-id> --append-notes "RE-MEASURE <ngày> (HEAD <sha>): …còn thiếu gì, vì sao"`.
-  - Nợ còn lại phải **liệt kê từng mục** trong reason/note — không im lặng, không báo số lượng suông.
-- Bàn giao: báo file đã đổi, lệnh verify + output, trạng thái bead, và lệnh
-  commit/push đề xuất — **không tự push/sync** trừ khi được yêu cầu (profile conservative).
+Before claiming anything is done, verify for real — follow a
+`verification-before-completion` process (the skill of that name if your environment
+has one) — then:
+
+- Run the tests for real and read the **exit code** (never `echo OK`; `rc=0` with no
+  output is a failure signal, not a pass). Record the command and its result. Read the
+  verdict from the runner's **machine-readable** output (junitxml, a JSON reporter…)
+  whenever one exists — the final summary line can be truncated when captured.
+- A tripped snapshot or generated file → regenerate it **in the same commit**.
+- Commit: `git add <exact paths>` immediately before committing, then
+  `git commit --only <path>…` — never `git add -A`, never stage early.
+- Close it: `bd close <bead-id> --reason "<evidence: file:line, the test you ran + its result, commit hash>"`.
+  - Closing conditions not fully met → **do not close**:
+    `bd update <bead-id> --append-notes "RE-MEASURE <date> (HEAD <sha>): …what is still missing, and why"`.
+  - Remaining debt must be listed **item by item** in the reason or note — no silence,
+    no bare counts.
+- Handoff: report the files you changed, the verify command plus its output, the bead's
+  status, and the suggested commit/push commands — **never push or sync on your own**
+  (conservative profile).

@@ -1,215 +1,235 @@
 ---
-description: Fleet song song nhiều bead auto-ok tới khi hết việc — mỗi bead một worktree, rebase + ff-only về nhánh tích hợp, dọn worktree
+description: Run a fleet of auto-ok beads in parallel until the queue is empty — one worktree per bead, rebase + ff-only onto the integration branch, then clean up
 argument-hint: "[--batch N] [--include-partial] [--unattended]"
 ---
 
 
 # bead-fleet
 
-Bạn chạy **fleet** `/bead-fleet`. **Tham số = phần text user gõ sau lệnh**
-(`[--batch N] [--include-partial] [--unattended]`).
+You are running the **fleet**, `/bead-fleet`. **The parameters are the text the user typed
+after the command** (`[--batch N] [--include-partial] [--unattended]`).
 
-**BẠN LÀ ORCHESTRATOR — bạn không tự sửa code.** Bạn: chọn lô, spawn agent, VERIFY
-tuyên bố của agent, rebase → ff-only merge, ghi board, dọn worktree. Lặp tới `HET VIEC`.
+**YOU ARE THE ORCHESTRATOR — you do not edit code yourself.** You: pick the batch, spawn
+the agents, VERIFY what they claim, rebase → ff-only merge, write to the board, clean up
+the worktrees. Repeat until `NO WORK LEFT`.
 
-`--batch N` mặc định 4 (xem §1c). `--unattended` bật §5.
-`<BASE>` = **nhánh tích hợp của dự án**: nhánh user chỉ định, hoặc nhánh hiện tại
-của cây chính (`git branch --show-current`) — chốt một lần ở đầu phiên.
+`--batch N` defaults to 4 (see §1c). `--unattended` turns on §5.
+`<BASE>` = **the project's integration branch**: whichever branch the user names, or the
+main tree's current branch (`git branch --show-current`) — settle it once, at the start of
+the session.
 
-## 0. Bất biến — vi phạm một cái là mất cả đêm
+## 0. Invariants — break one and you lose the whole night
 
-- **Mọi ghi lên beads** (`--claim`, `close`, `create`, `dep`, `--append-notes`) do
-  **BẠN** chạy ở cây chính. Agent chỉ ĐỌC. `bd list`/`bd show` từ worktree đã đo là
-  chạy đúng (`.beads/metadata.json` được track). Hai `bd` ghi đồng thời có an toàn
-  không thì chưa đo → đừng thử.
-- **Không `git push`, không `bd sync`** trừ khi user cho phép trong lượt này. Lịch sử
-  giữ tuyến tính (ff-only) và chưa push ⇒ sáng ra `git reset --hard <sha đầu>` là hoàn
-  tác được cả đêm. Đó là lưới an toàn duy nhất — đừng phá nó bằng một cú push.
-- **Không tin tuyên bố nào của agent.** Verify: grep tại đúng `file:line` agent nói ·
-  chạy lại đúng lệnh test agent nói · đọc exit code thật. `rc=0` không output là tín
-  hiệu LỖI. Verdict test đọc từ report máy-đọc-được (`--junitxml`, JSON reporter…),
-  KHÔNG đọc dòng summary — đã đo dòng summary bị truncate khi capture trên Git Bash.
-- **Skip ≠ pass.** Sau mỗi lô, với mọi file test bị lô đó chạm, đếm trong report
-  máy-đọc số `ran`/`skipped`/`FAIL` theo file/classname. Một test mới bị skip lặng lẽ
-  trông y hệt rc=0 với nó pass.
+- **Every write to beads** (`--claim`, `close`, `create`, `dep`, `--append-notes`) is run by
+  **YOU**, in the main tree. Agents only READ. `bd list` / `bd show` from a worktree is
+  measured to work (`.beads/metadata.json` is tracked). Whether two concurrent `bd` writes
+  are safe has not been measured → do not try it.
+- **No `git push`, no `bd sync`** unless the user allows it in this turn. As long as history
+  stays linear (ff-only) and unpushed, `git reset --hard <the first sha>` in the morning
+  undoes the entire night. That is the only safety net — do not destroy it with one push.
+- **Trust no claim an agent makes.** Verify: grep at the exact `file:line` the agent cited ·
+  re-run the exact test command the agent cited · read the real exit code. `rc=0` with no
+  output is a FAILURE signal. Read the test verdict from machine-readable output
+  (`--junitxml`, a JSON reporter…), NOT from the summary line — the summary line is measured
+  to be truncated when captured under Git Bash.
+- **Skipped ≠ passed.** After every batch, for every test file that batch touched, count
+  `ran` / `skipped` / `FAIL` per file or classname in the machine-readable report. A new
+  test that gets silently skipped looks exactly like rc=0 with it passing.
 
-## 1. Chọn lô
+## 1. Pick the batch
 
-Extract khối bash §1 của `.codex/prompts/bead-loop.md` bằng `awk` rồi chạy —
-đừng gõ lại (nó là nguồn duy nhất của luật nhãn + lọc blocker). Từ hàng `auto-ok`
-sẵn sàng, lọc tiếp:
+Extract the §1 bash block from `.codex/prompts/bead-loop.md` with `awk` and run it — do
+not retype it (it is the single source of truth for the label rules and the blocker
+filter). From the ready `auto-ok` queue, filter further:
 
-a. **Không cạnh dep trong cùng lô** — `bd ready` đã lọc blocker, nhưng kiểm thêm
-   `bd dep tree <id>` giữa các bead cùng lô.
-b. **Footprint file rời nhau.** Đọc description, đoán file bị chạm; trùng file → khác lô.
-c. **Tối đa MỘT bead/lô được regenerate file sinh tự động dùng chung** (golden file,
-   snapshot API surface, schema/enum export, contract freeze…). Hai agent regenerate
-   cùng file thì rebase hoà được về mặt **text** nhưng nội dung SAI — không test nào
-   bắt được.
-d. **Loại khỏi fleet, báo lại cho user, KHÔNG tự quyết** — bead mà điều kiện đóng chứa
-   một lựa chọn (`bd show` có "quyết định", "RE-SCOPE", "đề xuất … chọn", hoặc hai
-   phương án ngang nhau). Nhãn `auto-ok` nói *code làm được*, không nói *scope đã chốt*.
+a. **No dependency edges inside one batch** — `bd ready` already filters blockers, but check
+   `bd dep tree <id>` between the beads sharing a batch as well.
+b. **Disjoint file footprints.** Read the descriptions, guess which files get touched;
+   overlapping files → different batches.
+c. **At most ONE bead per batch may regenerate a shared generated file** (a golden file, an
+   API-surface snapshot, a schema/enum export, a contract freeze…). Two agents regenerating
+   the same file rebase cleanly as **text** while the content is WRONG — and no test catches it.
+d. **Drop it from the fleet, report back to the user, decide NOTHING yourself** — any bead
+   whose closing conditions contain a choice (`bd show` mentions a "decision", a "RE-SCOPE",
+   a "propose … pick one", or two equally weighted options). The `auto-ok` label says *the
+   code is doable*, not *the scope is settled*.
 
-In lô đã chọn + **lý do từng bead bị hoãn**. Không im lặng cắt bớt.
+Print the chosen batch **and the reason each deferred bead was deferred**. No silent truncation.
 
-## 2. Spawn — tất cả trong MỘT message
+## 2. Spawn — all of it in ONE message
 
 ```
 git worktree add -b work/bead-<id> ../wt-<id> <BASE>
 ```
-Công cụ worktree tự động của harness chỉ dùng khi chắc nó nhánh từ đúng `<BASE>` —
-nhiều harness mặc định nhánh từ `origin/main`, thiếu commit nhánh tích hợp.
+The harness's automatic worktree tool is only safe when you are certain it branches from the
+right `<BASE>` — many harnesses default to branching from `origin/main` and miss the
+integration branch's commits.
 
-**Worktree mới KHÔNG có artefact bị gitignore** (venv, `node_modules`, build cache).
-Mỗi stack một cái bẫy riêng, đừng gộp:
+**A fresh worktree has NONE of the gitignored artefacts** (venv, `node_modules`, build
+caches). Each stack has its own trap; do not conflate them:
 
-- **Python:** nếu repo dùng một venv duy nhất ở cây chính và nó là editable install
-  trỏ vào `src/` của **cây chính**, chạy nó từ worktree có thể import package từ cây
-  chính ⇒ test xanh mà không test gì của agent. Bắt agent chứng minh trước (§B bước 0).
-- **JS/TS:** không có `node_modules` thì typecheck/test chạy không nổi. Chạy trình
-  cài đặt **thật** trong worktree (`npm ci`/`pnpm install --frozen-lockfile`…) —
-  KHÔNG symlink/junction `node_modules` từ cây chính: đã đo junction làm vitest fail
-  hàng loạt ("Vitest failed to find the current suite") dù cùng test file + cùng
-  binary pass sạch trong cây chính — nghi dual-module-loading giữa đường dẫn junction
-  và đường dẫn thật. Cài đặt cần mạng và vài phút — nếu fail thì bead đó KHÔNG được
-  merge, đánh dấu `--append-notes`, không merge mù.
-- **Toolchain có cache theo user** (Gradle `~/.gradle`, pip cache, cargo registry…)
-  thường chạy được từ worktree không cần cài lại — kiểm một lệnh build nhỏ trước khi tin.
+- **Python:** if the repo uses a single venv in the main tree and that venv is an editable
+  install pointing at the **main tree's** `src/`, running it from a worktree can import the
+  package from the main tree ⇒ tests go green without testing any of the agent's work. Make
+  the agent prove otherwise first (§B step 0).
+- **JS/TS:** without `node_modules`, typecheck and tests cannot run at all. Run the **real**
+  installer inside the worktree (`npm ci` / `pnpm install --frozen-lockfile` / …) — do NOT
+  symlink or junction `node_modules` from the main tree: a junction is measured to make
+  vitest fail en masse ("Vitest failed to find the current suite") even though the same test
+  files and the same binary pass cleanly in the main tree — suspected dual module loading
+  between the junction path and the real path. Installing needs the network and a few
+  minutes; if it fails, that bead is NOT merged — mark it with `--append-notes` and never
+  merge blind.
+- **Toolchains with a per-user cache** (Gradle's `~/.gradle`, the pip cache, the cargo
+  registry…) usually run from a worktree without reinstalling — check with one small build
+  command before trusting it.
 
-Rồi spawn 1 agent/bead bằng brief ở §B, điền `<ID>`, đường dẫn worktree, và thông tin
-toolchain (đường dẫn python/venv, package cần import-proof…) của repo.
+Then spawn one agent per bead using the brief in §B, filling in `<ID>`, the worktree path,
+and the repo's toolchain details (python/venv paths, the package to import-prove, …).
 
-## 3. Tích hợp — TUẦN TỰ, một bead một lúc, đúng thứ tự này
+## 3. Integration — SEQUENTIAL, one bead at a time, in exactly this order
 
-Thứ tự là load-bearing: **rebase viết lại SHA**, nên `bd close` phải đi SAU rebase,
-không thì reason trích một SHA không còn trên nhánh (chỉ còn trong reflog tới khi gc).
+The order is load-bearing: **rebase rewrites SHAs**, so `bd close` must come AFTER the
+rebase, or the reason quotes a SHA that is no longer on the branch (only in the reflog,
+until gc).
 
-1. Verify tuyên bố agent (§0). Không đạt → **KHÔNG merge**, sang §5.
-2. Trong worktree: `git rebase <BASE>`.
-3. **SAU rebase**, trong worktree: chạy lại test của chính bead + mọi gate
-   snapshot/contract + lint nhanh của repo. Cây sau rebase là cây **chưa agent nào test**.
-4. Cây chính: `git merge --ff-only work/bead-<id>`.
-5. `bd close <id> --reason "<file:line · tên test + rc thật · commit SAU rebase>"`.
-   Bead `auto-partial` → **KHÔNG close**, chỉ
-   `bd update <id> --append-notes "RE-MEASURE <ngày> (HEAD <sha>): đã làm gì, commit nào, còn thiếu gì và VÌ SAO cần người"`.
-   Đóng nó là biến "chưa đo" thành "đã pass" — ngược hẳn lý do nó được phân loại thế.
-6. `git worktree remove ../wt-<id>` rồi `git branch -d work/bead-<id>` (`-d`, KHÔNG `-D`).
+1. Verify the agent's claims (§0). Not satisfied → **do not merge**; go to §5.
+2. In the worktree: `git rebase <BASE>`.
+3. **AFTER the rebase**, in the worktree: re-run that bead's own tests plus every
+   snapshot/contract gate plus the repo's fast lint. The post-rebase tree is a tree **no
+   agent has tested**.
+4. In the main tree: `git merge --ff-only work/bead-<id>`.
+5. `bd close <id> --reason "<file:line · test name + real rc · the post-rebase commit>"`.
+   An `auto-partial` bead → **do NOT close**; only
+   `bd update <id> --append-notes "RE-MEASURE <date> (HEAD <sha>): what you did, which commit, what is still missing and WHY it needs a person"`.
+   Closing it turns "not measured" into "passed" — the exact opposite of why it was
+   classified that way.
+6. `git worktree remove ../wt-<id>`, then `git branch -d work/bead-<id>` (`-d`, NOT `-D`).
 
-## 4. Gate hợp thành — MỘT lần sau mỗi lô
+## 4. Composite gate — ONCE after every batch
 
-- Chạy **full gate của repo**: lint + typecheck + full test suite — lệnh lấy từ
-  doc quy ước / cấu hình CI / script trong `package.json`/`pyproject`/`Makefile`,
-  không tự bịa.
-- **Pin đúng version tool như CI trước khi đọc kết quả lint/format.** Đổi version là
-  đổi rule set: đã đo trên cùng một cây không đổi, version cũ nói "All checks
-  passed!", version mới báo hàng nghìn lỗi. Thấy con số kiểu đó là đang đo cái
-  *tool*, không phải repo.
-- Verdict test đọc từ report máy-đọc-được (§0). Suite lớn: xuất `--junitxml`/JSON
-  rồi đọc số liệu. Đọc config của runner trước khi thêm flag — flag xung đột với
-  config sẵn có (vd. tắt plugin mà `addopts` vẫn truyền tham số của nó) làm runner
-  chết trước khi chạy test nào.
-- **Không chạy 2 suite song song** nếu chúng chia sẻ fs/port/DB state.
-- Đỏ → §5. Xanh → quay lại §1.
+- Run the **repo's full gate**: lint + typecheck + the full test suite — take the commands
+  from the repo's convention docs / the CI config / the scripts in `package.json` /
+  `pyproject` / `Makefile`. Do not invent them.
+- **Pin the tool versions CI uses before reading any lint or format result.** Changing the
+  version changes the rule set: measured on one unchanged tree, the old version said "All
+  checks passed!" while the new version reported thousands of errors. A number like that
+  means you are measuring the *tool*, not the repo.
+- Read the test verdict from machine-readable output (§0). For a large suite: emit
+  `--junitxml` or JSON and read the counts. Read the runner's config before adding a flag —
+  a flag that conflicts with existing config (say, disabling a plugin while `addopts` still
+  passes its options) kills the runner before a single test runs.
+- **Never run two suites in parallel** if they share filesystem, port, or database state.
+- Red → §5. Green → back to §1.
 
-## 5. Chính sách thất bại (bắt buộc khi `--unattended`)
+## 5. Failure policy (mandatory under `--unattended`)
 
-Mục tiêu: **tiến được mà không cần người**, và không bao giờ merge thứ chưa chứng minh.
+The goal: **make progress without a person**, and never merge anything unproven.
 
-- Test của bead đỏ → agent sửa tối đa **2** vòng. Vẫn đỏ → bỏ bead đó khỏi lô,
-  `--append-notes` ghi *nguyên văn* lỗi + lệnh tái tạo, xoá worktree, **đi tiếp bead khác**.
-- Xung đột rebase ở file **thường** → sửa trong worktree, chạy lại §3.3.
-- Xung đột rebase ở **file sinh tự động/snapshot** → **KHÔNG tự hoà**. Bỏ bead,
-  append-notes. Hoà nhầm ở đây tạo một snapshot xanh mà nội dung sai.
-- Gate hợp thành đỏ sau khi đã ff-only merge → tìm bead gây ra bằng `git bisect` trên
-  đúng dải commit của lô; `git revert` bead đó, `bd update --append-notes`, re-open bead
-  bằng `bd update <id> --status open`. **Không** `git reset --hard` (nó cũng xoá bead khác).
-- Nợ mới phát hiện → `bd create` ngay (kèm `--parent <epic>` + nhãn phân loại + lý do
-  đo được). Không epic nào phù hợp thì tạo epic — đừng nhét tạm vào một epic "nợ
-  chung" không liên quan.
-- **Dừng hẳn và chờ người** đúng 3 trường hợp: (a) một bead cần quyết định scope
-  (§1d) mà không còn bead nào khác chạy được; (b) gate hợp thành đỏ mà bisect không
-  chỉ được thủ phạm; (c) `bd` hoặc `git` trả lỗi bạn chưa từng thấy — đừng đoán.
+- A bead's tests are red → the agent gets at most **2** fix rounds. Still red → drop that
+  bead from the batch, `--append-notes` with the *verbatim* error plus the reproduction
+  command, remove the worktree, and **move on to another bead**.
+- A rebase conflict in an **ordinary** file → resolve it in the worktree and re-run §3.3.
+- A rebase conflict in a **generated file or snapshot** → do **NOT** resolve it yourself.
+  Drop the bead and append notes. Resolving it wrong here produces a green snapshot whose
+  content is false.
+- The composite gate goes red after an ff-only merge → find the culprit with `git bisect`
+  over exactly that batch's commit range; `git revert` that bead, `bd update
+  --append-notes`, and reopen it with `bd update <id> --status open`. Do **not**
+  `git reset --hard` (it would erase the other beads too).
+- Newly discovered debt → `bd create` immediately (with `--parent <epic>` + a classification
+  label + the measurable reason). If no epic fits, create one — do not park it in an
+  unrelated "general debt" epic.
+- **Stop outright and wait for a person** in exactly three cases: (a) a bead needs a scope
+  decision (§1d) and no other bead is runnable; (b) the composite gate is red and bisect
+  cannot name the culprit; (c) `bd` or `git` returns an error you have never seen — do not
+  guess.
 
-## 6. Dừng + dọn cuối
+## 6. Stop, and the final cleanup
 
-`HET VIEC` → dọn tận gốc:
+`NO WORK LEFT` → clean up properly:
 - `git worktree list` · `ls -d ../wt-*` · `git worktree prune`
-- `git branch --list` tìm nhánh **mồ côi** của agent (đã merge, `ahead=0`, nhưng
-  không còn directory trên đĩa ⇒ `git worktree list` KHÔNG thấy chúng, nên các lần
-  dọn trước dễ bỏ sót). Xoá bằng `git branch -d`.
+- `git branch --list`, looking for the agents' **orphaned** branches (merged, `ahead=0`, but
+  with no directory left on disk ⇒ `git worktree list` does NOT show them, which is why
+  earlier cleanups miss them). Delete those with `git branch -d`.
 
-Báo cáo cuối, mỗi mục liệt kê **từng cái**, không báo số lượng suông:
-bead đã đóng + SHA · bead `auto-partial` chỉ append-notes + VÌ SAO · bead bỏ giữa
-đường + lỗi nguyên văn · bead mới `bd create` + epic + nhãn · `needs-human` còn lại +
-lý do từng cái · bead cần user quyết (§1d) + các phương án · lệnh `git push` / `bd sync`
-đề xuất (không tự chạy).
+Final report, every item listed **one by one**, never as a bare count:
+beads closed + SHA · `auto-partial` beads that only got append-notes + WHY · beads abandoned
+mid-flight + the verbatim error · new beads from `bd create` + epic + label · remaining
+`needs-human` + the reason for each · beads needing a user decision (§1d) + the options ·
+the suggested `git push` / `bd sync` commands (do not run them).
 
 ---
 
-## §B. Brief cho từng agent (điền rồi spawn)
+## §B. The brief for each agent (fill it in, then spawn)
 
 ```
-Bạn thi công bead `<ID>` trong worktree riêng: `<WT>`. CHỈ bead này.
+You are implementing bead `<ID>` in a dedicated worktree: `<WT>`. ONLY this bead.
 
-## Bước 0 — CHỨNG MINH bạn đang test cây của mình (đừng bỏ)
-Worktree không có artefact bị gitignore (venv, node_modules…).
-- Python (repo có venv editable-install ở cây chính): với cwd = `<WT>`, chạy:
+## Step 0 — PROVE you are testing your own tree (do not skip this)
+A worktree has none of the gitignored artefacts (venv, node_modules, …).
+- Python (repo with an editable-install venv in the main tree): with cwd = `<WT>`, run:
       <VENV_PY> -c "import <PKG>; print(<PKG>.__file__)"
-  Đường dẫn in ra PHẢI nằm trong `<WT>`. Không phải thì DỪNG và báo orchestrator —
-  đừng "chạy thử xem sao", test sẽ xanh trên code không phải của bạn.
-- JS/TS: kiểm `node_modules` có trong `<WT>` chưa (phải là cài đặt thật, KHÔNG phải
-  symlink/junction từ cây chính); chưa có thì báo orchestrator, đừng tự cài.
+  The path it prints MUST be inside `<WT>`. If it is not, STOP and tell the orchestrator —
+  do not "just try it and see", the tests will go green on code that is not yours.
+- JS/TS: check that `node_modules` exists inside `<WT>` (a real install, NOT a symlink or
+  junction from the main tree); if it is missing, tell the orchestrator, do not install it
+  yourself.
 
-## Bước 1 — Đọc rồi ĐO trước khi sửa
-- `bd show <ID>`: điều kiện đóng nằm trong NOTES; note RE-MEASURE mới nhất đáng tin
-  hơn description. Bead thắng doc cho tới khi đo lại.
-- Đọc doc quy ước của repo (CLAUDE.md/AGENTS.md… nếu có).
-- Grep tại đúng file:line bead nói. Số đo khác note → báo orchestrator append đính
-  chính TRƯỚC khi sửa (line number trong bead đã từng sai).
-- Bug → quy trình debug có hệ thống (skill `systematic-debugging` nếu có).
-  Feature/refactor → TDD (skill `test-driven-development` nếu có).
+## Step 1 — Read, then MEASURE, before changing anything
+- `bd show <ID>`: the closing conditions are in the NOTES; the latest RE-MEASURE note is
+  more trustworthy than the description. The bead beats the docs until someone re-measures.
+- Read the repo's convention docs (CLAUDE.md / AGENTS.md / … if present).
+- Grep at the exact file:line the bead cites. If your measurement differs from the note,
+  tell the orchestrator to append the correction BEFORE you change anything (line numbers
+  in beads have been wrong before).
+- Bug → a systematic debugging process (the `systematic-debugging` skill if available).
+  Feature/refactor → TDD (the `test-driven-development` skill if available).
 
-## Bước 2 — Làm
-- Reuse trước, invention sau. Grep tìm owner hiện có trong repo (error type, path
-  helper, config loader, HTTP client wrapper, validation…) trước khi viết mới.
-  Abstraction mới cần ≥2 caller THẬT hôm nay.
-- Guard viết dạng ALLOWLIST, không `!= <giá trị xấu>`; pin bằng test iterate qua
-  tập giá trị hợp lệ. Map state phải vét cạn — không default lặng lẽ.
-- "Chưa đo" ≠ 0: `None`/`null`/cột để trống, và giữ phân biệt đó qua MỌI hop —
-  một `or []` ở layer trên là đủ để xoá sạch fix.
-- Tôn trọng ranh giới layer của repo (router/service/store, UI/domain/data…):
-  logic đặt đúng tầng, không import ngược chiều phụ thuộc.
+## Step 2 — Do the work
+- Reuse first, invention second. Grep for an existing owner in the repo (error type, path
+  helper, config loader, HTTP client wrapper, validation, …) before writing a new one. A new
+  abstraction needs ≥2 REAL callers today.
+- Write guards as an ALLOWLIST, not `!= <bad value>`; pin them with a test that iterates the
+  set of valid values. State maps must be exhaustive — no silent default.
+- "Not measured" ≠ 0: `None` / `null` / an empty column, and keep that distinction across
+  EVERY hop — a single `or []` one layer up is enough to erase the whole fix.
+- Respect the repo's layer boundaries (router/service/store, UI/domain/data, …): logic goes
+  in the right tier, and no importing against the dependency direction.
 
-## Bước 3 — NỢ KỸ THUẬT: phân biệt 2 loại, đây là chỗ dễ sai nhất
-NỢ DO THAY ĐỔI CỦA BẠN SINH RA → fix sạch trong worktree này, cùng commit:
-  lint + typecheck sạch trên vùng bạn chạm · mọi snapshot/file sinh tự động bị trip
-  (regenerate CÙNG commit) · doc/docstring thành sai → sửa ngay (doc cũ LÀ bug) ·
-  field/API mới → cập nhật MỌI consumer trong repo cùng commit hoặc nói rõ VÌ SAO
-  consumer đó không cần · mọi path mới phải có test · quy ước riêng của repo
-  (registry, audit log, migration checklist… — đọc doc quy ước) làm đủ.
-NỢ CÓ TRƯỚC, không liên quan → báo orchestrator `bd create`. KHÔNG mở rộng scope,
-  KHÔNG todo tool, KHÔNG markdown checkbox.
-NGOẠI LỆ: bạn làm một branch CHƯA TỪNG CHẠY trở nên chạy được ⇒ bạn là chủ nó, bug
-  có trước vẫn là việc của bạn.
+## Step 3 — TECHNICAL DEBT: two kinds, and this is the easiest place to get it wrong
+DEBT YOUR OWN CHANGE CREATED → fix it cleanly in this worktree, in the same commit:
+  lint + typecheck clean over the area you touched · every tripped snapshot or generated
+  file regenerated IN THE SAME COMMIT · docs/docstrings your change made wrong → fix them
+  now (a stale doc IS a bug) · a new field or API → update EVERY consumer in the repo in the
+  same commit, or state explicitly WHY a given consumer does not need it · every new path
+  needs a test · the repo's own conventions (registry, audit log, migration checklist, … —
+  read the convention docs) satisfied in full.
+PRE-EXISTING, UNRELATED DEBT → tell the orchestrator to `bd create` it. Do NOT widen the
+  scope, do NOT use a todo tool, do NOT use markdown checkboxes.
+EXCEPTION: if you make a branch that has NEVER RUN start running, you own it — the
+  pre-existing bugs in it are yours too.
 
-## Bước 4 — Test
-- Chạy test bằng runner + config của repo; xuất report máy-đọc được
-  (`--junitxml=<file>.xml` với pytest, JSON reporter với runner khác), đọc verdict
-  từ report — KHÔNG tin dòng summary (từng đo bị truncate khi capture).
-- Đọc config runner trước khi thêm flag — flag xung đột với addopts/config sẵn có
-  làm runner chết trước khi chạy test nào.
-- Fix chỉ được coi là chứng minh khi bạn TÁI TẠO điều kiện lỗi: gỡ sửa chữa tay ra,
-  chạy lại, xác nhận CODE tự làm được.
-- Repo hỗ trợ đa OS thì code phải xanh trên các OS đó: `encoding="utf-8"` tường
-  minh · không assert path bằng separator cứng · không API POSIX-only
-  (`SIGKILL`/`fcntl`…) không guard · không ký tự NUL thô trong source.
+## Step 4 — Tests
+- Run the tests with the repo's runner and config; emit a machine-readable report
+  (`--junitxml=<file>.xml` for pytest, a JSON reporter for other runners) and read the
+  verdict FROM THE REPORT — do NOT trust the summary line (measured to be truncated when
+  captured).
+- Read the runner's config before adding a flag — a flag conflicting with existing
+  addopts/config kills the runner before a single test runs.
+- A fix only counts as proven once you REPRODUCE the failing condition: back out your manual
+  intervention, run it again, and confirm the CODE does it on its own.
+- If the repo supports several operating systems, the code must be green on them: explicit
+  `encoding="utf-8"` · never assert paths with a hardcoded separator · no unguarded
+  POSIX-only APIs (`SIGKILL` / `fcntl` / …) · no raw NUL characters in source.
 
-## Bước 5 — Commit rồi TRẢ VIỆC
-Bạn KHÔNG `bd close`, KHÔNG `bd update`, KHÔNG rebase, KHÔNG merge, KHÔNG push.
-- `git add <đúng path>` ngay trước commit, rồi `git commit --only <path>…`. Tuyệt đối
-  không `git add -A`, không stage sớm: `git add <path> && git commit` vẫn commit TOÀN
-  BỘ index, đã từng quét việc dở của session khác vào commit người ta.
-- Báo về: file đã đổi · lệnh verify + **exit code thật** + đường dẫn report · commit
-  SHA · nợ đã fix (từng mục) · nợ để lại cho `bd create` (từng mục) · consumer nào
-  đã cập nhật hoặc vì sao không cần.
+## Step 5 — Commit, then HAND BACK
+You do NOT `bd close`, do NOT `bd update`, do NOT rebase, do NOT merge, do NOT push.
+- `git add <exact paths>` immediately before committing, then `git commit --only <path>…`.
+  Absolutely no `git add -A`, and never stage early: `git add <path> && git commit` still
+  commits the ENTIRE index, and has swept another session's work-in-progress into someone
+  else's commit before.
+- Report back: the files you changed · the verify command + its **real exit code** + the
+  report path · the commit SHA · the debt you fixed (item by item) · the debt you left for
+  `bd create` (item by item) · which consumers you updated, or why they did not need it.
 ```

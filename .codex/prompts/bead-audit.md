@@ -1,63 +1,77 @@
 ---
-description: PM rà soát board beads — fan-out agent đo bằng chứng, đóng nợ tập trung, sinh prompt song song
-argument-hint: "[epic-id | label | danh sách bead-id] (bỏ trống = cả board)"
+description: Audit the beads board as PM — fan out agents to measure evidence, settle the debt centrally, emit parallel prompts
+argument-hint: "[epic-id | label | list of bead-ids] (empty = the whole board)"
 ---
 
 
 # bead-audit
 
-Bạn là PM rà soát board beads. **Scope = phần text user gõ sau `/bead-audit`**
-(epic-id | label | danh sách bead-id). Bỏ trống = cả board.
+You are the PM auditing the beads board. **The scope is the text the user typed after
+`/bead-audit`** (epic-id | label | a list of bead-ids). Empty = the whole board.
 
-Nguyên tắc xuyên suốt: **agent chỉ ĐO và trả bằng chứng; chỉ PM (bạn, ở vòng chính)
-được đóng/sửa bead.** Repo là sự thật — mọi claim "đã xong" phải đo lại được.
+The principle that governs everything below: **agents only MEASURE and return evidence;
+only the PM (you, in the main loop) may close or edit a bead.** The repo is the truth —
+every "already done" claim has to be re-measurable.
 
-## 1. Chốt hiện trạng
+## 1. Establish the current state
 
-- `bd ready`, `bd list --status in_progress`, `bd show <epic>` cho từng epic trong scope
-  — đọc cả NOTES (điều kiện đóng + lần đo trước nằm ở đó).
-- `git fetch origin` + `git rev-list --left-right --count origin/<branch>...HEAD` —
-  máy khác có thể đã push fix; ghi HEAD sha vào mọi note đo.
-- Bead cần môi trường ngoài (cụm, DB, staging…) thì thử một lệnh **read-only** để
-  kiểm access thật trước khi tin note "không có access" — note đó có thể stale.
+- `bd ready`, `bd list --status in_progress`, and `bd show <epic>` for each epic in scope
+  — read the NOTES too: the closing conditions and the previous measurement live there.
+- `git fetch origin` plus `git rev-list --left-right --count origin/<branch>...HEAD` —
+  another machine may already have pushed the fix; record the HEAD sha in every
+  measurement note.
+- For a bead that needs an external environment (a cluster, a database, staging…), try
+  one **read-only** command to check real access before believing a note that says "no
+  access" — that note may be stale.
 
-## 2. Fan-out agent đo (song song, read-only)
+## 2. Fan out agents to measure (in parallel, read-only)
 
-Nhóm bead theo mặt trận (code / UI / hạ tầng / docs) — mỗi nhóm 1 subagent read-only
-(loại có quyền chạy lệnh khi cần chạm môi trường ngoài), chạy song song. Prompt cho
-mỗi agent PHẢI có:
+Group the beads by front (code / UI / infrastructure / docs) — one read-only subagent per
+group (the kind allowed to run commands when it has to touch an external environment),
+all running in parallel. Every agent's prompt MUST carry:
 
-- Danh sách bead-id + lệnh `bd show` để agent tự đọc điều kiện đóng.
-- Lệnh cấm: **KHÔNG close/update bead, KHÔNG sửa file**; trên môi trường ngoài chỉ
-  thao tác **read-only**, không restart gì.
-- Format trả về: mỗi bead một verdict **DONE / NOT DONE / PARTIAL** + bằng chứng
-  cụ thể (file:line, LOC đo được, query + số row, commit hash, tên test **đã chạy**
-  + kết quả). Thiếu bằng chứng = NOT DONE, nói rõ thiếu gì. Precision over optimism.
-- Verify bản deploy bằng hành vi/symbol thực trong môi trường chạy (import module
-  mới, gọi endpoint mới), không bằng digest/version string.
+- The list of bead-ids plus the `bd show` command, so the agent reads the closing
+  conditions itself.
+- The prohibitions: **do NOT close or update a bead, do NOT edit any file**; on an
+  external environment, **read-only** operations only, and restart nothing.
+- The return format: one verdict per bead — **DONE / NOT DONE / PARTIAL** — plus concrete
+  evidence (file:line, the LOC it measured, the query plus the row count, a commit hash,
+  the name of the test it **actually ran** plus its result). Missing evidence = NOT DONE,
+  and say exactly what is missing. Precision over optimism.
+- Verify a deployed build through real behaviour or real symbols in the running
+  environment (import the new module, call the new endpoint) — never through a digest or
+  a version string.
 
-## 3. Đóng nợ tập trung (chỉ ở vòng chính)
+## 3. Settle the debt centrally (main loop only)
 
-Đối chiếu báo cáo các agent, xử lý từng bead:
+Reconcile the agents' reports and handle each bead:
 
-- **DONE** → `bd close <id> --reason "Verified <ngày> (agent re-measure): <bằng chứng chốt>"`.
-  Nợ còn sót (phần chưa verify được…) phải **liệt kê rõ trong reason** — không im lặng.
-- **NOT DONE / PARTIAL** → `bd update <id> --append-notes "RE-MEASURE <ngày> (HEAD <sha>): <số đo mới> — còn thiếu <gì> để đóng"`.
-  Bead cũ đo sót/đo sai → **đính chính** ngay trong note.
-- Doc trong repo nói ngược source → sửa **in-place cùng đợt**, không tạo file dated mới.
-- Bằng chứng agent tiện tay đo được cho bead NGOÀI scope → append note cho bead đó luôn.
-- Verdict chỉ có "lời khai" (prose trong commit/bead, không tái lập được) → PARTIAL, không đóng.
+- **DONE** → `bd close <id> --reason "Verified <date> (agent re-measure): <the decisive evidence>"`.
+  Any leftover debt (the part that could not be verified…) must be **spelled out in the
+  reason** — no silence.
+- **NOT DONE / PARTIAL** → `bd update <id> --append-notes "RE-MEASURE <date> (HEAD <sha>): <the new measurement> — still missing <what> before this can close"`.
+  A bead whose earlier measurement was incomplete or wrong → **correct it** right there
+  in the note.
+- Docs in the repo that contradict the source → fix them **in place, in the same pass**;
+  do not create a new dated file.
+- Evidence an agent happened to measure for a bead **outside** the scope → append a note
+  to that bead as well.
+- A verdict backed only by testimony (prose in a commit or a bead, not reproducible) →
+  PARTIAL, do not close.
 
-## 4. Bàn giao PM
+## 4. PM handoff
 
-- Bảng tổng kết: bead nào đóng (kèm bằng chứng chốt), bead nào giữ mở (kèm cái còn thiếu),
-  tiến độ epic trước/sau.
-- Với bead còn nợ mà **agent tự làm được**: sinh prompt song song theo mẫu — mỗi prompt
-  tự chứa: số đo mới nhất (file:line), điều kiện đóng, quy tắc worktree riêng
-  (`git worktree add -b work/bead-<id> ../wt-<id> <BASE>` với `<BASE>` = nhánh tích
-  hợp của dự án — xem `bead-take`), `bd update --claim`, `git commit --only`,
-  `bd close` kèm bằng chứng. Chỉ ghép song song các bead **không giẫm file nhau** —
-  nêu rõ cặp nào conflict và thứ tự merge.
-- Với bead cần NGƯỜI quyết (quyết định IA/UX, re-scope, đụng danh tính/hệ thống ngoài,
-  chi phí chạy đáng kể) → **không sinh prompt tự chạy**, liệt kê riêng chờ quyết.
-- Báo file đã đổi + lệnh commit đề xuất; **không tự push/sync beads** trừ khi được yêu cầu.
+- A summary table: which beads closed (with the decisive evidence), which stay open (with
+  what is still missing), and each epic's progress before and after.
+- For remaining debt an **agent can do by itself**: emit parallel prompts to the template
+  — each prompt self-contained, carrying the latest measurement (file:line), the closing
+  conditions, the dedicated-worktree rule
+  (`git worktree add -b work/bead-<id> ../wt-<id> <BASE>`, where `<BASE>` = the project's
+  integration branch — see `bead-take`), `bd update --claim`, `git commit --only`, and
+  `bd close` with evidence. Only pair beads in parallel when they **do not touch the same
+  files** — state explicitly which pairs conflict and in what order they must merge.
+- For beads that need a PERSON to decide (an IA/UX call, a re-scope, anything touching
+  identity or an external system, meaningful running costs) → **emit no self-running
+  prompt**; list them separately and wait for the decision.
+- Report the files you changed plus the suggested commit commands; **never push or sync
+  beads on your own** unless asked.
