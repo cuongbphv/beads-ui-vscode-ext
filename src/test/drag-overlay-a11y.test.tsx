@@ -16,11 +16,26 @@
  * `tabIndex` in it belongs to `useDraggable`'s attributes for the *real* card.
  *
  * So these tests drive a real drag through the real `KeyboardSensor` and
- * assert on the resulting DOM. If a future dnd-kit starts hiding its overlay
- * itself, `the overlay wrapper dnd-kit renders is inert only because we make
- * it so` fails and `BeadCard`'s `presentational` prop can be reconsidered; if
- * someone drops `presentational` from `BoardView`, the duplicate-name and
- * tab-stop tests fail.
+ * assert on the resulting DOM.
+ *
+ * What this file does and does not catch, measured rather than assumed. It
+ * mounts its own two-card harness and never renders `BoardView`, so it pins
+ * two things only:
+ *
+ *   - `BeadCard`'s own end of the contract. Delete the `presentational`
+ *     branches from the `<article>` and the first three tests here go red
+ *     (measured: 3 failed / 1 passed).
+ *   - the assumption underneath that contract: dnd-kit hides nothing itself.
+ *     `is inert only because BeadCard makes it so` is the upgrade canary —
+ *     patch an `aria-hidden`/`inert` onto `PositionedOverlay` and it goes red
+ *     (measured), which is the signal that `presentational` can be revisited.
+ *
+ * It cannot catch `BoardView` forgetting to pass `presentational` to the
+ * overlay copy — measured: removing that prop from `BoardView` leaves this
+ * file at 4/4 passing. `board-view.test.tsx` is what pins the wiring (its
+ * `renders the overlay copy as decoration` and `clears the overlay when a move
+ * is cancelled` go red, 2 failed / 19 passed), at the cost of running against
+ * its own `@dnd-kit/core` mock rather than the library.
  */
 
 import { act, createElement, type ReactNode } from 'react';
@@ -54,9 +69,11 @@ const bead: Bead = {
 const NAME = `${bead.id}: ${bead.title}`;
 
 /**
- * The board's own arrangement, reduced to the two cards that matter: the real
- * one that stays mounted in its column and keeps focus, and the ghost inside
- * `DragOverlay`. Everything between them here is the real library.
+ * A stand-in for the board's arrangement, not `BoardView` itself: the two
+ * cards that matter, the real one that stays mounted and keeps focus and the
+ * ghost inside `DragOverlay`. Everything between them here is the real
+ * library. Because `presentational` is passed from here rather than read out
+ * of `BoardView`, this harness measures `BeadCard`, never the board's wiring.
  */
 function Board({ presentational }: { presentational: boolean }): ReactNode {
   const sensors = useSensors(useSensor(KeyboardSensor));
