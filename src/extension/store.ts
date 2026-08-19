@@ -143,6 +143,14 @@ export class BeadsStore implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('beadsDashboard.pollIntervalSeconds')) this.restartPolling();
         if (event.affectsConfiguration('beadsDashboard.issueLimit')) void this.refresh();
+        // The `bd-not-found` toast sends the user to this setting, so the fix it
+        // recommends has to work where it lands. `BdQueries`, `BdMutations` and
+        // the mutation subscription above all hold this exact `BdService`, so it
+        // is retargeted in place rather than rebuilt.
+        if (event.affectsConfiguration('beadsDashboard.bdPath')) {
+          this.bd.setBdPath(config().get<string>('bdPath'));
+          void this.refresh();
+        }
       }),
       // An unfocused window cannot be watched, so it is not worth a process. The
       // catch-up probe on the way back in is what makes that safe.

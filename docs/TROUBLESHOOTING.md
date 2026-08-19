@@ -75,7 +75,7 @@ change fails a test instead of silently downgrading to a generic error.
 
 **What the extension does.** Same as the state above when the directory is missing at activation
 time. When it is bd that refuses, the failure is logged with its kind, message and raw stderr
-([`store.ts:221-227`](../src/extension/store.ts)) and the last good snapshot — if there was one —
+([`store.ts:229-235`](../src/extension/store.ts)) and the last good snapshot — if there was one —
 stays on screen.
 
 **How to fix it.** Run `bd init` in the folder you want tracked, then reload the window. In a
@@ -97,32 +97,44 @@ becomes `⚠ Beads` with the message as its tooltip
 alert plus one extra line: *Set `beadsDashboard.bdPath` in settings if bd is installed somewhere
 unusual.* ([`App.tsx:212-227`](../src/webview/App.tsx)).
 
-**Why it happens.** `BdService` spawns `beadsDashboard.bdPath`, defaulting to plain `bd`
-([`BdService.ts:147`](../src/extension/bd/BdService.ts)), and `execFile` raises `ENOENT` when that
-name resolves to nothing. The `PATH` being searched is the editor's own environment — the spawn
-inherits `process.env` ([`BdService.ts:226`](../src/extension/bd/BdService.ts)) — which is not
-necessarily your login shell's. `bd` working in a terminal is therefore not proof that the editor
-can see it.
+**Why it happens.** `BdService` spawns `beadsDashboard.bdPath`, defaulting to plain `bd` when the
+setting is unset or blank ([`BdService.ts:139-141`](../src/extension/bd/BdService.ts)), and
+`execFile` raises `ENOENT` when that name resolves to nothing. The `PATH` being searched is the
+editor's own environment — the spawn inherits `process.env`
+([`BdService.ts:268`](../src/extension/bd/BdService.ts)) — which is not necessarily your login
+shell's. `bd` working in a terminal is therefore not proof that the editor can see it.
 
 **What the extension does.** It retries once through a shell before believing you
-([`BdService.ts:220-249`](../src/extension/bd/BdService.ts)): on Windows an npm-installed `bd` is a
+([`BdService.ts:262-291`](../src/extension/bd/BdService.ts)): on Windows an npm-installed `bd` is a
 `.cmd` shim that `execFile` cannot launch directly. If the shell retry works, the answer is
 remembered so later calls skip the failed attempt. If the shell also reports the command missing —
 exit `127`, exit `9009`, "command not found", "is not recognized as an internal or external
 command", "is not recognized as the name of a cmdlet"
 ([`BdService.ts:103-111`](../src/extension/bd/BdService.ts)) — the original `ENOENT` is re-thrown
 rather than the shell's wording, and becomes the `bd-not-found` error kind with the message above
-([`BdService.ts:193-201`](../src/extension/bd/BdService.ts)). `bd-not-found` is the only kind that
+([`BdService.ts:235-243`](../src/extension/bd/BdService.ts)). `bd-not-found` is the only kind that
 gets **Open Settings** instead of **Show Log**, because the fix is a setting.
 
 **How to fix it.** Install the [`bd` CLI](https://github.com/steveyegge/beads) and make sure the
 editor can see it, or set `beadsDashboard.bdPath` to the absolute path of the binary — the button on
 the toast opens that setting.
 
-Then **reload the window**. `bdPath` is read once, when the store is constructed at activation
-([`store.ts:117-121`](../src/extension/store.ts)), and the settings listener only reacts to
-`pollIntervalSeconds` and `issueLimit` ([`store.ts:143-146`](../src/extension/store.ts)) — so
-`Beads: Refresh` on its own will keep spawning the old path.
+Saving it is enough; no window reload. `bdPath` is read at activation to build the service
+([`store.ts:117-121`](../src/extension/store.ts)), and the settings listener watches it afterwards
+alongside `pollIntervalSeconds` and `issueLimit` ([`store.ts:143-154`](../src/extension/store.ts)):
+it retargets the service and refreshes, so the next `bd` runs from the path you just typed. The
+service is retargeted in place rather than rebuilt because `BdQueries`, `BdMutations` and the
+store's own mutation subscription all hold that one instance
+([`store.ts:122-127`](../src/extension/store.ts)), and swapping the object out would drop them.
+
+Two things deliberately do not survive the change
+([`BdService.ts:181-189`](../src/extension/bd/BdService.ts)): the shell-retry answer described
+above, which was a fact about the old binary, and any coalesced read still in flight, which would
+otherwise hand you output produced by the path you just replaced. Clearing the setting is a real
+answer rather than a blank one — it goes back to plain `bd` on your `PATH`
+([`BdService.ts:139-141`](../src/extension/bd/BdService.ts)), exactly as if it had never been set.
+The wiring is pinned in [`src/test/store-watcher.test.ts:211-270`](../src/test/store-watcher.test.ts)
+and the retargeting itself in [`src/test/bd-service.test.ts:218-310`](../src/test/bd-service.test.ts).
 
 ## `bd` runs but refuses
 
@@ -142,18 +154,18 @@ Anything whose wording is not one of the no-workspace phrases becomes the `bd-er
 ([`BdService.ts:128`](../src/extension/bd/BdService.ts)). A close relative is `bad-output`: bd
 succeeded but printed something that is not JSON, which is reported as such with the first 2000
 characters kept for the log rather than crashing
-([`BdService.ts:155-163`](../src/extension/bd/BdService.ts)).
+([`BdService.ts:195-203`](../src/extension/bd/BdService.ts)).
 
 **What the extension does.** It keeps the board up. A failed refresh sets the error but does not
 clear the snapshot, so a transient failure does not blank what you were looking at
-([`store.ts:221-227`](../src/extension/store.ts)); the tree only degrades to a bare error row when
+([`store.ts:229-235`](../src/extension/store.ts)); the tree only degrades to a bare error row when
 there was never a snapshot to keep
 ([`BeadsTreeProvider.ts:158-161`](../src/extension/tree/BeadsTreeProvider.ts)). Every invocation is
 logged with its argv and duration, and every failure with its exit code and message
-([`BdService.ts:186-212`](../src/extension/bd/BdService.ts)). Failures of the background change
+([`BdService.ts:228-254`](../src/extension/bd/BdService.ts)). Failures of the background change
 probe are logged and otherwise ignored — `refresh()` owns error reporting, and a transient failure
 must not spam the log or blank the board every tick
-([`store.ts:258-264`](../src/extension/store.ts)).
+([`store.ts:266-272`](../src/extension/store.ts)).
 
 **How to fix it.** Open `Beads: Show bd Output Log`, take the argv from the `FAILED` line, and run
 that exact command in a terminal in the same folder. bd's own output says what it objected to.

@@ -214,4 +214,98 @@ describe('BdService', () => {
 
     expect(calls[0].file).toBe('C:\\tools\\bd.exe');
   });
+
+  describe('setBdPath', () => {
+    it('spawns the new executable from the next call on', async () => {
+      const bd = service();
+      await bd.json(['list']);
+
+      bd.setBdPath('/opt/homebrew/bin/bd');
+      await bd.json(['list']);
+
+      expect(calls.map((call) => call.file)).toEqual(['bd', '/opt/homebrew/bin/bd']);
+      expect(bd.executable).toBe('/opt/homebrew/bin/bd');
+    });
+
+    it('treats an unset or blank path as plain bd, not as an empty argv[0]', async () => {
+      const bd = new BdService({ cwd: '/repo', bdPath: '/opt/homebrew/bin/bd' });
+
+      bd.setBdPath('   ');
+      expect(bd.executable).toBe('bd');
+
+      bd.setBdPath('/opt/homebrew/bin/bd');
+      bd.setBdPath(undefined);
+      expect(bd.executable).toBe('bd');
+
+      await bd.json(['list']);
+      expect(calls[0].file).toBe('bd');
+    });
+
+    it('forgets the shell fallback it learned about the previous executable', async () => {
+      // The Windows `.cmd` retry: plain execFile ENOENTs, the shell run works,
+      // and the answer is remembered for that binary only.
+      impl = async (_file, _args, options) => {
+        if (!options.shell) throw Object.assign(new Error('nope'), { code: 'ENOENT' });
+        return { stdout: '[]', stderr: '' };
+      };
+
+      const bd = new BdService({ cwd: '/repo', bdPath: 'bd.cmd' });
+      await bd.json(['list']);
+      expect(calls.at(-1)?.options.shell).toBe(true);
+
+      impl = ok('[]');
+      calls.length = 0;
+      bd.setBdPath('C:\\tools\\bd.exe');
+      await bd.json(['list']);
+
+      expect(calls[0].options.shell).toBeUndefined();
+    });
+
+    it('does not hand a caller after the change an answer from the old path', async () => {
+      let release: (() => void) | undefined;
+      impl = (file) =>
+        new Promise((resolve) => {
+          release = () => resolve({ stdout: `[{"id":"${file}"}]`, stderr: '' });
+        });
+
+      const bd = service();
+      const stale = bd.jsonShared<Array<{ id: string }>>(['ready']);
+      const releaseStale = release;
+
+      bd.setBdPath('/opt/homebrew/bin/bd');
+      const fresh = bd.jsonShared<Array<{ id: string }>>(['ready']);
+      const releaseFresh = release;
+
+      releaseStale?.();
+      releaseFresh?.();
+
+      expect(await stale).toEqual([{ id: 'bd' }]);
+      expect(await fresh).toEqual([{ id: '/opt/homebrew/bin/bd' }]);
+      expect(calls.map((call) => call.file)).toEqual(['bd', '/opt/homebrew/bin/bd']);
+    });
+
+    it('lets a settling call from the old path retract only its own entry', async () => {
+      const releases: Array<() => void> = [];
+      impl = () =>
+        new Promise((resolve) => {
+          releases.push(() => resolve({ stdout: '[]', stderr: '' }));
+        });
+
+      const bd = service();
+      const stale = bd.jsonShared(['ready']);
+      bd.setBdPath('/opt/homebrew/bin/bd');
+      const fresh = bd.jsonShared(['ready']);
+
+      // The old path settles while the new one is still in flight; its cleanup
+      // must not evict the entry the new path just registered.
+      releases[0]();
+      await stale;
+
+      const joiner = bd.jsonShared(['ready']);
+      expect(releases).toHaveLength(2); // joiner rode along; it did not spawn a third
+
+      for (const release of releases.slice(1)) release();
+      await Promise.all([fresh, joiner]);
+    });
+  });
 });

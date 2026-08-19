@@ -35,12 +35,24 @@ class FakeRelativePattern {
 
 const windowState = { focused: true };
 
+/**
+ * The store subscribes to configuration changes in its constructor, so the fake
+ * has to keep the listeners rather than discard them: `fireConfigChange` below
+ * is how a test replays "the user edited a setting".
+ */
+const configListeners = new Set<(event: { affectsConfiguration: (key: string) => boolean }) => void>();
+
 vi.mock('vscode', () => ({
   EventEmitter: FakeEventEmitter,
   RelativePattern: FakeRelativePattern,
   workspace: {
     getConfiguration: vi.fn(),
-    onDidChangeConfiguration: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidChangeConfiguration: vi.fn(
+      (listener: (event: { affectsConfiguration: (key: string) => boolean }) => void) => {
+        configListeners.add(listener);
+        return { dispose: () => configListeners.delete(listener) };
+      },
+    ),
     createFileSystemWatcher: vi.fn(),
   },
   window: {
@@ -88,10 +100,17 @@ function makeOutput(): import('vscode').OutputChannel {
   return { appendLine: vi.fn() } as unknown as import('vscode').OutputChannel;
 }
 
+/** Replay a settings edit, exactly as VS Code reports it: one changed key. */
+function fireConfigChange(changedKey: string): void {
+  const event = { affectsConfiguration: (key: string) => key === changedKey };
+  for (const listener of [...configListeners]) listener(event);
+}
+
 let configValues: Record<string, unknown>;
 let watcher: FakeWatcher;
 
 beforeEach(() => {
+  configListeners.clear();
   configValues = { pollIntervalSeconds: 5, issueLimit: 2000 };
   windowState.focused = true;
   watcher = makeWatcher();
@@ -186,5 +205,66 @@ describe('BeadsStore watcher wiring', () => {
     store.dispose();
 
     expect(watcher.dispose).toHaveBeenCalled();
+  });
+});
+
+/**
+ * `beadsDashboard.bdPath` is the one setting the extension actively steers the
+ * user towards — the `bd-not-found` toast carries an **Open Settings** button
+ * pointing straight at it (`extension.ts:157-160`). A setting offered as the
+ * remedy has to take effect without a window reload.
+ */
+describe('BeadsStore bdPath reconfiguration', () => {
+  it('retargets bd and refreshes when beadsDashboard.bdPath changes', () => {
+    const store = new BeadsStore(makeFolder(), makeOutput());
+    const setBdPath = vi.spyOn(store.bd, 'setBdPath');
+    const refresh = vi.spyOn(store, 'refresh').mockResolvedValue({ loading: false });
+
+    configValues.bdPath = '/opt/homebrew/bin/bd';
+    fireConfigChange('beadsDashboard.bdPath');
+
+    expect(setBdPath).toHaveBeenCalledWith('/opt/homebrew/bin/bd');
+    expect(store.bd.executable).toBe('/opt/homebrew/bin/bd');
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    store.dispose();
+  });
+
+  it('passes an unset bdPath through as unset, never as an empty string', () => {
+    configValues.bdPath = '/opt/homebrew/bin/bd';
+    const store = new BeadsStore(makeFolder(), makeOutput());
+    vi.spyOn(store, 'refresh').mockResolvedValue({ loading: false });
+    expect(store.bd.executable).toBe('/opt/homebrew/bin/bd');
+
+    delete configValues.bdPath;
+    fireConfigChange('beadsDashboard.bdPath');
+
+    expect(store.bd.executable).toBe('bd');
+
+    store.dispose();
+  });
+
+  it('leaves bd alone when some other setting changes', () => {
+    const store = new BeadsStore(makeFolder(), makeOutput());
+    const setBdPath = vi.spyOn(store.bd, 'setBdPath');
+    const refresh = vi.spyOn(store, 'refresh').mockResolvedValue({ loading: false });
+
+    fireConfigChange('beadsDashboard.pollIntervalSeconds');
+
+    expect(setBdPath).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+
+    store.dispose();
+  });
+
+  it('stops listening once disposed', () => {
+    const store = new BeadsStore(makeFolder(), makeOutput());
+    const setBdPath = vi.spyOn(store.bd, 'setBdPath');
+    store.dispose();
+
+    configValues.bdPath = '/opt/homebrew/bin/bd';
+    fireConfigChange('beadsDashboard.bdPath');
+
+    expect(setBdPath).not.toHaveBeenCalled();
   });
 });
