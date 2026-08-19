@@ -26,7 +26,7 @@
 
 ## Nó làm gì
 
-Beads Dashboard đọc database beads cục bộ của bạn qua CLI `bd` và hiển thị theo bốn cách:
+Beads Dashboard đọc database beads cục bộ của bạn qua CLI `bd` và hiển thị theo năm cách:
 
 - **Overview** — tổng số, phân bố trạng thái, tiến độ epic, và hai danh sách quan trọng ngay khi
   mở lên: việc nào sẵn sàng bắt đầu, việc nào đang bị chặn.
@@ -36,6 +36,9 @@ Beads Dashboard đọc database beads cục bộ của bạn qua CLI `bd` và hi
   (`auto-ok` / `auto-partial` / `needs-human`).
 - **Graph** — quan hệ phụ thuộc (blocked-by) của 1 issue dưới dạng đồ thị DAG, tự động sắp xếp và
   kéo thả được từng node.
+- **Fleet** — các phiên Claude Code đang chạy như orchestrator/worker trên workspace này, các git
+  worktree chúng để lại, và (bấm vào 1 worker) transcript trực tiếp của nó. Xem mục
+  [Fleet monitor](#fleet-monitor) bên dưới.
 
 Kèm theo sidebar **Epics & Tasks** với mục "Needs You" — các gate đang mở hiện cùng với issue được
 gán cho bạn, mỗi gate có sẵn action Resolve — và các thao tác nhanh (status, priority, assignee,
@@ -153,6 +156,39 @@ không yêu cầu.
 | `Beads: Show bd Output Log` | Palette — mọi argv và mọi lỗi đều nằm ở đây |
 | Đổi status / priority / assignee, Claim, Close, Copy ID | Menu chuột phải trên cây, detail pane |
 
+## Fleet monitor
+
+Tab **Fleet** trả lời câu hỏi "phi đội agent của tôi đang làm gì với workspace này ngay lúc này?"
+— phiên Claude Code nào đang chạy như orchestrator, chúng đã sinh ra worker nào, các git worktree
+những worker đó để lại trên đĩa, và worktree nào đã cũ (không worker nào còn nhận nó, nên hoặc là
+bỏ quên, hoặc đang chờ review). Bấm vào 1 worker hay 1 orchestrator để xem transcript trực tiếp,
+stream thẳng từ file JSONL mà chính Claude Code ghi ra.
+
+Dữ liệu lấy từ đâu:
+
+- **Phiên và worker** — đọc từ `~/.claude/projects/<mangled-cwd>`, kho transcript riêng của Claude
+  Code, đối chiếu với workspace này theo đúng cách Claude Code tự làm. Một phiên chỉ tính là
+  orchestrator khi đã sinh ít nhất một worker (có file `subagents/agent-*.jsonl`); phiên chat thường
+  không thuộc fleet.
+- **Worktree và git status** — `git worktree list --porcelain`, sau đó `git status` /
+  `git diff --numstat` cho từng worktree, đối chiếu với id bead từ brief lúc spawn worker. Worktree
+  không còn worker nào nhận sẽ nằm ở mục "Stale worktrees" — câu trả lời cho câu hỏi gốc của
+  [#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11) về thế nào là một worktree cũ.
+- **Tần suất quét** — poll mỗi 5 giây là baseline luôn bật; một `FileSystemWatcher` trên
+  `~/.claude/projects` được thêm vào như một fast path khi OS báo thay đổi sớm hơn. Poll không bao
+  giờ bị bỏ: watcher về bản chất là best-effort (một watcher vừa khởi tạo có thể bỏ lỡ sự kiện ngay
+  sau đó — đã đo thật, không suy đoán, trên một Extension Development Host thật), nên trường hợp
+  xấu nhất vẫn nhanh y như chỉ poll, không chậm hơn hay bị kẹt.
+- **Suy giảm, không vỡ** — không có `~/.claude/projects` trên máy, thư mục rỗng, `git` lỗi, hay một
+  worktree hỏng đều hiện trạng thái rỗng rõ ràng hoặc lỗi inline, chứ không crash hay để trắng panel.
+
+Đây không phải dữ liệu `bd`, nên không đi qua `BdService` — `src/extension/fleet/` là điểm thứ ba,
+có chủ đích, nằm ngoài `BdService` mà vẫn spawn process (sau probe `git config user.name` chỉ-đọc
+của `actor.ts`): mọi lệnh spawn ở đây chỉ đọc, có timeout, và một worktree lỗi không bao giờ làm
+trắng cả snapshot. Nó là module riêng thay vì gộp vào `actor.ts` hay `BdService` vì trả lời một câu
+hỏi khác (cái gì đang trên đĩa và trong kho transcript của Claude Code) — xem doc comment ở đầu
+`src/extension/fleet/FleetService.ts` và `src/extension/fleet/worktree-git.ts` để rõ lý do.
+
 ## Roadmap
 
 Không có deadline, và không có gạch đầu dòng nào dưới đây là lời hứa. Danh sách này tồn tại để câu
@@ -163,13 +199,14 @@ Không có deadline, và không có gạch đầu dòng nào dưới đây là l
 - **Di chuyển card bằng bàn phím** — nhấn space để nhấc một card lên, các phím mũi tên đưa nó qua
   từng cột và từng swimlane, space để thả và escape để trả nó về chỗ cũ. Screen reader đọc lên tên
   cột chứ không phải id của droppable. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7))
+- **Fleet monitor** — các worktree và nhánh `work/bead-*` trên đĩa, xếp cạnh đúng bead chúng đang
+  mang, để một worktree bỏ quên trở nên nhìn thấy được, cộng theo dõi transcript trực tiếp theo
+  từng worker. Xem [Fleet monitor](#fleet-monitor) ở trên. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
 
 **Planned** — thiết kế bám đúng kiến trúc đã có:
 
 - **Tiến độ molecule** — `bd mol` hiện chưa có UI nào. Một thanh tiến độ cho molecule đang chạy và
   những wisp sắp tự hủy. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
-- **Fleet monitor** — các worktree và nhánh `work/bead-*` trên đĩa, xếp cạnh đúng bead chúng đang
-  mang, để một worktree bỏ quên trở nên nhìn thấy được. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
 - **Workflow chạy trên pull request** — hiện chưa có, vì một phần test suite gọi thẳng binary `bd`
   thật. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 - **Windows, do người dùng Windows xác nhận** — nhánh fallback cho `.cmd` shim và đường dẫn Git-Bash

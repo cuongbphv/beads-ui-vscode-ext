@@ -18,6 +18,26 @@
  * directly) does not apply here: this is a different product's data, read
  * because the Fleet tab exists to watch it. A missing `~/.claude/projects`
  * degrades to a `'no-claude-dir'` snapshot rather than throwing.
+ *
+ * Watcher experiment (beads-ui-vscode-ext-37b): `~/.claude/projects` sits
+ * outside every workspace folder, so whether
+ * `vscode.workspace.createFileSystemWatcher` even fires for a `RelativePattern`
+ * rooted there was `[Unverified]` going in — VS Code does not document this,
+ * and some watcher backends silently no-op outside a workspace. Measured
+ * against a real Extension Development Host (not assumed): it works. Three
+ * runs each wrote a file, appended to it, then wrote a second file, all
+ * inside a fresh out-of-workspace temp directory; `onDidChange` fired every
+ * time (3/3, immediately), and `onDidCreate` fired for the *second* file
+ * every time but never for the very first file created ~500ms after the
+ * watcher was registered (latency measured at ~6.1s each run — i.e. it
+ * caught the second file, not the first). That reads as a real, working
+ * native watcher with a short startup race right after registration, not an
+ * unsupported or silently-broken API. Given that race is bounded to the
+ * first moments after `observe()` starts — exactly when the immediate
+ * `tick()` below already covers it — the watcher is wired in as a fast path
+ * (`scheduleWatchTick`), and polling (`DISCOVERY_INTERVAL_MS`) stays the
+ * always-on baseline regardless: a missed or delayed watcher event costs at
+ * most one poll interval, never a stuck snapshot.
  */
 import type { Dirent } from 'node:fs';
 import { promises as fs } from 'node:fs';
@@ -37,6 +57,14 @@ import { listWorktrees, WorktreeGitProbe, type DiscoveredWorktree } from './work
 export const DISCOVERY_INTERVAL_MS = 5_000;
 /** Coalescing window for `fleetChanged` — a burst of filesystem events collapses into one push. */
 export const EMIT_DEBOUNCE_MS = 500;
+/**
+ * Coalescing window for the `~/.claude/projects` file watcher's fast path —
+ * a burst of writes (a transcript appending several lines) collapses into one
+ * extra `tick()` instead of one per event. This is purely a latency
+ * optimization on top of `DISCOVERY_INTERVAL_MS`'s poll, never a replacement
+ * for it: see the class doc's "watcher experiment" note.
+ */
+export const WATCH_DEBOUNCE_MS = 300;
 /** A worker with no transcript activity inside this window reads as idle, not running. */
 const ACTIVE_WINDOW_MS = 2 * 60 * 1000;
 /** How much of an agent transcript's first line is read to find its spawn brief. */
@@ -61,6 +89,9 @@ export class FleetService implements vscode.Disposable {
   private readonly emitDebouncer: Debouncer;
 
   private timer: NodeJS.Timeout | undefined;
+  /** The fast-path watcher on `projectsRoot` — live only while `observers > 0`, same as `timer`. */
+  private watcher: vscode.FileSystemWatcher | undefined;
+  private watchDebounceTimer: NodeJS.Timeout | undefined;
   private observers = 0;
   private scanning: Promise<void> | undefined;
   private lastEmittedComparable: string | undefined;
@@ -137,6 +168,7 @@ export class FleetService implements vscode.Disposable {
     this.observers += 1;
     if (this.observers === 1) {
       this.restartTimer();
+      this.startWatcher();
       void this.tick();
     }
 
@@ -146,7 +178,10 @@ export class FleetService implements vscode.Disposable {
         if (released) return;
         released = true;
         this.observers = Math.max(0, this.observers - 1);
-        if (this.observers === 0) this.restartTimer();
+        if (this.observers === 0) {
+          this.restartTimer();
+          this.stopWatcher();
+        }
       },
     };
   }
@@ -186,6 +221,41 @@ export class FleetService implements vscode.Disposable {
     this.timer = undefined;
     if (this.observers === 0) return;
     this.timer = setInterval(() => void this.tick(), this.intervalMs);
+  }
+
+  /**
+   * Best-effort fast path on top of the poll: watch `projectsRoot` for any
+   * create/change/delete and schedule an extra `tick()` shortly after,
+   * rather than waiting out the rest of the current poll interval. Never a
+   * substitute for the timer above — see the class doc's watcher experiment
+   * — so a watcher that fails to construct (or never fires) just leaves
+   * discovery exactly as fast as the poll, no worse.
+   */
+  private startWatcher(): void {
+    if (this.watcher) return;
+    try {
+      const pattern = new vscode.RelativePattern(vscode.Uri.file(this.projectsRoot), '**/*');
+      this.watcher = vscode.workspace.createFileSystemWatcher(pattern);
+      const onEvent = (): void => this.scheduleWatchTick();
+      this.watcher.onDidCreate(onEvent);
+      this.watcher.onDidChange(onEvent);
+      this.watcher.onDidDelete(onEvent);
+    } catch (error) {
+      this.log(`fleet discovery: could not start a file watcher for ${this.projectsRoot}: ${errorMessage(error)}`);
+      this.watcher = undefined;
+    }
+  }
+
+  private stopWatcher(): void {
+    if (this.watchDebounceTimer) clearTimeout(this.watchDebounceTimer);
+    this.watchDebounceTimer = undefined;
+    this.watcher?.dispose();
+    this.watcher = undefined;
+  }
+
+  private scheduleWatchTick(): void {
+    if (this.watchDebounceTimer) clearTimeout(this.watchDebounceTimer);
+    this.watchDebounceTimer = setTimeout(() => void this.tick(), WATCH_DEBOUNCE_MS);
   }
 
   private async scan(): Promise<FleetSnapshot> {
@@ -334,6 +404,7 @@ export class FleetService implements vscode.Disposable {
 
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
+    this.stopWatcher();
     this.emitter.dispose();
   }
 }

@@ -80,12 +80,10 @@ export function App(): ReactNode {
   const [roadmapZoom, setRoadmapZoom] = useState<RoadmapZoom>(restoredRoadmap.zoom);
   const [roadmapGutter, setRoadmapGutter] = useState(restoredRoadmap.gutter);
   const [detailWidth, setDetailWidth] = useState(saved?.detailWidth ?? DETAIL_DEFAULT_PX);
-  // Nothing reads or writes this yet — Fleet's own detail pane (the
-  // transcript view) is a later bead, and until it exists there is no
-  // splitter to drag — but round-tripping it through persist/restore now
-  // means a value the user set in a future build is never dropped by an
-  // App.tsx from before that build ships.
-  const fleetDetailWidth = saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX;
+  // Fleet's own detail pane (the transcript view, beads-ui-vscode-ext-37b) —
+  // measured against `FleetView`'s own container, not `mainWidth` below,
+  // since it is the only tab with its own list+detail split.
+  const [fleetDetailWidth, setFleetDetailWidth] = useState(saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX);
   const mainRef = useRef<HTMLElement>(null);
   const [mainWidth, setMainWidth] = useState(0);
 
@@ -292,7 +290,7 @@ export function App(): ReactNode {
                 onSwimlanesChange={setBoardSwimlanes}
               />
             ) : (
-              <FleetView />
+              <FleetView detailWidth={fleetDetailWidth} onDetailWidthChange={setFleetDetailWidth} />
             )}
           </div>
 

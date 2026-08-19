@@ -2,12 +2,13 @@
 
 /**
  * `WorkerList`: orchestrators + their workers, the "stale worktrees" section,
- * and the degraded empty state — all a pure function of the `FleetSnapshot`
- * it is handed.
+ * the degraded empty state, and (beads-ui-vscode-ext-37b) click-to-select
+ * into the transcript pane with `aria-current` on the selected row —
+ * all a pure function of the `FleetSnapshot` and `selectedTarget` it is handed.
  */
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { FleetSnapshot, FleetWorker, FleetWorktree } from '../shared/fleet';
 import { WorkerList } from '../webview/components/fleet/worker-list';
@@ -32,11 +33,22 @@ afterEach(async () => {
   container = undefined;
 });
 
-async function render(snapshot: FleetSnapshot): Promise<HTMLElement> {
+async function render(
+  snapshot: FleetSnapshot,
+  options: { selectedTarget?: string | null; onSelectTarget?: (targetId: string) => void } = {},
+): Promise<HTMLElement> {
   container = document.createElement('div');
   document.body.append(container);
   mounted = createRoot(container);
-  await act(async () => mounted?.render(createElement(WorkerList, { snapshot })));
+  await act(async () =>
+    mounted?.render(
+      createElement(WorkerList, {
+        snapshot,
+        selectedTarget: options.selectedTarget ?? null,
+        onSelectTarget: options.onSelectTarget ?? (() => {}),
+      }),
+    ),
+  );
   return container;
 }
 
@@ -193,5 +205,98 @@ describe('WorkerList stale worktrees', () => {
     );
 
     expect(el.textContent).not.toContain('Stale worktrees');
+  });
+});
+
+describe('WorkerList selection (beads-ui-vscode-ext-37b)', () => {
+  it('calls onSelectTarget with agent:<id> when a worker row is clicked', async () => {
+    const onSelectTarget = vi.fn();
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1' })],
+      }),
+      { onSelectTarget },
+    );
+
+    const row = el.querySelector('li[role="button"]') as HTMLElement;
+    expect(row).not.toBeNull();
+    await act(async () => row.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onSelectTarget).toHaveBeenCalledWith('agent:agent-a');
+  });
+
+  it('calls onSelectTarget with session:<id> when an orchestrator header is clicked', async () => {
+    const onSelectTarget = vi.fn();
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: [], lastActivityAt: null }],
+      }),
+      { onSelectTarget },
+    );
+
+    const header = el.querySelector('header[role="button"]') as HTMLElement;
+    expect(header).not.toBeNull();
+    await act(async () => header.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onSelectTarget).toHaveBeenCalledWith('session:session-1');
+  });
+
+  it('activates a worker row on Enter and on Space, same as a bead card', async () => {
+    const onSelectTarget = vi.fn();
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1' })],
+      }),
+      { onSelectTarget },
+    );
+
+    const row = el.querySelector('li[role="button"]') as HTMLElement;
+    await act(async () => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    await act(async () => row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
+
+    expect(onSelectTarget).toHaveBeenCalledTimes(2);
+    expect(onSelectTarget).toHaveBeenCalledWith('agent:agent-a');
+  });
+
+  it('marks only the selected worker row with aria-current', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a', 'agent-b'], lastActivityAt: null }],
+        workers: [
+          worker({ agentId: 'agent-a', sessionId: 'session-1' }),
+          worker({ agentId: 'agent-b', sessionId: 'session-1' }),
+        ],
+      }),
+      { selectedTarget: 'agent:agent-b' },
+    );
+
+    const rows = Array.from(el.querySelectorAll('li[role="button"]'));
+    expect(rows).toHaveLength(2);
+    const current = rows.filter((row) => row.getAttribute('aria-current') === 'true');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.getAttribute('aria-label')).toContain('agent-b');
+  });
+
+  it('marks the orchestrator header current when its session is selected', async () => {
+    const el = await render(
+      snapshot({ orchestrators: [{ sessionId: 'session-1', workerIds: [], lastActivityAt: null }] }),
+      { selectedTarget: 'session:session-1' },
+    );
+
+    const header = el.querySelector('header[role="button"]');
+    expect(header?.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('leaves aria-current unset on every row when nothing is selected', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1' })],
+      }),
+    );
+
+    expect(el.querySelectorAll('[aria-current]')).toHaveLength(0);
   });
 });

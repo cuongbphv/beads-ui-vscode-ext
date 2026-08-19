@@ -713,6 +713,65 @@ async function main() {
     await window.waitForTimeout(1500);
     await window.screenshot({ path: join(artifactsDir, 'roadmap.png') });
 
+    // Fleet (beads-ui-vscode-ext-37b): reads `~/.claude/projects`, so whether
+    // this real editor session shows actual orchestrator/worker rows depends
+    // on whether *this* run happens to match the opened workspace's own
+    // mangled-cwd directory — not something to assume either way. Assert on
+    // whichever real, recognized state actually rendered instead: worker
+    // rows, or one of `FleetView`/`WorkerList`'s own empty/degraded states.
+    await inner.locator('[role="tab"]:has-text("Fleet")').first().click();
+    await window.waitForTimeout(1500);
+
+    const fleetLoading = inner.locator('[aria-busy="true"][aria-label="Loading fleet"]');
+    if ((await fleetLoading.count()) > 0) {
+      await fleetLoading
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => {});
+    }
+
+    const fleetWorkerRows = inner.locator('li[role="button"][aria-label^="Worker "]');
+    const fleetEmptyStates = inner.locator(
+      'text=/No fleet data yet|No fleet activity|No Claude Code session data/',
+    );
+    const fleetWorkerCount = await fleetWorkerRows.count();
+    const fleetEmptyCount = await fleetEmptyStates.count();
+
+    check(
+      'Fleet tab renders a real state (worker rows or a recognized empty/degraded state)',
+      fleetWorkerCount > 0 || fleetEmptyCount > 0,
+    );
+    await window.screenshot({ path: join(artifactsDir, 'fleet.png') });
+
+    if (fleetWorkerCount > 0) {
+      // Real fleet data: exercise the click-to-select transcript wiring for real.
+      const firstWorker = fleetWorkerRows.first();
+      await firstWorker.click();
+      await window.waitForTimeout(800);
+
+      const transcriptPane = inner.locator('aside[aria-label^="Transcript for"]');
+      check('clicking a Fleet worker row opens its transcript pane', (await transcriptPane.count()) > 0);
+      check(
+        'the selected worker row exposes aria-current="true"',
+        (await firstWorker.getAttribute('aria-current')) === 'true',
+      );
+
+      const closeButton = inner.locator('button[aria-label="Close transcript"]');
+      if ((await closeButton.count()) > 0) {
+        await closeButton.first().click();
+        await window.waitForTimeout(400);
+        check(
+          'closing the transcript pane removes it from the DOM',
+          (await transcriptPane.count()) === 0,
+        );
+      }
+    } else {
+      check(
+        'Fleet tab shows a recognized empty/degraded state when there is no worker data',
+        fleetEmptyCount > 0,
+      );
+    }
+
     console.log(`› screenshots written to ${artifactsDir}`);
   } catch (error) {
     // Capture whatever is on screen; a blank webview is itself the diagnosis.

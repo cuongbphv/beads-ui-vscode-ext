@@ -26,7 +26,7 @@
 
 ## What it does
 
-Beads Dashboard reads your local beads database through the `bd` CLI and renders it four ways:
+Beads Dashboard reads your local beads database through the `bd` CLI and renders it five ways:
 
 - **Overview** — totals, a status breakdown, epic progress, and the two lists that matter on
   arrival: what is ready to start, and what is blocked.
@@ -36,6 +36,9 @@ Beads Dashboard reads your local beads database through the `bd` CLI and renders
   taxonomy label (`auto-ok` / `auto-partial` / `needs-human`).
 - **Graph** — an issue's blocked-by dependencies as a dependency DAG, auto-laid-out and
   draggable node by node.
+- **Fleet** — which Claude Code sessions are running as orchestrators/workers against this
+  workspace, the git worktrees they left behind, and (click a worker) its live transcript. See
+  [Fleet monitor](#fleet-monitor) below.
 
 Plus an **Epics & Tasks** sidebar with a "Needs You" section — open gates alongside your assigned
 issues, each with an inline Resolve action — and quick actions (status, priority, assignee, claim,
@@ -154,6 +157,43 @@ extension spawn nothing you did not ask for.
 | `Beads: Show bd Output Log` | Palette — every argv and every failure lands here |
 | Change status / priority / assignee, Claim, Close, Copy ID | Tree context menu, detail pane |
 
+## Fleet monitor
+
+The **Fleet** tab answers "what is my agent fleet doing to this workspace right now?" — which
+Claude Code sessions are running as orchestrators, which workers they spawned, which git worktrees
+those workers left on disk, and whether a worktree is stale (no worker still claims it, so it is
+either leftover or waiting for review). Click a worker or an orchestrator row to follow its
+transcript live, streamed from the same JSONL file Claude Code itself writes.
+
+Where the data comes from:
+
+- **Sessions and workers** — read from `~/.claude/projects/<mangled-cwd>`, Claude Code's own
+  transcript store, matched to this workspace the same way Claude Code itself does. A session
+  counts as an orchestrator only once it has spawned at least one worker (a `subagents/agent-*.jsonl`
+  file); an ordinary chat session is not part of the fleet.
+- **Worktrees and their git status** — `git worktree list --porcelain`, then `git status` /
+  `git diff --numstat` per worktree, matched to a bead id from the worker's own spawn brief. A
+  worktree with no worker still claiming it renders under "Stale worktrees" — the answer to
+  [#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11)'s original question of what a
+  stale worktree even means.
+- **Discovery cadence** — a 5-second poll is the always-on baseline; a `FileSystemWatcher` on
+  `~/.claude/projects` is layered on top as a fast path when the OS reports a change sooner. The
+  poll never goes away: a watcher is inherently best-effort (a fresh watcher can miss an event in
+  the moment right after it starts watching — measured, not assumed, against a real Extension
+  Development Host), so the worst case is exactly as fast as polling alone, never slower or silently
+  stuck.
+- **Degraded, not broken** — no `~/.claude/projects` on this machine, an empty one, a `git` that
+  fails, or one bad worktree all render a clear empty state or an inline error instead of a crash or
+  a blank panel.
+
+Nothing here is `bd` data, so none of it goes through `BdService` — `src/extension/fleet/` is a
+third, deliberate place outside `BdService` that spawns a process (after `actor.ts`'s read-only
+`git config user.name` probe): every spawn here is read-only, bounded by a timeout, and a single
+worktree's failure never blanks the rest of the snapshot. It is its own module rather than folded
+into `actor.ts` or `BdService` because it answers a different question (what is on disk and in
+Claude Code's own transcript store) than either of those — see the doc comments atop
+`src/extension/fleet/FleetService.ts` and `src/extension/fleet/worktree-git.ts` for the reasoning.
+
 ## Roadmap
 
 No dates, and nothing below is a promise. What the list is for: every planned item is an open
@@ -164,13 +204,14 @@ issue, so "where would I even start?" has an answer.
 - **Keyboard-movable cards** — space picks a card up, the arrow keys move it column by column and
   swimlane by swimlane, space drops it and escape puts it back. A screen reader hears the column
   name rather than the droppable id. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7))
+- **Fleet monitor** — the worktrees and `work/bead-*` branches on disk, lined up against the beads
+  they are carrying, so a stale one is visible, plus live transcript following per worker. See
+  [Fleet monitor](#fleet-monitor) above. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
 
 **Planned** — designed against the architecture that already exists:
 
 - **Molecule progress** — `bd mol` has no UI at all today. A progress strip for the running
   molecule and the wisps about to expire. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
-- **Fleet monitor** — the worktrees and `work/bead-*` branches on disk, lined up against the beads
-  they are carrying, so a stale one is visible. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
 - **A workflow that runs on pull requests** — nothing does today, because part of the suite drives
   a real `bd` binary. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 - **Windows, confirmed by someone on Windows** — the `.cmd` shim fallback and the Git-Bash paths are

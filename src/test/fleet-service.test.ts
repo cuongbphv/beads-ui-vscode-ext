@@ -3,12 +3,16 @@
  * files on disk (the pure parsers are already covered under
  * `src/extension/fleet/lib/*`; this file exercises the impure glue around
  * them — directory walking, mtime-derived activity, and the discovery-loop
- * gating), plus the `fleetChanged` debounce/dedupe contract. `./worktree-git`
- * is mocked so worktree/git behaviour stays the dedicated subject of
- * `fleet-worktree-git.test.ts`.
+ * gating), plus the `fleetChanged` debounce/dedupe contract and the
+ * `~/.claude/projects` watcher fast path (beads-ui-vscode-ext-37b).
+ * `./worktree-git` is mocked so worktree/git behaviour stays the dedicated
+ * subject of `fleet-worktree-git.test.ts`.
  *
- * `FleetService.ts` imports the real `vscode` module for `EventEmitter` only
- * — the same minimal fake `store-watcher.test.ts` uses for `BeadsStore`.
+ * `FleetService.ts` imports the real `vscode` module for `EventEmitter`,
+ * `RelativePattern`, `Uri.file`, and `workspace.createFileSystemWatcher` —
+ * all faked here, the same minimal style `store-watcher.test.ts` uses for
+ * `BeadsStore`. The fake watcher never fires on its own; tests trigger it
+ * explicitly via `vscodeMock.watchers`.
  */
 import { mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -36,7 +40,58 @@ class FakeEventEmitter<T> {
   }
 }
 
-vi.mock('vscode', () => ({ EventEmitter: FakeEventEmitter }));
+/** A fake `vscode.FileSystemWatcher` — never fires on its own; tests call `fireChange()`/`fireCreate()`. */
+class FakeFileSystemWatcher {
+  private readonly createListeners = new Set<() => void>();
+  private readonly changeListeners = new Set<() => void>();
+  private readonly deleteListeners = new Set<() => void>();
+  disposed = false;
+
+  onDidCreate = (listener: () => void): { dispose: () => void } => {
+    this.createListeners.add(listener);
+    return { dispose: () => this.createListeners.delete(listener) };
+  };
+  onDidChange = (listener: () => void): { dispose: () => void } => {
+    this.changeListeners.add(listener);
+    return { dispose: () => this.changeListeners.delete(listener) };
+  };
+  onDidDelete = (listener: () => void): { dispose: () => void } => {
+    this.deleteListeners.add(listener);
+    return { dispose: () => this.deleteListeners.delete(listener) };
+  };
+
+  fireCreate(): void {
+    for (const listener of [...this.createListeners]) listener();
+  }
+  fireChange(): void {
+    for (const listener of [...this.changeListeners]) listener();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+  }
+}
+
+const vscodeMock = vi.hoisted(() => {
+  return {
+    watchers: [] as FakeFileSystemWatcher[],
+    createFileSystemWatcher: vi.fn(),
+  };
+});
+
+class FakeRelativePattern {
+  constructor(
+    public base: unknown,
+    public pattern: string,
+  ) {}
+}
+
+vi.mock('vscode', () => ({
+  EventEmitter: FakeEventEmitter,
+  RelativePattern: FakeRelativePattern,
+  Uri: { file: (path: string) => ({ fsPath: path }) },
+  workspace: { createFileSystemWatcher: vscodeMock.createFileSystemWatcher },
+}));
 
 const worktreeGit = vi.hoisted(() => ({
   listWorktrees: vi.fn(async () => [] as Array<{ path: string; dirName: string; branch: string | null; bare: boolean }>),
@@ -85,6 +140,14 @@ beforeEach(async () => {
   projectDir = join(root, 'projects', encodeProjectDirName(cwd));
   await mkdir(projectDir, { recursive: true });
   worktreeGit.listWorktrees.mockResolvedValue([]);
+
+  vscodeMock.watchers.length = 0;
+  vscodeMock.createFileSystemWatcher.mockReset();
+  vscodeMock.createFileSystemWatcher.mockImplementation(() => {
+    const watcher = new FakeFileSystemWatcher();
+    vscodeMock.watchers.push(watcher);
+    return watcher;
+  });
 });
 
 afterEach(async () => {
@@ -284,6 +347,113 @@ describe('FleetService discovery-loop gating', () => {
 
     holdA.dispose();
     holdB.dispose();
+    service.dispose();
+    vi.useRealTimers();
+  });
+});
+
+describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
+  it('starts one file watcher on projectsRoot when the first observer arrives', () => {
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    vi.spyOn(service, 'tick').mockResolvedValue();
+
+    expect(vscodeMock.createFileSystemWatcher).not.toHaveBeenCalled();
+    const hold = service.observe();
+
+    expect(vscodeMock.createFileSystemWatcher).toHaveBeenCalledTimes(1);
+    const [pattern] = vscodeMock.createFileSystemWatcher.mock.calls[0] as [FakeRelativePattern];
+    expect(pattern.base).toEqual({ fsPath: projectsRoot() });
+    expect(pattern.pattern).toBe('**/*');
+
+    hold.dispose();
+    service.dispose();
+  });
+
+  it('does not start a second watcher for a second concurrent observer', () => {
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    vi.spyOn(service, 'tick').mockResolvedValue();
+
+    const holdA = service.observe();
+    const holdB = service.observe();
+    expect(vscodeMock.createFileSystemWatcher).toHaveBeenCalledTimes(1);
+
+    holdA.dispose();
+    holdB.dispose();
+    service.dispose();
+  });
+
+  it('disposes the watcher once the last observer releases', () => {
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    vi.spyOn(service, 'tick').mockResolvedValue();
+
+    const hold = service.observe();
+    const watcher = vscodeMock.watchers[0];
+    expect(watcher.disposed).toBe(false);
+
+    hold.dispose();
+    expect(watcher.disposed).toBe(true);
+
+    service.dispose();
+  });
+
+  it('schedules a debounced extra tick when the watcher fires, on top of the poll', async () => {
+    vi.useFakeTimers();
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), intervalMs: 5_000 });
+    const tick = vi.spyOn(service, 'tick').mockResolvedValue();
+
+    const hold = service.observe();
+    expect(tick).toHaveBeenCalledTimes(1); // the immediate scan on observe()
+
+    const watcher = vscodeMock.watchers[0];
+    tick.mockClear();
+    watcher.fireChange();
+    watcher.fireChange(); // a burst collapses into one extra tick, not two
+    expect(tick).not.toHaveBeenCalled(); // debounced, not immediate
+
+    await vi.advanceTimersByTimeAsync(300);
+    expect(tick).toHaveBeenCalledTimes(1);
+
+    hold.dispose();
+    service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('cancels a pending watcher-triggered tick if the last observer releases first', async () => {
+    vi.useFakeTimers();
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const tick = vi.spyOn(service, 'tick').mockResolvedValue();
+
+    const hold = service.observe();
+    const watcher = vscodeMock.watchers[0];
+    tick.mockClear();
+    watcher.fireCreate();
+    hold.dispose();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(tick).not.toHaveBeenCalled();
+
+    service.dispose();
+    vi.useRealTimers();
+  });
+
+  it('never throws if the watcher fails to construct, and polling still works', async () => {
+    vi.useFakeTimers();
+    vscodeMock.createFileSystemWatcher.mockImplementation(() => {
+      throw new Error('watcher unsupported here');
+    });
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), intervalMs: 5_000 });
+    const tick = vi.spyOn(service, 'tick').mockResolvedValue();
+
+    let hold: ReturnType<typeof service.observe> | undefined;
+    expect(() => {
+      hold = service.observe();
+    }).not.toThrow();
+    expect(tick).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(tick).toHaveBeenCalledTimes(2); // the poll baseline is unaffected
+
+    hold?.dispose();
     service.dispose();
     vi.useRealTimers();
   });
