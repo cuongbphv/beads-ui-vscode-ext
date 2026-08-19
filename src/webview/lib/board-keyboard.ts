@@ -19,7 +19,7 @@
  * decisions are pure functions, testable without mounting the board.
  */
 import { CATEGORY_LABELS, type StatusCategory } from '../../shared/types';
-import { parseLaneDropId } from './board-swimlanes';
+import { parseDropId } from './board-swimlanes';
 
 /**
  * The four keys that mean "move". An allowlist, so every other key — typing,
@@ -92,7 +92,9 @@ export function nextDropTarget(
   for (const target of targets) {
     // The board renders its narrow and wide layouts at once and lets a
     // container query hide one; the hidden half measures 0x0 at the viewport
-    // origin. Zero area is not somewhere a card can go.
+    // origin. Zero area is not somewhere a card can go — and since each half
+    // now registers under its own droppable id, both halves really are in this
+    // list, so this is the line that keeps the hidden one out of the ranking.
     if (target.width <= 0 || target.height <= 0) continue;
 
     const start = target[along];
@@ -179,14 +181,17 @@ function isStatusCategory(value: string): value is StatusCategory {
  * Returns `undefined` — never a guess — for an id whose category is not one
  * the board knows, so callers can fall back to the raw id rather than announce
  * a label that does not exist.
+ *
+ * The narrow/wide half of the id is deliberately dropped: it exists only so
+ * dnd-kit can tell two mounted copies of one column apart, and a user standing
+ * on a column wants to hear the column, not the breakpoint.
  */
 export function dropTargetName(dropId: string): string | undefined {
-  const lane = parseLaneDropId(dropId);
-  const category = lane?.category ?? dropId;
+  const { lane, category } = parseDropId(dropId);
   if (!isStatusCategory(category)) return undefined;
 
   const label = CATEGORY_LABELS[category];
-  return lane ? `${label}, ${lane.lane} lane` : label;
+  return lane ? `${label}, ${lane} lane` : label;
 }
 
 /** `undefined` from `dropTargetName` keeps the raw id; it never invents one. */

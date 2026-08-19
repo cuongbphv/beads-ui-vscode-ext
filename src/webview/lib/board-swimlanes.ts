@@ -6,6 +6,10 @@
  * Lives in `lib/` on the same footing as `board-columns.ts` — pure grouping
  * logic, no React, so it is unit-testable without mounting the board and the
  * view stays presentational.
+ *
+ * It also owns the *encoding* of board droppable ids (`laneDropId`,
+ * `narrowDropId`, `parseDropId`), so that string shape is written and read in
+ * exactly one place rather than being rebuilt by every caller.
  */
 import type { StatusIndex } from '../../shared/model';
 import { buildColumns } from '../../shared/model';
@@ -76,24 +80,66 @@ export function buildSwimlanes(beads: Bead[], index: StatusIndex): Swimlane[] {
   return lanes;
 }
 
-/** Separator between lane and category in a composite droppable id. Never appears in a `StatusCategory`. */
-const LANE_DROP_SEPARATOR = '::';
+/** Separator between the parts of a composite droppable id. Never appears in a `StatusCategory` or a lane name. */
+const DROP_SEPARATOR = '::';
+
+/**
+ * Marks a droppable as the *narrow* layout's copy of a column.
+ *
+ * The board mounts its narrow layout and its wide layout at the same time and
+ * lets a container query hide one of them — so without this marker both copies
+ * of a column would ask dnd-kit for the same droppable id. dnd-kit's registry
+ * is a `Map` keyed by that id: the second registration silently replaces the
+ * first, and which copy survives is decided by React effect order, not by which
+ * one is on screen. The hidden copy would then be the only one dnd-kit knows
+ * about, and a hidden element measures 0x0, so it wins nothing and the visible
+ * column stops being a drop target at all.
+ *
+ * Marking one copy keeps both addressable. The hidden one still measures 0x0,
+ * which is exactly how it loses: `rectIntersection` needs a non-zero overlap,
+ * and `board-keyboard` skips zero-area targets.
+ *
+ * Never spoken aloud — see `dropTargetName`, which names the column, not the
+ * breakpoint.
+ */
+const NARROW_MARKER = `narrow${DROP_SEPARATOR}`;
 
 /** A droppable id that identifies both the lane and the column within it. */
 export function laneDropId(lane: Lane, category: StatusCategory): string {
-  return `${lane}${LANE_DROP_SEPARATOR}${category}`;
+  return `${lane}${DROP_SEPARATOR}${category}`;
+}
+
+/** The narrow layout's own id for a column the wide layout also renders. */
+export function narrowDropId(dropId: string): string {
+  return `${NARROW_MARKER}${dropId}`;
+}
+
+/** What a board droppable id means. Every id parses; nothing here is optional guesswork. */
+export interface BoardDropTarget {
+  /** True for the narrow layout's copy of a column, false for the wide one. */
+  narrow: boolean;
+  /** The swimlane this column sits in, or `undefined` on the flat board. */
+  lane?: string;
+  /** The status category the column stands for — the only part a drop acts on. */
+  category: string;
 }
 
 /**
- * The inverse of `laneDropId`.
+ * The inverse of `laneDropId` / `narrowDropId`.
  *
- * Returns `undefined` for a bare category id (no separator) rather than
- * throwing — that is exactly the shape a droppable uses when swimlanes are
- * off, so callers can try this first and fall back to treating the id as a
- * plain category.
+ * Total rather than partial: a bare category (the flat wide board's own id
+ * shape) parses to `{ narrow: false, category }` rather than `undefined`, so
+ * callers never have to decide what a missing separator meant.
  */
-export function parseLaneDropId(id: string): { lane: string; category: string } | undefined {
-  const at = id.indexOf(LANE_DROP_SEPARATOR);
-  if (at === -1) return undefined;
-  return { lane: id.slice(0, at), category: id.slice(at + LANE_DROP_SEPARATOR.length) };
+export function parseDropId(id: string): BoardDropTarget {
+  const narrow = id.startsWith(NARROW_MARKER);
+  const rest = narrow ? id.slice(NARROW_MARKER.length) : id;
+
+  const at = rest.indexOf(DROP_SEPARATOR);
+  if (at === -1) return { narrow, category: rest };
+  return {
+    narrow,
+    lane: rest.slice(0, at),
+    category: rest.slice(at + DROP_SEPARATOR.length),
+  };
 }

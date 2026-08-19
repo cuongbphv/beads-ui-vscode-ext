@@ -8,6 +8,11 @@
  * Responsiveness is container-based (the panel can be dragged narrow
  * independently of the window): one column plus a switcher when cramped,
  * scroll-snap when medium, every column at once when wide.
+ *
+ * Both layouts are mounted at the same time and a container query hides one, so
+ * every column exists twice in the DOM. Each copy therefore needs its own
+ * droppable id — see `narrowDropId` in `lib/board-swimlanes` for why sharing
+ * one is not merely redundant but breaks dropping outright.
  */
 import {
   DndContext,
@@ -54,7 +59,13 @@ import {
   BOARD_SCREEN_READER_INSTRUCTIONS,
   boardKeyboardCoordinates,
 } from '../lib/board-keyboard';
-import { buildSwimlanes, laneDropId, parseLaneDropId, type Swimlane } from '../lib/board-swimlanes';
+import {
+  buildSwimlanes,
+  laneDropId,
+  narrowDropId,
+  parseDropId,
+  type Swimlane,
+} from '../lib/board-swimlanes';
 import { labelChipStyle } from '../lib/label-color';
 import { cn } from '../lib/utils';
 
@@ -184,11 +195,12 @@ export function BoardView({
     const overId = event.over?.id ? String(event.over.id) : undefined;
     if (!overId) return;
 
-    // Swimlane droppables are `lane::category`; the flat board's are a bare
-    // category. Either way only the category decides the next status — a
-    // card dropped in a different lane never mutates its label, because the
-    // lane is discarded right here.
-    const targetCategory = parseLaneDropId(overId)?.category ?? overId;
+    // A droppable id carries up to three things: which layout half rendered it,
+    // which swimlane it sits in, and which status category it stands for. Only
+    // the category decides the next status — a card dropped in a different lane
+    // never mutates its label, because the lane is discarded right here, and
+    // the layout half is plumbing that never leaves `board-swimlanes`.
+    const targetCategory = parseDropId(overId).category;
 
     const bead = beads.find((candidate) => candidate.id === id);
     const column = columns.find((candidate) => candidate.category === targetCategory);
@@ -318,6 +330,7 @@ export function BoardView({
               {narrowColumn ? (
                 <Column
                   column={narrowColumn}
+                  dropId={narrowDropId(narrowColumn.category)}
                   onSelect={onSelect}
                   selectedId={selectedId}
                   blockedIds={blockedIds}
@@ -408,7 +421,7 @@ function SwimlaneSection({
         {narrowColumn ? (
           <Column
             column={narrowColumn}
-            dropId={laneDropId(swimlane.lane, narrowColumn.category)}
+            dropId={narrowDropId(laneDropId(swimlane.lane, narrowColumn.category))}
             onSelect={onSelect}
             selectedId={selectedId}
             blockedIds={blockedIds}
@@ -450,7 +463,14 @@ function Column({
   onToggleCollapsed,
 }: {
   column: BoardColumn;
-  /** Droppable id. Defaults to the bare category — the flat board's id, unchanged. */
+  /**
+   * Droppable id, built by `board-swimlanes`. Defaults to the bare category,
+   * which is the wide flat board's id.
+   *
+   * It must be unique across every column the board has *mounted*, not just
+   * every column on screen: the narrow and the wide layout are both in the DOM
+   * at once, and dnd-kit keys its droppable registry by this id.
+   */
   dropId?: string;
   onSelect: (id: string) => void;
   selectedId?: string;

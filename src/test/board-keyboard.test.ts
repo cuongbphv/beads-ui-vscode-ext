@@ -8,6 +8,7 @@ import {
   dropTargetName,
   nextDropTarget,
 } from '../webview/lib/board-keyboard';
+import { narrowDropId } from '../webview/lib/board-swimlanes';
 
 /** A card sits *inside* a column, so every `from` below is inset from one. */
 function column(id: string, left: number, top: number, height = 600) {
@@ -165,6 +166,14 @@ describe('dropTargetName', () => {
   it('returns nothing for an id whose category is not a real one', () => {
     expect(dropTargetName('not-a-category')).toBeUndefined();
     expect(dropTargetName('needs-human::not-a-category')).toBeUndefined();
+  });
+
+  it('says nothing about which layout half a column belongs to', () => {
+    // The narrow and the wide copy of a column carry different droppable ids so
+    // dnd-kit can tell them apart. That is plumbing: a screen reader user is
+    // standing on one column, and should hear the column, not the breakpoint.
+    expect(dropTargetName(narrowDropId('wip'))).toBe('In Progress');
+    expect(dropTargetName(narrowDropId('needs-human::wip'))).toBe('In Progress, needs-human lane');
   });
 });
 

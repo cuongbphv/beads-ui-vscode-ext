@@ -83,7 +83,18 @@ vi.mock('@dnd-kit/core', () => {
       setActivatorNodeRef: () => {},
       isDragging: false,
     }),
-    useDroppable: () => ({ setNodeRef: () => {}, isOver: false }),
+    // Stamping the id onto the node is how the real hook's registration is made
+    // observable: dnd-kit keys its droppable registry by id (`containers.set(id,
+    // element)`), so two mounted nodes asking for the same id collapse into one
+    // entry and only the last one registered stays reachable. Reading the ids
+    // back off the DOM counts what is *mounted right now*, rather than every id
+    // the hook was ever called with.
+    useDroppable: ({ id }: { id: string }) => ({
+      setNodeRef: (node: HTMLElement | null) => {
+        if (node) node.dataset.dropId = String(id);
+      },
+      isOver: false,
+    }),
     useSensor: (sensor: unknown, options: unknown) => {
       dnd.sensors.push({ sensor, options });
       return { sensor, options };
@@ -242,6 +253,100 @@ describe('BoardView drag-and-drop with swimlanes on', () => {
     // Only one rpc call total, and it is setStatus — nothing resembling a
     // label/update call was ever issued by BoardView for a cross-lane drop.
     expect(rpc.calls).toEqual([{ id: 'human-1', status: 'done' }]);
+  });
+});
+
+/**
+ * The droppable id each mounted column node registered, in DOM order.
+ *
+ * The board mounts its narrow layout *and* its wide layout at the same time and
+ * lets a container query hide one of them, so this is deliberately every copy —
+ * hidden ones included. dnd-kit's registry is a Map keyed by id, so any repeat
+ * here is a column node that has been silently overwritten in that registry.
+ */
+function dropIds(root: HTMLElement): string[] {
+  return [...root.querySelectorAll<HTMLElement>('[data-drop-id]')].map(
+    (node) => node.dataset.dropId ?? '',
+  );
+}
+
+/** The column node inside the half a container query hides below `@2xl`. */
+function narrowDropNode(root: HTMLElement): HTMLElement | null {
+  return root.querySelector<HTMLElement>('div[class*="@2xl:hidden"] [data-drop-id]');
+}
+
+/** The column node inside the half a container query hides at and above `@2xl`. */
+function wideDropNode(root: HTMLElement): HTMLElement | null {
+  return root.querySelector<HTMLElement>('div[class*="@2xl:flex"] [data-drop-id]');
+}
+
+describe('BoardView droppable ids', () => {
+  it('never registers the same droppable id for two mounted columns (flat board)', async () => {
+    const root = await mount({ swimlanes: false });
+
+    // Three categories in the index: one narrow copy plus three wide copies.
+    const ids = dropIds(root);
+    expect(ids).toHaveLength(4);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('never registers the same droppable id for two mounted columns (swimlanes)', async () => {
+    const root = await mount({ swimlanes: true });
+
+    // Four lanes, each with one narrow copy plus three wide copies.
+    const ids = dropIds(root);
+    expect(ids).toHaveLength(16);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('gives the container-query-hidden copy its own id instead of shadowing the visible one', async () => {
+    const root = await mount({ swimlanes: false });
+
+    expect(narrowDropNode(root)?.dataset.dropId).toBeDefined();
+    expect(wideDropNode(root)?.dataset.dropId).toBeDefined();
+    expect(narrowDropNode(root)?.dataset.dropId).not.toBe(wideDropNode(root)?.dataset.dropId);
+  });
+
+  it('gives the container-query-hidden copy its own id in every lane too', async () => {
+    const root = await mount({ swimlanes: true });
+
+    const lane = root.querySelector<HTMLElement>('section[aria-label^="auto-ok lane"]');
+    expect(lane).not.toBeNull();
+    expect(narrowDropNode(lane!)?.dataset.dropId).not.toBe(wideDropNode(lane!)?.dataset.dropId);
+  });
+
+  it('resolves a drop on the narrow copy to the same status as the wide one', async () => {
+    const root = await mount({ swimlanes: false });
+
+    // The narrow board shows whichever column the switcher selected; pick one
+    // the card is not already in, so a real status change is expected.
+    const done = [...root.querySelectorAll('button')].find((button) =>
+      button.textContent?.startsWith('Done'),
+    );
+    expect(done).toBeDefined();
+    await act(async () => done?.click());
+
+    const narrowId = narrowDropNode(root)?.dataset.dropId;
+    expect(narrowId).toBeDefined();
+    await act(async () => dnd.onDragEnd?.({ active: { id: 'plain-1' }, over: { id: narrowId! } }));
+
+    expect(rpc.calls).toEqual([{ id: 'plain-1', status: 'done' }]);
+  });
+
+  it('resolves a drop on a lane’s narrow copy to that column’s status, lane discarded', async () => {
+    const root = await mount({ swimlanes: true });
+
+    const done = [...root.querySelectorAll('button')].find((button) =>
+      button.textContent?.startsWith('Done'),
+    );
+    await act(async () => done?.click());
+
+    const lane = root.querySelector<HTMLElement>('section[aria-label^="needs-human lane"]');
+    const narrowId = narrowDropNode(lane!)?.dataset.dropId;
+    expect(narrowId).toBeDefined();
+    await act(async () => dnd.onDragEnd?.({ active: { id: 'safe-1' }, over: { id: narrowId! } }));
+
+    expect(rpc.calls).toEqual([{ id: 'safe-1', status: 'done' }]);
   });
 });
 

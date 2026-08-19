@@ -8,7 +8,8 @@ import {
   buildSwimlanes,
   laneDropId,
   laneOf,
-  parseLaneDropId,
+  narrowDropId,
+  parseDropId,
   type Lane,
 } from '../webview/lib/board-swimlanes';
 
@@ -85,18 +86,45 @@ describe('buildSwimlanes', () => {
   });
 });
 
-describe('laneDropId / parseLaneDropId', () => {
+describe('board droppable ids', () => {
   it('round-trips lane and category through the composite id', () => {
     const lanes: Lane[] = [...TAXONOMY_LANES, UNLABELED];
     for (const lane of lanes) {
       for (const category of ['active', 'wip', 'done', 'frozen', 'unspecified'] as const) {
-        const id = laneDropId(lane, category);
-        expect(parseLaneDropId(id)).toEqual({ lane, category });
+        expect(parseDropId(laneDropId(lane, category))).toEqual({
+          narrow: false,
+          lane,
+          category,
+        });
       }
     }
   });
 
-  it('returns undefined for a bare category id (no separator) — the flat-board path', () => {
-    expect(parseLaneDropId('active')).toBeUndefined();
+  it('reads a bare category id — the flat wide board’s own shape — as a lane-less target', () => {
+    expect(parseDropId('active')).toEqual({ narrow: false, category: 'active' });
+  });
+
+  it('marks the narrow layout’s copy of a column without losing its category', () => {
+    expect(parseDropId(narrowDropId('active'))).toEqual({ narrow: true, category: 'active' });
+  });
+
+  it('marks the narrow layout’s copy of a lane column without losing lane or category', () => {
+    expect(parseDropId(narrowDropId(laneDropId('needs-human', 'wip')))).toEqual({
+      narrow: true,
+      lane: 'needs-human',
+      category: 'wip',
+    });
+  });
+
+  it('gives the narrow and the wide copy of one column two different ids', () => {
+    expect(narrowDropId('active')).not.toBe('active');
+    expect(narrowDropId(laneDropId('auto-ok', 'wip'))).not.toBe(laneDropId('auto-ok', 'wip'));
+  });
+
+  it('never lets a real lane name be mistaken for the narrow marker', () => {
+    // `parseDropId` strips the narrow marker before it looks for a lane, so a
+    // lane actually called `narrow` would be read as the marker instead.
+    const lanes: string[] = [...TAXONOMY_LANES, UNLABELED];
+    expect(lanes).not.toContain('narrow');
   });
 });
