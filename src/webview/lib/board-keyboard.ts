@@ -17,6 +17,16 @@
  * picks the neighbouring droppable in the arrow's direction and hands back its
  * origin. Same shape as `board-columns.ts` and `board-swimlanes.ts` — the
  * decisions are pure functions, testable without mounting the board.
+ *
+ * Below the board's narrow breakpoint only one column is ever real geometry —
+ * the rest of the layout is mounted but hidden by a container query, and a
+ * hidden column measures 0x0 (see `nextDropTarget`'s own note on that). With
+ * one real column there is no second rect to hand back, so `nextDropTarget`
+ * quite correctly finds nothing every time. `isNarrowLayout` and
+ * `nextNarrowCategory` are the fallback for that width: not more geometry —
+ * there is none left to find — but a walk over the same ordered category list
+ * the narrow switcher renders, one entry at a time, wired up by the caller to
+ * actually move the card and bring the switcher along.
  */
 import { CATEGORY_LABELS, type StatusCategory } from '../../shared/types';
 import { parseDropId } from './board-swimlanes';
@@ -118,13 +128,40 @@ export function nextDropTarget(
  * The shape `boardKeyboardCoordinates` needs out of dnd-kit's sensor context —
  * spelled out structurally so the geometry can be tested with plain objects.
  */
-interface DroppableRegistry {
+export interface DroppableRegistry {
   droppableContainers: { getEnabled(): readonly { id: string | number }[] };
   droppableRects: {
     get(
       id: string | number,
     ): { left: number; top: number; width: number; height: number } | undefined;
   };
+}
+
+/**
+ * Every droppable dnd-kit currently has a real rect for, read out of its
+ * registry.
+ *
+ * Shared by `boardKeyboardCoordinates` and by the narrow-layout fallback below
+ * it — both need the same walk over the registry, and this is the one place it
+ * is written.
+ */
+export function measuredDropTargets(context: DroppableRegistry): DropTargetRect[] {
+  const targets: DropTargetRect[] = [];
+  for (const container of context.droppableContainers.getEnabled()) {
+    // A registered column with no rect yet has not been measured — which is not
+    // the same as sitting at the origin. Skipping it keeps an unmeasured column
+    // out of the ranking instead of letting it win every leftward move.
+    const rect = context.droppableRects.get(container.id);
+    if (!rect) continue;
+    targets.push({
+      id: String(container.id),
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    });
+  }
+  return targets;
 }
 
 /**
@@ -145,22 +182,7 @@ export function boardKeyboardCoordinates(
   if (!isArrowCode(event.code)) return undefined;
   event.preventDefault();
 
-  const targets: DropTargetRect[] = [];
-  for (const container of context.droppableContainers.getEnabled()) {
-    // A registered column with no rect yet has not been measured — which is not
-    // the same as sitting at the origin. Skipping it keeps an unmeasured column
-    // out of the ranking instead of letting it win every leftward move.
-    const rect = context.droppableRects.get(container.id);
-    if (!rect) continue;
-    targets.push({
-      id: String(container.id),
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
-    });
-  }
-
+  const targets = measuredDropTargets(context);
   const target = nextDropTarget(
     event.code,
     { left: currentCoordinates.x, top: currentCoordinates.y },
@@ -169,6 +191,67 @@ export function boardKeyboardCoordinates(
   if (!target) return undefined;
 
   return { x: target.left, y: target.top };
+}
+
+/**
+ * Whether the narrow (single-column) layout is the one currently on screen,
+ * inferred from which copies of the columns dnd-kit is actually measuring with
+ * real geometry.
+ *
+ * The board mounts its narrow and wide layouts at once and lets a container
+ * query hide one — the hidden one measures 0x0 (see `nextDropTarget` above).
+ * Every droppable id says which layout it belongs to (`parseDropId(id).narrow`
+ * — set by `narrowDropId` in `board-swimlanes`), so rather than reading the
+ * container's width in JS, this reads which copies dnd-kit can actually see:
+ * if any wide-layout id still has real geometry, the wide layout is what is on
+ * screen. Narrow is only true once every real (nonzero) rect belongs to a
+ * narrow-marked id, and there is at least one.
+ *
+ * This is the signal `nextNarrowCategory` is gated on: geometry alone cannot
+ * tell "narrow, no second column exists" apart from "wide, genuinely at the
+ * board edge" — both hand `nextDropTarget` an empty ranking — so the fallback
+ * below needs this second, independent read of the same registry.
+ */
+export function isNarrowLayout(targets: readonly DropTargetRect[]): boolean {
+  const real = targets.filter((target) => target.width > 0 && target.height > 0);
+  if (real.length === 0) return false;
+  return real.every((target) => parseDropId(target.id).narrow);
+}
+
+/**
+ * The next (or previous) category in board order — the narrow layout's
+ * fallback move.
+ *
+ * At narrow width only one column is ever real (the others are mounted at
+ * 0x0), so `nextDropTarget` never has a second rect to hand back: there is no
+ * geometry left to solve this with. "One press, one column" still has to mean
+ * something, so this instead walks the same ordered category list the narrow
+ * switcher renders and steps one entry over — the chosen design is that an
+ * arrow press moves the card to the next/previous category *and* the switcher
+ * follows it there (wired by the caller, not here).
+ *
+ * Only Left/Right apply — they are what the narrow switcher's own left-to-right
+ * order means a "next" and "previous" category. Up/Down return `undefined`,
+ * the same "no move" answer as every other key that does not apply.
+ *
+ * Deliberately does not wrap, mirroring `nextDropTarget`: at the first or last
+ * category, the arrow that would go further returns `undefined` rather than
+ * jumping to the opposite end — a card that silently reappeared in the far
+ * column would be exactly as lost as one that reappeared on the far side of a
+ * wide board.
+ */
+export function nextNarrowCategory(
+  code: ArrowCode,
+  columns: readonly { category: string }[],
+  currentCategory: string | undefined,
+): string | undefined {
+  if (code !== 'ArrowLeft' && code !== 'ArrowRight') return undefined;
+
+  const index = columns.findIndex((column) => column.category === currentCategory);
+  if (index === -1) return undefined;
+
+  const step = code === 'ArrowRight' ? 1 : -1;
+  return columns[index + step]?.category;
 }
 
 function isStatusCategory(value: string): value is StatusCategory {

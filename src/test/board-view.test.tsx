@@ -359,14 +359,67 @@ describe('BoardView keyboard moves', () => {
     expect(registered).toContain(KeyboardSensor);
   });
 
-  it('gives the keyboard sensor the board’s own column-to-column geometry and key map', async () => {
+  it('gives the keyboard sensor a coordinate getter and the board’s own key map', async () => {
     await mount();
 
-    const keyboard = dnd.sensors.find((entry) => entry.sensor === KeyboardSensor);
-    expect(keyboard?.options).toEqual({
-      coordinateGetter: boardKeyboardCoordinates,
-      keyboardCodes: BOARD_KEYBOARD_CODES,
+    // `useSensor` is mocked to push rather than replace, so every render this
+    // component has done adds another entry — `findLast` is the one that
+    // matches the closure actually wired up after the most recent render.
+    const keyboard = [...dnd.sensors].reverse().find((entry) => entry.sensor === KeyboardSensor);
+    // Wraps `boardKeyboardCoordinates` (see the narrow-fallback suite below for
+    // why it is a wrapper and not the bare import) rather than being it, so
+    // this only pins down the shape dnd-kit is actually configured with.
+    expect(typeof (keyboard?.options as { coordinateGetter?: unknown })?.coordinateGetter).toBe(
+      'function',
+    );
+    expect((keyboard?.options as { keyboardCodes?: unknown })?.keyboardCodes).toBe(
+      BOARD_KEYBOARD_CODES,
+    );
+  });
+
+  it('resolves a real geometric move exactly as the bare board-keyboard geometry would', async () => {
+    // Proves the wrapper is additive: handed a genuine wide-layout registry
+    // (every column real, no narrow marker anywhere), it must return exactly
+    // what `boardKeyboardCoordinates` itself returns — the fallback path below
+    // must never even be consulted.
+    await mount();
+
+    // `useSensor` is mocked to push rather than replace, so every render this
+    // component has done adds another entry — `findLast` is the one that
+    // matches the closure actually wired up after the most recent render.
+    const keyboard = [...dnd.sensors].reverse().find((entry) => entry.sensor === KeyboardSensor);
+    const getter = (
+      keyboard?.options as {
+        coordinateGetter: (
+          event: { code: string; preventDefault(): void },
+          args: {
+            active: string;
+            currentCoordinates: { x: number; y: number };
+            context: ReturnType<typeof registryContext>;
+          },
+        ) => { x: number; y: number } | undefined;
+      }
+    ).coordinateGetter;
+
+    const wideContext = registryContext([
+      { id: 'active', left: 0, top: 100, width: 288, height: 600 },
+      { id: 'wip', left: 300, top: 100, width: 288, height: 600 },
+    ]);
+
+    const direct = boardKeyboardCoordinates(keyEvent('ArrowRight'), {
+      currentCoordinates: { x: 8, y: 140 },
+      context: wideContext,
     });
+    const wrapped = getter(keyEvent('ArrowRight'), {
+      active: 'safe-1',
+      currentCoordinates: { x: 8, y: 140 },
+      context: wideContext,
+    });
+
+    expect(wrapped).toEqual(direct);
+    expect(wrapped).toEqual({ x: 300, y: 100 });
+    // A real target was found, so the fallback's own mutation never ran.
+    expect(rpc.calls).toEqual([]);
   });
 
   it('announces moves by column name and explains the keys, instead of using dnd-kit’s id-reading defaults', async () => {
@@ -464,6 +517,27 @@ function press(element: Element, init: { key: string; code: string }): void {
   });
 }
 
+/**
+ * A synthetic droppable registry, in the shape `boardKeyboardCoordinates` (and
+ * the narrow fallback wrapped around it) reads: an id and a rect for whatever
+ * is currently "measured", real or 0x0. Same shape as `board-keyboard.test`'s
+ * own `context()` helper — DndContext itself is mocked away here, so nothing
+ * builds this for us.
+ */
+function registryContext(
+  rects: readonly { id: string; left: number; top: number; width: number; height: number }[],
+) {
+  const map = new Map(rects.map((rect) => [rect.id, rect]));
+  return {
+    droppableContainers: { getEnabled: () => rects.map(({ id }) => ({ id })) },
+    droppableRects: { get: (id: string) => map.get(id) },
+  };
+}
+
+function keyEvent(code: string): { code: string; preventDefault: () => void } {
+  return { code, preventDefault: vi.fn() };
+}
+
 describe('BoardView narrow column switcher', () => {
   // `PAGE` is 50, so a category only grows a "Load more" button past 50 issues.
   // Both categories overflow it by the same 10, which is what makes the leak
@@ -552,3 +626,158 @@ function section(root: HTMLElement, label: string): HTMLElement {
   if (!found) throw new Error(`no section labelled ${label}`);
   return found;
 }
+
+describe('BoardView narrow keyboard fallback', () => {
+  // Three categories, so there is a real "next" and a real "previous" to move
+  // to, plus a genuine first/last edge in each direction.
+  const threeCategoryBeads: Bead[] = [
+    { id: 'nb-open', title: 'Open one', status: 'open', priority: 2, issue_type: 'task' },
+    { id: 'nb-wip', title: 'WIP one', status: 'in_progress', priority: 2, issue_type: 'task' },
+    { id: 'nb-done', title: 'Done one', status: 'done', priority: 2, issue_type: 'task' },
+  ];
+
+  /**
+   * The registry as it actually looks below the narrow breakpoint: only the
+   * one narrow column currently shown has real geometry. Every wide copy, and
+   * every *other* narrow copy, is mounted but measures 0x0 — the same "hidden
+   * half of the responsive board" shape `nextDropTarget`'s own tests use.
+   */
+  function narrowOnlyContext(category: string) {
+    return registryContext([
+      { id: `narrow::${category}`, left: 0, top: 100, width: 288, height: 600 },
+      { id: 'active', left: 0, top: 0, width: 0, height: 0 },
+      { id: 'wip', left: 0, top: 0, width: 0, height: 0 },
+      { id: 'done', left: 0, top: 0, width: 0, height: 0 },
+    ]);
+  }
+
+  type CoordinateGetter = (
+    event: { code: string; preventDefault(): void },
+    args: {
+      active: string;
+      currentCoordinates: { x: number; y: number };
+      context: ReturnType<typeof registryContext>;
+    },
+  ) => { x: number; y: number } | undefined;
+
+  function getter(): CoordinateGetter {
+    // `useSensor` is mocked to push rather than replace, so every render this
+    // component has done adds another entry — `findLast` is the one that
+    // matches the closure actually wired up after the most recent render.
+    const keyboard = [...dnd.sensors].reverse().find((entry) => entry.sensor === KeyboardSensor);
+    if (!keyboard) throw new Error('keyboard sensor not registered');
+    return (keyboard.options as { coordinateGetter: CoordinateGetter }).coordinateGetter;
+  }
+
+  it('moves the card to the next category and switches the narrow view to it', async () => {
+    const root = await mount({ swimlanes: false, beads: threeCategoryBeads });
+    expect(narrow(root).dataset.dropId).toBe('narrow::active');
+
+    let result: { x: number; y: number } | undefined;
+    await act(async () => {
+      result = getter()(keyEvent('ArrowRight'), {
+        active: 'nb-open',
+        currentCoordinates: { x: 8, y: 140 },
+        context: narrowOnlyContext('active'),
+      });
+      await Promise.resolve();
+    });
+
+    // No real coordinate exists to hand dnd-kit — the move happened through
+    // the fallback's own mutation, not through a geometric drag-and-drop.
+    expect(result).toBeUndefined();
+    expect(rpc.calls).toEqual([{ id: 'nb-open', status: 'in_progress' }]);
+    expect(switcher(root, 'In Progress').getAttribute('aria-pressed')).toBe('true');
+    expect(narrow(root).dataset.dropId).toBe('narrow::wip');
+  });
+
+  it('moves to the previous category on ArrowLeft', async () => {
+    const root = await mount({ swimlanes: false, beads: threeCategoryBeads });
+    await act(async () => switcher(root, 'Done').click());
+    expect(narrow(root).dataset.dropId).toBe('narrow::done');
+
+    await act(async () => {
+      getter()(keyEvent('ArrowLeft'), {
+        active: 'nb-done',
+        currentCoordinates: { x: 8, y: 140 },
+        context: narrowOnlyContext('done'),
+      });
+      await Promise.resolve();
+    });
+
+    expect(rpc.calls).toEqual([{ id: 'nb-done', status: 'in_progress' }]);
+    expect(switcher(root, 'In Progress').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('does not wrap past the last category', async () => {
+    const root = await mount({ swimlanes: false, beads: threeCategoryBeads });
+    await act(async () => switcher(root, 'Done').click());
+
+    await act(async () => {
+      getter()(keyEvent('ArrowRight'), {
+        active: 'nb-done',
+        currentCoordinates: { x: 8, y: 140 },
+        context: narrowOnlyContext('done'),
+      });
+      await Promise.resolve();
+    });
+
+    expect(rpc.calls).toEqual([]);
+    expect(narrow(root).dataset.dropId).toBe('narrow::done');
+  });
+
+  it('does not wrap past the first category', async () => {
+    const root = await mount({ swimlanes: false, beads: threeCategoryBeads });
+    expect(narrow(root).dataset.dropId).toBe('narrow::active');
+
+    await act(async () => {
+      getter()(keyEvent('ArrowLeft'), {
+        active: 'nb-open',
+        currentCoordinates: { x: 8, y: 140 },
+        context: narrowOnlyContext('active'),
+      });
+      await Promise.resolve();
+    });
+
+    expect(rpc.calls).toEqual([]);
+    expect(narrow(root).dataset.dropId).toBe('narrow::active');
+  });
+
+  it('does not engage for Up/Down — only left/right remap in narrow mode', async () => {
+    await mount({ swimlanes: false, beads: threeCategoryBeads });
+
+    await act(async () => {
+      getter()(keyEvent('ArrowDown'), {
+        active: 'nb-open',
+        currentCoordinates: { x: 8, y: 140 },
+        context: narrowOnlyContext('active'),
+      });
+      await Promise.resolve();
+    });
+
+    expect(rpc.calls).toEqual([]);
+  });
+
+  it('never engages when a real geometric target exists, even if narrow geometry also happens to be present', async () => {
+    await mount({ swimlanes: false, beads: threeCategoryBeads });
+
+    // A mixed registry: the wide `wip` column is (implausibly, but worth
+    // guarding against) still real alongside the narrow one. A real target
+    // must win outright — the fallback must not also fire.
+    const mixed = registryContext([
+      { id: 'narrow::active', left: 0, top: 100, width: 288, height: 600 },
+      { id: 'active', left: 0, top: 0, width: 0, height: 0 },
+      { id: 'wip', left: 300, top: 100, width: 288, height: 600 },
+      { id: 'done', left: 0, top: 0, width: 0, height: 0 },
+    ]);
+
+    const result = getter()(keyEvent('ArrowRight'), {
+      active: 'nb-open',
+      currentCoordinates: { x: 8, y: 140 },
+      context: mixed,
+    });
+
+    expect(result).toEqual({ x: 300, y: 100 });
+    expect(rpc.calls).toEqual([]);
+  });
+});

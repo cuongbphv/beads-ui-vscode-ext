@@ -6,7 +6,9 @@ import {
   BOARD_SCREEN_READER_INSTRUCTIONS,
   boardKeyboardCoordinates,
   dropTargetName,
+  isNarrowLayout,
   nextDropTarget,
+  nextNarrowCategory,
 } from '../webview/lib/board-keyboard';
 import { narrowDropId } from '../webview/lib/board-swimlanes';
 
@@ -93,6 +95,78 @@ describe('nextDropTarget', () => {
     // whose own origin is also to the left of the inset card.
     expect(nextDropTarget('ArrowLeft', { left: 608, top: 140 }, FLAT)?.id).toBe('wip');
     expect(nextDropTarget('ArrowRight', { left: 608, top: 140 }, FLAT)?.id).toBe('done');
+  });
+});
+
+describe('isNarrowLayout', () => {
+  it('is false when a wide-layout column still has real geometry', () => {
+    // The flat-board wide columns carry bare category ids — `parseDropId`
+    // reads those as `narrow: false`.
+    expect(isNarrowLayout(FLAT)).toBe(false);
+  });
+
+  it('is true once every real rect belongs to a narrow-marked id', () => {
+    const narrow = [
+      { id: narrowDropId('active'), left: 0, top: 100, width: 288, height: 600 },
+      // The wide copies are still mounted, just hidden — 0x0 at the origin.
+      { id: 'active', left: 0, top: 0, width: 0, height: 0 },
+      { id: 'wip', left: 0, top: 0, width: 0, height: 0 },
+    ];
+
+    expect(isNarrowLayout(narrow)).toBe(true);
+  });
+
+  it('is true for every lane’s narrow copy at once, not just a single column', () => {
+    // Swimlane narrow mode mounts one real narrow column per lane simultaneously.
+    const narrowLanes = [
+      { id: narrowDropId('auto-ok::active'), left: 0, top: 100, width: 288, height: 288 },
+      { id: narrowDropId('needs-human::active'), left: 0, top: 500, width: 288, height: 288 },
+    ];
+
+    expect(isNarrowLayout(narrowLanes)).toBe(true);
+  });
+
+  it('is false when nothing has been measured at all', () => {
+    expect(isNarrowLayout([])).toBe(false);
+  });
+
+  it('is false when there is real geometry for both layout halves at once (never expected, but not a false narrow reading)', () => {
+    const mixed = [
+      { id: 'active', left: 0, top: 100, width: 288, height: 600 },
+      { id: narrowDropId('active'), left: 0, top: 100, width: 288, height: 600 },
+    ];
+
+    expect(isNarrowLayout(mixed)).toBe(false);
+  });
+});
+
+describe('nextNarrowCategory', () => {
+  const categories = [{ category: 'active' }, { category: 'wip' }, { category: 'done' }];
+
+  it('steps to the next category on ArrowRight', () => {
+    expect(nextNarrowCategory('ArrowRight', categories, 'active')).toBe('wip');
+  });
+
+  it('steps to the previous category on ArrowLeft', () => {
+    expect(nextNarrowCategory('ArrowLeft', categories, 'wip')).toBe('active');
+  });
+
+  it('stops at the last category instead of wrapping to the first', () => {
+    expect(nextNarrowCategory('ArrowRight', categories, 'done')).toBeUndefined();
+  });
+
+  it('stops at the first category instead of wrapping to the last', () => {
+    expect(nextNarrowCategory('ArrowLeft', categories, 'active')).toBeUndefined();
+  });
+
+  it('does nothing for Up/Down — narrow mode only remaps left/right', () => {
+    expect(nextNarrowCategory('ArrowUp', categories, 'wip')).toBeUndefined();
+    expect(nextNarrowCategory('ArrowDown', categories, 'wip')).toBeUndefined();
+  });
+
+  it('does nothing when the current category is not in the list at all', () => {
+    expect(nextNarrowCategory('ArrowRight', categories, 'mystery')).toBeUndefined();
+    expect(nextNarrowCategory('ArrowRight', categories, undefined)).toBeUndefined();
   });
 });
 

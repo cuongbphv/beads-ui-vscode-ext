@@ -58,6 +58,11 @@ import {
   BOARD_KEYBOARD_CODES,
   BOARD_SCREEN_READER_INSTRUCTIONS,
   boardKeyboardCoordinates,
+  isArrowCode,
+  isNarrowLayout,
+  measuredDropTargets,
+  nextNarrowCategory,
+  type DroppableRegistry,
 } from '../lib/board-keyboard';
 import {
   buildSwimlanes,
@@ -165,20 +170,6 @@ export function BoardView({
     [swimlanesEnabled, visible, index],
   );
 
-  // A pointer must travel a few pixels before a drag starts, otherwise clicking
-  // a card to open its details would be swallowed by the drag sensor.
-  //
-  // The keyboard sensor is the same board without a mouse: space picks a card
-  // up, the arrow keys move it one *column* at a time (see `board-keyboard`),
-  // space drops it and escape puts it back.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: boardKeyboardCoordinates,
-      keyboardCodes: BOARD_KEYBOARD_CODES,
-    }),
-  );
-
   const collapsed = useMemo(() => collapsedSet(collapsedColumns), [collapsedColumns]);
 
   const [activeCategory, setActiveCategory] = useState<string>();
@@ -189,19 +180,14 @@ export function BoardView({
     setDragging(beads.find((bead) => bead.id === event.active.id));
   }
 
-  async function onDragEnd(event: DragEndEvent): Promise<void> {
-    setDragging(undefined);
-    const id = String(event.active.id);
-    const overId = event.over?.id ? String(event.over.id) : undefined;
-    if (!overId) return;
-
-    // A droppable id carries up to three things: which layout half rendered it,
-    // which swimlane it sits in, and which status category it stands for. Only
-    // the category decides the next status — a card dropped in a different lane
-    // never mutates its label, because the lane is discarded right here, and
-    // the layout half is plumbing that never leaves `board-swimlanes`.
-    const targetCategory = parseDropId(overId).category;
-
+  /**
+   * The actual mutation behind every card move, wide drag-and-drop and the
+   * narrow keyboard fallback alike: resolve the category's first status,
+   * apply it optimistically, call `bd`, and roll back with a toast if it
+   * fails. Kept in one place so the fallback below is a second *caller*, not a
+   * second copy of this.
+   */
+  async function moveCardToCategory(id: string, targetCategory: string): Promise<void> {
     const bead = beads.find((candidate) => candidate.id === id);
     const column = columns.find((candidate) => candidate.category === targetCategory);
     if (!bead || !column) return;
@@ -229,6 +215,76 @@ export function BoardView({
       notify(asRpcError(error).message, 'error');
     }
   }
+
+  async function onDragEnd(event: DragEndEvent): Promise<void> {
+    setDragging(undefined);
+    const id = String(event.active.id);
+    const overId = event.over?.id ? String(event.over.id) : undefined;
+    if (!overId) return;
+
+    // A droppable id carries up to three things: which layout half rendered it,
+    // which swimlane it sits in, and which status category it stands for. Only
+    // the category decides the next status — a card dropped in a different lane
+    // never mutates its label, because the lane is discarded right here, and
+    // the layout half is plumbing that never leaves `board-swimlanes`.
+    const targetCategory = parseDropId(overId).category;
+    await moveCardToCategory(id, targetCategory);
+  }
+
+  /**
+   * The keyboard sensor's coordinate getter, wrapping the pure
+   * `boardKeyboardCoordinates` with the one thing it cannot do itself: at
+   * narrow width there is no second real column for it to find, and moving a
+   * card there means a real mutation plus `setActiveCategory` following along
+   * — both of which need component state a pure geometry function has no
+   * access to.
+   *
+   * `boardKeyboardCoordinates` runs first and unconditionally, so every wide-
+   * layout move is exactly as it was: unchanged geometry, unchanged return
+   * value. The fallback only ever runs on top of an `undefined` from that call
+   * — never instead of it — and only engages once `isNarrowLayout` confirms
+   * the *reason* it was undefined is "no second column is real right now", not
+   * "wide, genuinely at the board's edge". That is what keeps this additive:
+   * a real geometric target, at any width, always wins.
+   */
+  function boardViewKeyboardCoordinates(
+    event: { code: string; preventDefault(): void },
+    args: {
+      active: string | number;
+      currentCoordinates: { x: number; y: number };
+      context: DroppableRegistry;
+    },
+  ): { x: number; y: number } | undefined {
+    const target = boardKeyboardCoordinates(event, args);
+    if (target) return target;
+
+    if (!isArrowCode(event.code)) return undefined;
+    if (!isNarrowLayout(measuredDropTargets(args.context))) return undefined;
+
+    const nextCategory = nextNarrowCategory(event.code, columns, narrowColumn?.category);
+    if (!nextCategory) return undefined;
+
+    setActiveCategory(nextCategory);
+    void moveCardToCategory(String(args.active), nextCategory);
+
+    return undefined;
+  }
+
+  // A pointer must travel a few pixels before a drag starts, otherwise clicking
+  // a card to open its details would be swallowed by the drag sensor.
+  //
+  // The keyboard sensor is the same board without a mouse: space picks a card
+  // up, the arrow keys move it one *column* at a time (see `board-keyboard`) —
+  // or, below the narrow breakpoint where only one column is ever real, one
+  // *category* at a time via the fallback above — space drops it and escape
+  // puts it back.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: boardViewKeyboardCoordinates,
+      keyboardCodes: BOARD_KEYBOARD_CODES,
+    }),
+  );
 
   if (columns.length === 0) {
     return (
