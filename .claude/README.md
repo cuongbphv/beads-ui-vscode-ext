@@ -37,28 +37,36 @@ The rules that come with it: **never infer a label from a title**, a new label m
 measurable reason written into that bead's own notes, and anything you cannot measure is
 `needs-human`.
 
-## Three mirrors that have to be edited together
+## Three runtime surfaces that have to stay in sync
 
 The same command set exists in three places, as **real files, not symlinks**:
 
 ```
 .claude/commands/<name>.md          # the canonical copy; uses $ARGUMENTS
-.codex/prompts/<name>.md            # same frontmatter; spells the parameters out in prose
 .cursor/skills/<name>/SKILL.md      # frontmatter is name + description + disable-model-invocation
+.agents/skills/<name>/SKILL.md      # condensed portable copy + agents/openai.yaml
 ```
+The `.agents/skills/<name>/SKILL.md` surface is **deliberately condensed** — roughly a
+third the length, with the embedded scripts and the deeper measurements described in prose
+instead. Do not "fix" it by expanding it back to full length. It pairs each skill with an
+`agents/openai.yaml` carrying `policy.allow_implicit_invocation: false`, the `.agents`
+equivalent of `disable-model-invocation`, and it addresses skills as `$bead-take` rather than
+`/bead-take`. Facts that live **only** in the long copies: the two runnable python blocks in
+`bead-loop`, the `/tmp` Git-Bash reasoning, the `node_modules` junction/vitest finding, the
+truncated-summary-line measurement, the tool-version-changes-the-ruleset measurement, and the
+`bd 1.2.2` version pin. Treat `.agents` as an entry point, never as the complete record.
 
-Editing one and forgetting the other two is how bugs survive longest in this repo — it has
-already happened: `bead-audit`'s `argument-hint` was missing its quotes in the `.claude`
-copy (the value starts with `[`, so YAML parsed it as a flow sequence and then hit trailing
-text), while the `.codex` copy was quoted correctly. GitHub rendered
-`did not find expected key`.
+Codex custom prompts under `.codex/prompts/` are deprecated. Codex loads the shared
+repository skills from `.agents/skills/` and invokes them as `$bead-take`, `$bead-loop`,
+and so on.
 
-Check all fifteen files before committing:
+Check every command and skill file before committing:
 
 ```bash
 python3 - <<'PY'
 import glob, yaml
-for f in sorted(glob.glob('.claude/commands/*.md') + glob.glob('.cursor/skills/*/SKILL.md') + glob.glob('.codex/prompts/*.md')):
+for f in sorted(glob.glob('.claude/commands/*.md') + glob.glob('.cursor/skills/*/SKILL.md')
+                + glob.glob('.agents/skills/*/SKILL.md')):
     try: yaml.safe_load(open(f, encoding='utf-8').read().split('---')[1]); print('OK  ', f)
     except Exception as e: print('FAIL', f, e)
 PY

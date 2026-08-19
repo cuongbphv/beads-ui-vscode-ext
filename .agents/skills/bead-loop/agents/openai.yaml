@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bead Loop"
+  short_description: "Work one ready Beads issue per round"
+  default_prompt: "Use $bead-loop for one round; optionally add --include-partial or --dry-run."
+
+policy:
+  allow_implicit_invocation: false

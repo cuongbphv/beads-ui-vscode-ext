@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bead Split"
+  short_description: "Split markdown plans into classified Beads"
+  default_prompt: "Use $bead-split with a markdown file or directory; dry-run unless --apply is supplied."
+
+policy:
+  allow_implicit_invocation: false

@@ -56,22 +56,30 @@ The rules that come with it: **never infer a label from a title**, a new label m
 measurable reason written into that bead's own notes, and anything you cannot measure is
 `needs-human`.
 
-## Three mirrors that have to be edited together
+## Three runtime surfaces that have to stay in sync
 
 The same procedures exist in three places, as **real files, not symlinks**:
 
 ```
 .claude/commands/<name>.md          # the canonical copy; uses $ARGUMENTS
-.codex/prompts/<name>.md            # frontmatter is description + argument-hint
 .cursor/skills/<name>/SKILL.md      # this one
+.agents/skills/<name>/SKILL.md      # condensed portable copy + agents/openai.yaml
 ```
+The `.agents/skills/<name>/SKILL.md` surface is **deliberately condensed** — roughly a
+third the length, with the embedded scripts and the deeper measurements described in prose
+instead. Do not "fix" it by expanding it back to full length. It pairs each skill with an
+`agents/openai.yaml` carrying `policy.allow_implicit_invocation: false`, the `.agents`
+equivalent of `disable-model-invocation`, and it addresses skills as `$bead-take` rather than
+`/bead-take`. Facts that live **only** in the long copies: the two runnable python blocks in
+`bead-loop`, the `/tmp` Git-Bash reasoning, the `node_modules` junction/vitest finding, the
+truncated-summary-line measurement, the tool-version-changes-the-ruleset measurement, and the
+`bd 1.2.2` version pin. Treat `.agents` as an entry point, never as the complete record.
 
-The `.cursor` and `.codex` bodies are nearly identical; measured: `bead-take` and
-`bead-audit` were byte-for-byte the same, and `bead-loop` and `bead-fleet` differed only in
-the cross-reference paths. Preserve those differences when adding a skill:
+Codex custom prompts under `.codex/prompts/` are deprecated. Codex loads the condensed
+repository skills from `.agents/skills/`. Preserve these runtime differences:
 
 - Cross-references point at `.cursor/skills/<name>/SKILL.md`, never across.
-- Refer to a sibling as "the `<name>` skill" (the `.codex` copy says "process").
+- Refer to a sibling as "the `<name>` skill".
 - Paraphrase superpowers skills as "the `<skill>` skill if your environment has one" rather
   than using the `superpowers:<skill>` name the `.claude` copy uses.
 - The body does **not** use a `$ARGUMENTS` variable — spell it out: "the parameters are the
@@ -80,12 +88,13 @@ the cross-reference paths. Preserve those differences when adding a skill:
   read-only subagent", "a todo tool".
 - Everything is written in **English**; this skill set is used internationally.
 
-Check the frontmatter of all fifteen files before committing:
+Check the frontmatter of every command and skill file before committing:
 
 ```bash
 python3 - <<'PY'
 import glob, yaml
-for f in sorted(glob.glob('.claude/commands/*.md') + glob.glob('.cursor/skills/*/SKILL.md') + glob.glob('.codex/prompts/*.md')):
+for f in sorted(glob.glob('.claude/commands/*.md') + glob.glob('.cursor/skills/*/SKILL.md')
+                + glob.glob('.agents/skills/*/SKILL.md')):
     try: yaml.safe_load(open(f, encoding='utf-8').read().split('---')[1]); print('OK  ', f)
     except Exception as e: print('FAIL', f, e)
 PY
