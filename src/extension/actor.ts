@@ -2,10 +2,14 @@
  * Resolving the current user for the sidebar's "Needs You" section.
  *
  * The precedence lives in `shared/actor.ts`; this file only supplies the
- * evidence — the setting, the environment, git, and the OS. It is the one place
- * outside BdService that spawns a process, and deliberately so: `git config
- * user.name` is a read-only identity probe, not a beads operation, and putting
- * it inside BdService would blur what that class is a contract for.
+ * evidence — the setting, the environment, git, and the OS. It is one of two
+ * deliberate places outside BdService that spawn a process (the other is
+ * `fleet/worktree-git.ts`, which reads `git worktree`/`git status` for the
+ * Fleet tab): `git config user.name` here is a read-only identity probe, not
+ * a beads operation, and putting it inside BdService would blur what that
+ * class is a contract for. Each spawn boundary is documented at its own
+ * call site rather than centralized, so grep for `execFile` under
+ * `src/extension/` to find every process-spawn point in the extension host.
  */
 import { execFile } from 'node:child_process';
 import { userInfo } from 'node:os';
