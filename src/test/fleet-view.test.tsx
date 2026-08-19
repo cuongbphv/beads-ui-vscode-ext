@@ -224,6 +224,40 @@ describe('FleetView transcript pane (beads-ui-vscode-ext-37b)', () => {
       params: { targetId: 'agent:agent-a' },
     });
   });
+
+  it('puts the worker list and transcript pane in the same flex-row container, not stacked (beads-ui-vscode-ext-w9a.8)', async () => {
+    const el = await mount();
+    await act(async () =>
+      fire(
+        snapshot({
+          orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+          workers: [
+            {
+              agentId: 'agent-a',
+              sessionId: 'session-1',
+              beadId: null,
+              worktreePath: null,
+              briefSummary: '',
+              lastActivityAt: null,
+              status: 'unknown',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const row = el.querySelector('li[role="button"]') as HTMLElement;
+    await act(async () => row.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    const aside = el.querySelector('aside[aria-label^="Transcript for"]') as HTMLElement;
+    // The nearest `flex` ancestor shared by the aside and the worker row must
+    // be a row container (no `flex-col`) so the transcript pane sits beside
+    // the list at `@3xl`+ instead of stacking underneath it.
+    const rowContainer = aside.closest('div.flex') as HTMLElement;
+    expect(rowContainer).not.toBeNull();
+    expect(rowContainer.className).not.toMatch(/flex-col/);
+    expect(rowContainer.contains(row)).toBe(true);
+  });
 });
 
 describe('FleetView status filter (beads-ui-vscode-ext-w9a.6)', () => {

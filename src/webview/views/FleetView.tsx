@@ -110,7 +110,7 @@ export function FleetView({
   return (
     <div
       ref={containerRef}
-      className="@container relative flex h-full min-h-0 flex-col"
+      className="@container flex h-full min-h-0 flex-col"
       style={{ '--fleet-detail-w': `${detailPx}px` } as CSSProperties}
     >
       {/* Same band wrapper Board/Roadmap use for their own `QuickFilterBar`
@@ -126,52 +126,59 @@ export function FleetView({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <WorkerList
-          snapshot={snapshot}
-          selectedTarget={selectedTarget}
-          onSelectTarget={setSelectedTarget}
-          statusFilter={statusFilter}
-        />
-      </div>
-
-      {selectedTarget ? (
-        <>
-          {/* Narrow: the pane covers the list, so there is nothing to split. */}
-          <Splitter
-            className="hidden @3xl:block"
-            label="Resize transcript panel"
-            size={detailPx}
-            range={detailRange}
-            sign={-1}
-            onChange={onDetailWidthChange}
+      {/* Row, not column: mirrors `App.tsx`'s own `<main className="flex ...">`
+          split so the transcript pane sits *beside* the list at `@3xl`+
+          instead of stacking underneath it. `relative` scopes the narrow-width
+          absolute overlay below to just this row, leaving the filter band above
+          uncovered. */}
+      <div className="relative flex min-h-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <WorkerList
+            snapshot={snapshot}
+            selectedTarget={selectedTarget}
+            onSelectTarget={setSelectedTarget}
+            statusFilter={statusFilter}
           />
-          <div className="absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-[var(--fleet-detail-w)] @3xl:shrink-0">
-            <aside
-              aria-label={`Transcript for ${targetLabel(selectedTarget)}`}
-              className="bg-surface border-border flex h-full min-h-0 w-full flex-col border-l"
-            >
-              <header className="border-border flex items-center gap-2 border-b px-3 py-2">
-                <ScrollText aria-hidden="true" className="text-fg-muted size-3.5 shrink-0" />
-                <span className="text-fg-strong truncate text-sm font-medium">
-                  {targetLabel(selectedTarget)}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Close transcript"
-                  onClick={() => setSelectedTarget(null)}
-                  className="text-fg-muted hover:text-fg surface-interactive ml-auto shrink-0 rounded-sm"
-                >
-                  <X aria-hidden="true" className="size-4" />
-                </button>
-              </header>
-              <div className="min-h-0 flex-1">
-                <Transcript targetId={selectedTarget} />
-              </div>
-            </aside>
-          </div>
-        </>
-      ) : null}
+        </div>
+
+        {selectedTarget ? (
+          <>
+            {/* Narrow: the pane covers the list, so there is nothing to split. */}
+            <Splitter
+              className="hidden @3xl:block"
+              label="Resize transcript panel"
+              size={detailPx}
+              range={detailRange}
+              sign={-1}
+              onChange={onDetailWidthChange}
+            />
+            <div className="absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-[var(--fleet-detail-w)] @3xl:shrink-0">
+              <aside
+                aria-label={`Transcript for ${targetLabel(selectedTarget)}`}
+                className="bg-surface border-border flex h-full min-h-0 w-full flex-col border-l"
+              >
+                <header className="border-border flex items-center gap-2 border-b px-3 py-2">
+                  <ScrollText aria-hidden="true" className="text-fg-muted size-3.5 shrink-0" />
+                  <span className="text-fg-strong truncate text-sm font-medium">
+                    {targetLabel(selectedTarget)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Close transcript"
+                    onClick={() => setSelectedTarget(null)}
+                    className="text-fg-muted hover:text-fg surface-interactive ml-auto shrink-0 rounded-sm"
+                  >
+                    <X aria-hidden="true" className="size-4" />
+                  </button>
+                </header>
+                <div className="min-h-0 flex-1">
+                  <Transcript targetId={selectedTarget} />
+                </div>
+              </aside>
+            </div>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
