@@ -11,6 +11,7 @@ import * as vscode from 'vscode';
 import { resolveDashboardTab } from '../shared/protocol';
 import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
+import { FleetService } from './fleet/FleetService';
 import { DashboardPanel } from './panel/DashboardPanel';
 import { createBeadsStatusBar } from './status-bar';
 import { BeadsStore, bindVisibility } from './store';
@@ -45,6 +46,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   store = new BeadsStore(folder, output);
   context.subscriptions.push(store);
+
+  // Fleet is a parallel data source, never a `bd` operation, so it gets its
+  // own service rather than folding into BeadsStore — see FleetService's own
+  // header doc for why it is allowed to spawn processes at all.
+  const fleetService = new FleetService(folder.uri.fsPath, (message) => output.appendLine(message));
+  context.subscriptions.push(fleetService);
 
   const actor = new ActorResolver(folder.uri.fsPath);
   const tree = new BeadsTreeProvider(store, actor, 'plan');
@@ -97,7 +104,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       .get<string>('defaultTab', 'overview');
     const defaultTab = resolveDashboardTab(rawTab);
 
-    const panel = DashboardPanel.show(context, store!, { revealBead }, defaultTab);
+    const panel = DashboardPanel.show(context, store!, fleetService, { revealBead }, defaultTab);
     if (id) panel.focus(id);
   };
 

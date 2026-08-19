@@ -35,6 +35,7 @@ import {
 import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
+import { FleetView } from './views/FleetView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
@@ -291,11 +292,7 @@ export function App(): ReactNode {
                 onSwimlanesChange={setBoardSwimlanes}
               />
             ) : (
-              <EmptyState
-                icon={<Bot className="size-10" />}
-                title="Fleet is not available yet"
-                hint="Discovery and the transcript view are coming in a later update."
-              />
+              <FleetView />
             )}
           </div>
 

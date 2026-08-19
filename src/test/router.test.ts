@@ -35,7 +35,7 @@ function makeStore(mutations: FakeMutations): BeadsStore {
   return { mutations, queries: {} } as unknown as BeadsStore;
 }
 
-const host: RouterHost = { revealBead: vi.fn() };
+const host: RouterHost = { revealBead: vi.fn(), fleetSubscribe: vi.fn(), fleetUnsubscribe: vi.fn() };
 
 function request(method: string, params: Record<string, unknown>): RpcRequest {
   return { kind: 'request', id: 1, method, params } as unknown as RpcRequest;
@@ -117,29 +117,31 @@ describe('router appendNotes', () => {
   });
 });
 
-describe('router Fleet stubs', () => {
-  it('subscribeFleet returns a clean "not available" RpcError', async () => {
+describe('router Fleet wiring', () => {
+  it('subscribeFleet calls host.fleetSubscribe and returns ok', async () => {
     const response = await handleRequest(
       makeStore(new FakeMutations()),
       host,
       request('subscribeFleet', {}),
     );
 
-    expect(response.ok).toBe(false);
-    if (!response.ok) expect(response.error.message).toBe('not available');
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(host.fleetSubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('unsubscribeFleet returns a clean "not available" RpcError', async () => {
+  it('unsubscribeFleet calls host.fleetUnsubscribe and returns ok', async () => {
     const response = await handleRequest(
       makeStore(new FakeMutations()),
       host,
       request('unsubscribeFleet', {}),
     );
 
-    expect(response.ok).toBe(false);
-    if (!response.ok) expect(response.error.message).toBe('not available');
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(host.fleetUnsubscribe).toHaveBeenCalledTimes(1);
   });
+});
 
+describe('router transcript stubs', () => {
   it('subscribeTranscript returns a clean "not available" RpcError for a valid targetId', async () => {
     const response = await handleRequest(
       makeStore(new FakeMutations()),

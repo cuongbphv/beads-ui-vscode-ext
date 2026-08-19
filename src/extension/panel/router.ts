@@ -21,6 +21,10 @@ import { requireDueDate, requireTargetId } from './param-validation';
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
   revealBead(id: string): void;
+  /** Start forwarding `fleetChanged` to this webview session (`subscribeFleet`). */
+  fleetSubscribe(): void;
+  /** Stop forwarding `fleetChanged` to this webview session (`unsubscribeFleet`). */
+  fleetUnsubscribe(): void;
 }
 
 export async function handleRequest(
@@ -112,15 +116,17 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       await mutations.appendNotes(id(), requireString(params.text, 'text'));
       return { ok: true };
 
-    // Fleet's real data layer (discovery, transcript tailing) is a later bead
-    // (P3); these stubs exist so the webview can wire the whole round trip
-    // now and swap in real data later without touching the protocol again.
     case 'subscribeFleet':
-      throw new Error('not available');
+      host.fleetSubscribe();
+      return { ok: true };
 
     case 'unsubscribeFleet':
-      throw new Error('not available');
+      host.fleetUnsubscribe();
+      return { ok: true };
 
+    // Transcript tailing is a later bead (7uk); this stub exists so the
+    // webview can wire the whole round trip now and swap in real data later
+    // without touching the protocol again.
     case 'subscribeTranscript':
       requireTargetId(params.targetId, 'targetId');
       throw new Error('not available');
