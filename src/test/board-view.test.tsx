@@ -463,3 +463,92 @@ function press(element: Element, init: { key: string; code: string }): void {
     element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
   });
 }
+
+describe('BoardView narrow column switcher', () => {
+  // `PAGE` is 50, so a category only grows a "Load more" button past 50 issues.
+  // Both categories overflow it by the same 10, which is what makes the leak
+  // legible: the button either reads "Load 10 more" or is not there at all.
+  const crowded: Bead[] = [
+    ...rows(60, 'open'),
+    ...rows(60, 'in_progress'),
+  ];
+
+  it('starts each category at its own first page instead of inheriting the previous one', async () => {
+    const root = await mount({ swimlanes: false, beads: crowded });
+
+    // Open, first page: 50 of 60 shown, 10 behind the button.
+    expect(narrow(root).dataset.dropId).toBe('narrow::active');
+    expect(narrow(root).querySelectorAll('article').length).toBe(50);
+    expect(loadMore(root)?.textContent).toContain('10 hidden');
+
+    await act(async () => loadMore(root)?.click());
+    expect(narrow(root).querySelectorAll('article').length).toBe(60);
+    expect(loadMore(root)).toBeNull();
+
+    // Switching category is a different column, not the same one scrolled: In
+    // Progress must open on its own first page, not on Open's raised window.
+    await act(async () => switcher(root, 'In Progress').click());
+
+    expect(narrow(root).dataset.dropId).toBe('narrow::wip');
+    expect(narrow(root).querySelectorAll('article').length).toBe(50);
+    expect(loadMore(root)?.textContent).toContain('10 hidden');
+  });
+
+  it('keeps the swimlane board narrow column on its own first page too', async () => {
+    // One lane, so the lane's columns are the whole board's columns.
+    const root = await mount({ swimlanes: true, beads: crowded });
+
+    const lane = section(root, 'unlabeled lane');
+    expect(narrow(lane).dataset.dropId).toBe('narrow::unlabeled::active');
+    await act(async () => loadMore(lane)?.click());
+    expect(narrow(lane).querySelectorAll('article').length).toBe(60);
+
+    await act(async () => switcher(root, 'In Progress').click());
+
+    const after = section(root, 'unlabeled lane');
+    expect(narrow(after).dataset.dropId).toBe('narrow::unlabeled::wip');
+    expect(narrow(after).querySelectorAll('article').length).toBe(50);
+    expect(loadMore(after)?.textContent).toContain('10 hidden');
+  });
+});
+
+/** `count` beads in one status, titled so they are distinguishable in a failure. */
+function rows(count: number, status: string): Bead[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `${status}-${String(i).padStart(2, '0')}`,
+    title: `${status} issue ${i}`,
+    status,
+    priority: 2,
+    issue_type: 'task',
+  }));
+}
+
+/** The narrow layout's single column, addressed by the id only it uses. */
+function narrow(root: HTMLElement): HTMLElement {
+  const found = root.querySelector<HTMLElement>('[data-drop-id^="narrow::"]');
+  if (!found) throw new Error('narrow column not rendered');
+  return found;
+}
+
+function loadMore(root: HTMLElement): HTMLButtonElement | null {
+  return (
+    [...narrow(root).querySelectorAll('button')].find((button) =>
+      button.textContent?.startsWith('Load '),
+    ) ?? null
+  );
+}
+
+/** A category button from the narrow switcher — `aria-pressed` plus the column's label. */
+function switcher(root: HTMLElement, label: string): HTMLButtonElement {
+  const found = [...root.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')].find(
+    (button) => button.textContent?.startsWith(label),
+  );
+  if (!found) throw new Error(`no switcher button for ${label}`);
+  return found;
+}
+
+function section(root: HTMLElement, label: string): HTMLElement {
+  const found = root.querySelector<HTMLElement>(`section[aria-label^="${label}"]`);
+  if (!found) throw new Error(`no section labelled ${label}`);
+  return found;
+}

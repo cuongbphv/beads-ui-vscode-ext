@@ -329,6 +329,12 @@ export function BoardView({
             <div className="min-h-0 flex-1 @2xl:hidden">
               {narrowColumn ? (
                 <Column
+                  // A category switch is a different column, not the same one
+                  // re-labelled: keying on the category remounts it, so its
+                  // "Load more" window starts at the first page instead of
+                  // inheriting whatever the previously shown category was
+                  // paged out to.
+                  key={narrowColumn.category}
                   column={narrowColumn}
                   dropId={narrowDropId(narrowColumn.category)}
                   onSelect={onSelect}
@@ -426,6 +432,10 @@ function SwimlaneSection({
       <div className="pb-3 @2xl:hidden">
         {narrowColumn ? (
           <Column
+            // Same reason as the flat board's narrow column: remount per
+            // category so the paging window does not carry across the switch.
+            // The lane is already this section's own key.
+            key={narrowColumn.category}
             column={narrowColumn}
             dropId={narrowDropId(laneDropId(swimlane.lane, narrowColumn.category))}
             onSelect={onSelect}
