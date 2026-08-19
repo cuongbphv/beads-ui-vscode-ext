@@ -149,6 +149,56 @@ describe('Transcript — blocks', () => {
   });
 });
 
+describe('Transcript — block colour (beads-ui-vscode-ext-w9a color upgrade)', () => {
+  // Each chip type gets its own theme-derived `--chip-color`, drawn from the
+  // same `--color-chart-*` set Board/Roadmap already use — never a fixed hex
+  // — so a scan down the transcript tells `thinking` apart from `tool_use`
+  // apart from `tool_result` without opening every chip.
+  it.each([
+    ['thinking', { type: 'thinking', thinking: 'reasoning', truncated: false }, 'var(--color-chart-purple)'],
+    ['tool_use', { type: 'tool_use', id: 't1', name: 'Read', input: '{}', truncated: false }, 'var(--color-chart-blue)'],
+    [
+      'tool_result (ok)',
+      { type: 'tool_result', toolUseId: 't1', content: 'ok', isError: false, truncated: false },
+      'var(--color-chart-green)',
+    ],
+  ] as const)('gives a %s chip its own --chip-color', async (_label, block, expectedColor) => {
+    const event = makeEvent({ blocks: [block] });
+    const el = await render(baseState({ events: [event] }));
+
+    const details = el.querySelector('details') as HTMLElement;
+    expect(details.style.getPropertyValue('--chip-color')).toBe(expectedColor);
+  });
+
+  it("overrides a tool_result chip's colour to --color-danger when it errored, not its usual chart colour", async () => {
+    const event = makeEvent({
+      blocks: [{ type: 'tool_result', toolUseId: 't1', content: 'boom', isError: true, truncated: false }],
+    });
+    const el = await render(baseState({ events: [event] }));
+
+    const details = el.querySelector('details') as HTMLElement;
+    expect(details.style.getPropertyValue('--chip-color')).toBe('var(--color-danger)');
+  });
+
+  it('gives an assistant turn the accent colour and a user turn the neutral muted colour', async () => {
+    const el = await render(
+      baseState({
+        events: [
+          makeEvent({ role: 'assistant', blocks: [{ type: 'text', text: 'hi', truncated: false }] }),
+          makeEvent({ role: 'user', blocks: [{ type: 'text', text: 'hi', truncated: false }] }),
+        ],
+      }),
+    );
+
+    const roleLabels = Array.from(el.querySelectorAll('li > span')).filter((span) =>
+      ['user', 'assistant'].includes(span.textContent ?? ''),
+    );
+    expect(roleLabels).toHaveLength(2);
+    expect(roleLabels[0]?.className).toContain('text-accent');
+    expect(roleLabels[1]?.className).toContain('text-fg-muted');
+  });
+});
+
 describe('Transcript — banners', () => {
   it('shows the truncated banner only when truncated is true', async () => {
     const event = makeEvent({ blocks: [{ type: 'text', text: 'hi', truncated: false }] });

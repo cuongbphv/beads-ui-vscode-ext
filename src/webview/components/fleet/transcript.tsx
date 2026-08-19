@@ -20,7 +20,7 @@
  * network access from this file.
  */
 import { AlertTriangle, Bot, Brain, ScrollText, Terminal, Wrench } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import type { TranscriptBlock, TranscriptEvent } from '../../../shared/fleet';
 import { MAX_TRANSCRIPT_EVENTS, useTranscript } from '../../hooks/use-transcript';
@@ -140,10 +140,26 @@ export function Transcript({ targetId }: { targetId: string }): ReactNode {
   );
 }
 
+/**
+ * `assistant` gets the theme's own link/accent hue — the same colour the
+ * editor already uses for "this is the active, clickable thing" — so a
+ * scan down the transcript separates the agent's turns from the operator's
+ * without reading every label. `user`/`other` stay neutral: the human's own
+ * words are the reason the transcript exists and don't need to compete for
+ * attention.
+ */
+const ROLE_CLASS: Record<TranscriptEvent['role'], string> = {
+  user: 'text-fg-muted',
+  assistant: 'text-accent',
+  other: 'text-fg-muted',
+};
+
 function TranscriptEventRow({ event }: { event: TranscriptEvent }): ReactNode {
   return (
     <li className="flex flex-col gap-1.5">
-      <span className="text-fg-muted text-[0.65rem] font-medium tracking-wide uppercase">{event.role}</span>
+      <span className={cn('text-[0.65rem] font-medium tracking-wide uppercase', ROLE_CLASS[event.role])}>
+        {event.role}
+      </span>
       {event.blocks.map((block, index) => (
         <TranscriptBlockView key={index} block={block} />
       ))}
@@ -163,6 +179,25 @@ const CHIP_ICON: Record<Exclude<TranscriptBlock['type'], 'text'>, ReactNode> = {
   tool_use: <Wrench aria-hidden="true" className="size-3.5" />,
   tool_result: <Terminal aria-hidden="true" className="size-3.5" />,
 };
+
+/**
+ * One theme-derived hue per block type, borrowed from the same
+ * `--color-chart-*` set Board/Roadmap already use for chart series — not a
+ * new palette, just this view finally drawing from it. `tool_result` in its
+ * error state overrides to `--color-danger` regardless of this map (see
+ * `chipColor` below): a failed tool call is a danger signal, not a "this is
+ * a tool result" one.
+ */
+const CHIP_COLOR: Record<Exclude<TranscriptBlock['type'], 'text'>, string> = {
+  thinking: 'var(--color-chart-purple)',
+  tool_use: 'var(--color-chart-blue)',
+  tool_result: 'var(--color-chart-green)',
+};
+
+function chipColor(block: Exclude<TranscriptBlock, { type: 'text' }>): string {
+  if (block.type === 'tool_result' && block.isError) return 'var(--color-danger)';
+  return CHIP_COLOR[block.type];
+}
 
 function chipLabel(block: Exclude<TranscriptBlock, { type: 'text' }>): string {
   switch (block.type) {
@@ -188,15 +223,12 @@ function chipBody(block: Exclude<TranscriptBlock, { type: 'text' }>): string {
 
 /** A collapsed-by-default disclosure for a `thinking`/`tool_use`/`tool_result` block. */
 function TranscriptChip({ block }: { block: Exclude<TranscriptBlock, { type: 'text' }> }): ReactNode {
-  const isErrorResult = block.type === 'tool_result' && block.isError;
   return (
-    <details className="border-border rounded-md border text-xs">
-      <summary
-        className={cn(
-          'text-fg-muted hover:text-fg flex cursor-pointer list-none items-center gap-1.5 px-2 py-1',
-          isErrorResult && 'text-danger',
-        )}
-      >
+    <details
+      className="transcript-chip rounded-md border text-xs"
+      style={{ '--chip-color': chipColor(block) } as CSSProperties}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1">
         {CHIP_ICON[block.type]}
         {chipLabel(block)}
         {block.truncated ? <span className="text-fg-muted">(truncated)</span> : null}

@@ -143,6 +143,26 @@
   .type-spine {
     box-shadow: inset 3px 0 0 0 var(--type-color);
   }
+
+  /*
+   * A Fleet transcript block's collapsed chip (thinking/tool_use/tool_result),
+   * coloured by `--chip-color` — one of the theme's own `--color-chart-*`
+   * hues, set inline per block type (see `transcript.tsx`). Same
+   * tint-the-border-and-text, plain-background idiom as `.label-chip`, but
+   * the tint only lives on the summary bar so expanded body text (command
+   * output, thinking prose) stays plain `--color-fg` and legible.
+   */
+  .transcript-chip {
+    overflow: hidden;
+    border-color: color-mix(in oklab, var(--chip-color) 45%, var(--color-border));
+  }
+  .transcript-chip > summary {
+    background: color-mix(in oklab, var(--chip-color) 10%, transparent);
+    color: var(--chip-color);
+  }
+  .transcript-chip > summary:hover {
+    background: color-mix(in oklab, var(--chip-color) 18%, transparent);
+  }
 }
 
 @layer base {
