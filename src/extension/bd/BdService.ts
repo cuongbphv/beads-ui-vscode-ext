@@ -111,6 +111,22 @@ function isMissingCommand(failure: ExecFailure): boolean {
 }
 
 /**
+ * True when `execFile` failed to launch `bdPath` at all, rather than `bd`
+ * itself running and exiting non-zero.
+ *
+ * Node's own error code for "cannot launch this without a shell" is not
+ * stable across versions: measured on Node 22.15.0 on a real Windows machine,
+ * pointing `bdPath` straight at an npm `.cmd` shim raises `EINVAL`, not the
+ * `ENOENT` older assumptions (and other setups) raise for the same shim. Both
+ * mean the same thing — retry through the shell / report bd-not-found — so
+ * both are treated the same here rather than trusting one hardcoded code
+ * never re-measured against a real Windows process.
+ */
+function needsShellRetry(failure: ExecFailure): boolean {
+  return failure.code === 'ENOENT' || failure.code === 'EINVAL';
+}
+
+/**
  * Which failure shape this is.
  *
  * The phrases are bd's, not ours: 1.1.2 says "no beads database found" with a
@@ -151,7 +167,7 @@ export class BdService {
    */
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
-  /** Set once a plain execFile has failed with ENOENT and a shell retry worked. */
+  /** Set once a plain execFile has failed to launch and a shell retry worked. */
   private useShell = false;
 
   constructor(options: BdServiceOptions) {
@@ -235,7 +251,7 @@ export class BdService {
     } catch (error) {
       const failure = error as ExecFailure;
 
-      if (failure.code === 'ENOENT') {
+      if (needsShellRetry(failure)) {
         throw new BdError({
           kind: 'bd-not-found',
           message:
@@ -278,7 +294,7 @@ export class BdService {
     try {
       return await execFileAsync(this.bdPath, args, options);
     } catch (error) {
-      if ((error as ExecFailure).code !== 'ENOENT') throw error;
+      if (!needsShellRetry(error as ExecFailure)) throw error;
       try {
         const viaShell = await execFileAsync(this.bdPath, args, { ...options, shell: true });
         this.useShell = true;
@@ -286,7 +302,7 @@ export class BdService {
         return viaShell;
       } catch (shellError) {
         // The shell could not find it either, so the binary really is absent:
-        // re-throw the original ENOENT rather than the shell's own wording.
+        // re-throw the original ENOENT/EINVAL rather than the shell's own wording.
         if (isMissingCommand(shellError as ExecFailure)) throw error;
         throw shellError;
       }

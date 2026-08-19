@@ -111,68 +111,88 @@ describe('BdService', () => {
     });
   });
 
-  it('reports a missing executable as bd-not-found and names the setting', async () => {
-    impl = fail({ code: 'ENOENT' });
+  it.each(['ENOENT', 'EINVAL'] as const)(
+    'reports a missing executable as bd-not-found and names the setting (code %s)',
+    async (code) => {
+      impl = fail({ code });
 
-    const error = await service()
-      .json(['list'])
-      .catch((cause: unknown) => cause);
+      const error = await service()
+        .json(['list'])
+        .catch((cause: unknown) => cause);
 
-    expect(error).toBeInstanceOf(BdError);
-    expect((error as InstanceType<typeof BdError>).rpcError.kind).toBe('bd-not-found');
-    expect((error as InstanceType<typeof BdError>).rpcError.message).toContain('beadsDashboard.bdPath');
-  });
+      expect(error).toBeInstanceOf(BdError);
+      expect((error as InstanceType<typeof BdError>).rpcError.kind).toBe('bd-not-found');
+      expect((error as InstanceType<typeof BdError>).rpcError.message).toContain('beadsDashboard.bdPath');
+    },
+  );
 
-  it('retries through the shell once, for the Windows .cmd shim', async () => {
-    let attempt = 0;
-    impl = async (_file, _args, options) => {
-      attempt += 1;
-      if (!options.shell) throw Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
-      return { stdout: '[]', stderr: '' };
-    };
+  // Node's own error for "execFile can't launch this without a shell" is not
+  // stable across versions: measured on Node 22.15.0 on a real Windows
+  // machine, pointing bdPath straight at an npm .cmd shim raises EINVAL, not
+  // the ENOENT older Node/other setups raise for the same shim. Both mean
+  // the same thing (retry through the shell), so both are covered here
+  // rather than trusting one hardcoded assumption never re-measured against
+  // a real Windows process.
+  it.each(['ENOENT', 'EINVAL'] as const)(
+    'retries through the shell once, for the Windows .cmd shim (code %s)',
+    async (code) => {
+      let attempt = 0;
+      impl = async (_file, _args, options) => {
+        attempt += 1;
+        if (!options.shell) throw Object.assign(new Error('spawn failed'), { code });
+        return { stdout: '[]', stderr: '' };
+      };
 
-    const bd = service();
-    await bd.json(['list']);
-    expect(attempt).toBe(2);
+      const bd = service();
+      await bd.json(['list']);
+      expect(attempt).toBe(2);
 
-    // The shell answer is remembered, so the doomed attempt is not repeated.
-    await bd.json(['list']);
-    expect(attempt).toBe(3);
-    expect(calls.at(-1)?.options.shell).toBe(true);
-  });
+      // The shell answer is remembered, so the doomed attempt is not repeated.
+      await bd.json(['list']);
+      expect(attempt).toBe(3);
+      expect(calls.at(-1)?.options.shell).toBe(true);
+    },
+  );
 
-  it('still reports bd-not-found when the shell retry says "not recognized"', async () => {
-    // cmd.exe launches even for a missing command and exits 1, so the shell
-    // fallback must not let a genuine ENOENT degrade into a generic bd-error.
-    impl = async (_file, _args, options) => {
-      if (!options.shell) throw Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
-      throw Object.assign(new Error('Command failed'), {
-        code: 1,
-        stdout: '',
-        stderr: "'bd' is not recognized as an internal or external command,\r\n",
+  it.each(['ENOENT', 'EINVAL'] as const)(
+    'still reports bd-not-found when the shell retry says "not recognized" (code %s)',
+    async (code) => {
+      // cmd.exe launches even for a missing command and exits 1, so the shell
+      // fallback must not let a genuine missing-binary failure degrade into a
+      // generic bd-error.
+      impl = async (_file, _args, options) => {
+        if (!options.shell) throw Object.assign(new Error('spawn failed'), { code });
+        throw Object.assign(new Error('Command failed'), {
+          code: 1,
+          stdout: '',
+          stderr: "'bd' is not recognized as an internal or external command,\r\n",
+        });
+      };
+
+      await expect(service().json(['list'])).rejects.toMatchObject({
+        rpcError: { kind: 'bd-not-found' },
       });
-    };
+    },
+  );
 
-    await expect(service().json(['list'])).rejects.toMatchObject({
-      rpcError: { kind: 'bd-not-found' },
-    });
-  });
+  it.each(['ENOENT', 'EINVAL'] as const)(
+    'surfaces a real bd failure from the shell retry unchanged (code %s)',
+    async (code) => {
+      // The shim resolved; bd itself failed. That must stay a bd-error.
+      impl = async (_file, _args, options) => {
+        if (!options.shell) throw Object.assign(new Error('spawn failed'), { code });
+        throw Object.assign(new Error('Command failed'), {
+          code: 1,
+          stdout: '',
+          stderr: 'Error: no such issue: bd-99',
+        });
+      };
 
-  it('surfaces a real bd failure from the shell retry unchanged', async () => {
-    // The shim resolved; bd itself failed. That must stay a bd-error.
-    impl = async (_file, _args, options) => {
-      if (!options.shell) throw Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
-      throw Object.assign(new Error('Command failed'), {
-        code: 1,
-        stdout: '',
-        stderr: 'Error: no such issue: bd-99',
+      await expect(service().json(['show', 'bd-99'])).rejects.toMatchObject({
+        rpcError: { kind: 'bd-error', message: 'no such issue: bd-99' },
       });
-    };
-
-    await expect(service().json(['show', 'bd-99'])).rejects.toMatchObject({
-      rpcError: { kind: 'bd-error', message: 'no such issue: bd-99' },
-    });
-  });
+    },
+  );
 
   it('reports unparseable output as bad-output rather than crashing', async () => {
     impl = ok('not json at all');
