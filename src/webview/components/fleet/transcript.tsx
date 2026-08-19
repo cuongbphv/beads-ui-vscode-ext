@@ -2,9 +2,14 @@
  * The Fleet tab's transcript viewer (Fleet P4): one target's `user`/
  * `assistant` events, streamed live from `useTranscript`.
  *
- * `text` blocks render as plain `pre-wrap` text — no markdown rendering
- * library, per CLAUDE.md's UI rules — so a transcript containing literal
- * `**`/backticks/etc. is shown exactly as written. `thinking`/`tool_use`/
+ * `text` and `thinking` blocks render through `<Markdown>` (`components/
+ * markdown.tsx`) — a hand-rolled, dependency-free renderer that parses to a
+ * plain-data AST and renders React elements directly, never
+ * `dangerouslySetInnerHTML`, because this content is an agent/tool-
+ * controlled channel. `tool_use`/`tool_result` blocks stay plain
+ * `whitespace-pre-wrap` text — markdown has no meaning in a JSON blob or a
+ * command's raw output, and running it through the renderer would corrupt
+ * the very content a reader needs verbatim. `thinking`/`tool_use`/
  * `tool_result` blocks render as collapsed `<details>` chips: the native
  * disclosure widget gives click-to-expand and correct assistive-tech
  * semantics for free, without hand-rolled `aria-expanded` bookkeeping.
@@ -26,6 +31,7 @@ import type { TranscriptBlock, TranscriptEvent } from '../../../shared/fleet';
 import { MAX_TRANSCRIPT_EVENTS, useTranscript } from '../../hooks/use-transcript';
 import { isNearBottom, nextScrollTop } from '../../lib/transcript-scroll';
 import { cn } from '../../lib/utils';
+import { Markdown } from '../markdown';
 import { EmptyState, Skeleton } from '../primitives';
 
 /** Within this many px of the bottom counts as "following" — matches `isNearBottom`'s own default. */
@@ -169,7 +175,7 @@ function TranscriptEventRow({ event }: { event: TranscriptEvent }): ReactNode {
 
 function TranscriptBlockView({ block }: { block: TranscriptBlock }): ReactNode {
   if (block.type === 'text') {
-    return <p className="text-fg text-sm whitespace-pre-wrap">{block.text}</p>;
+    return <Markdown source={block.text} />;
   }
   return <TranscriptChip block={block} />;
 }
@@ -233,7 +239,13 @@ function TranscriptChip({ block }: { block: Exclude<TranscriptBlock, { type: 'te
         {chipLabel(block)}
         {block.truncated ? <span className="text-fg-muted">(truncated)</span> : null}
       </summary>
-      <div className="border-border text-fg border-t px-2 py-1.5 whitespace-pre-wrap">{chipBody(block)}</div>
+      <div className="border-border text-fg border-t px-2 py-1.5">
+        {block.type === 'thinking' ? (
+          <Markdown source={block.thinking} />
+        ) : (
+          <div className="whitespace-pre-wrap">{chipBody(block)}</div>
+        )}
+      </div>
     </details>
   );
 }

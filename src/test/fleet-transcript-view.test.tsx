@@ -96,21 +96,38 @@ describe('Transcript — loading/error/empty', () => {
 });
 
 describe('Transcript — blocks', () => {
-  it('renders a text block as plain pre-wrap text, not through a markdown renderer', async () => {
+  it('renders a text block through the markdown renderer — "**bold**" becomes a real <strong> (reverses the prior plain-text decision, 2026-08-20)', async () => {
     const event = makeEvent({
-      blocks: [{ type: 'text', text: 'plain **not bold** text', truncated: false }],
+      blocks: [{ type: 'text', text: 'plain **bold** text', truncated: false }],
     });
     const el = await render(baseState({ events: [event] }));
 
-    const textNode = Array.from(el.querySelectorAll('p')).find((p) =>
-      p.textContent?.includes('plain **not bold** text'),
-    );
-    expect(textNode).toBeTruthy();
-    // The literal markdown syntax must survive untouched — no <strong>, no <em>.
-    expect(el.querySelector('strong')).toBeNull();
-    // jsdom does not load the real stylesheet, so this checks the utility
-    // class is applied rather than a resolved computed style.
-    expect(textNode?.className).toContain('whitespace-pre-wrap');
+    const strong = el.querySelector('strong');
+    expect(strong?.textContent).toBe('bold');
+    expect(el.textContent).toContain('plain');
+    expect(el.textContent).toContain('bold');
+    expect(el.textContent).toContain('text');
+  });
+
+  it('renders a thinking block through the markdown renderer too', async () => {
+    const event = makeEvent({
+      blocks: [{ type: 'thinking', thinking: 'let **me** think', truncated: false }],
+    });
+    const el = await render(baseState({ events: [event] }));
+
+    const details = el.querySelector('details') as HTMLElement;
+    expect(details.querySelector('strong')?.textContent).toBe('me');
+  });
+
+  it('keeps a tool_use block as plain pre-wrap text — markdown does not apply to it', async () => {
+    const event = makeEvent({
+      blocks: [{ type: 'tool_use', id: 't1', name: 'Read', input: '**not markdown**', truncated: false }],
+    });
+    const el = await render(baseState({ events: [event] }));
+
+    const details = el.querySelector('details') as HTMLElement;
+    expect(details.querySelector('strong')).toBeNull();
+    expect(details.textContent).toContain('**not markdown**');
   });
 
   it('renders a thinking block collapsed by default, as a <details> chip', async () => {
