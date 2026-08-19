@@ -28,7 +28,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   if (!folder) {
     // The tree's viewsWelcome explains what to do; the command still opens so
     // the user gets a real message rather than "command not found".
-    await vscode.commands.executeCommand('setContext', 'beadsDashboard.hasWorkspace', false);
     context.subscriptions.push(
       vscode.commands.registerCommand('beadsDashboard.openDashboard', () =>
         vscode.window.showWarningMessage(
@@ -42,7 +41,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   output.appendLine(`Beads workspace: ${folder.uri.fsPath}`);
-  await vscode.commands.executeCommand('setContext', 'beadsDashboard.hasWorkspace', true);
 
   store = new BeadsStore(folder, output);
   context.subscriptions.push(store);
