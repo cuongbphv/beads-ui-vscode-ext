@@ -42,6 +42,17 @@ Print every selected bead and the reason every candidate was deferred.
 
 ## Isolate and dispatch
 
+Claim every bead in the batch first, in the main tree — one call per bead, before touching
+worktrees:
+
+```bash
+bd update <id> --claim
+```
+
+Skipping this is the reason `bd list --status=in_progress` can show nothing while a worker
+is actively editing a bead: an unclaimed bead stays `open` and looks untouched to any other
+loop or fleet reading the board concurrently.
+
 Create one worktree per bead:
 
 ```bash
@@ -79,11 +90,12 @@ state-sharing suites concurrently.
 ## Failure policy
 
 - Give a failing worker at most two focused fix rounds, then record the verbatim failure,
-  remove its worktree, and continue.
+  release its claim (`bd update <id> --status open -a ""`), remove its worktree, and
+  continue.
 - Resolve ordinary rebase conflicts only with full re-verification. Do not manually resolve
   conflicts in generated files or snapshots.
-- If the composite gate fails, identify and revert only the culprit; reopen and re-note that
-  bead.
+- If the composite gate fails, identify and revert only the culprit; reopen and release its
+  claim the same way, and re-note that bead.
 - Stop for an unresolved decision with no other runnable work, an unattributable composite
   failure, or an unfamiliar `bd`/git error.
 

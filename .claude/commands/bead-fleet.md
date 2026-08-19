@@ -54,6 +54,18 @@ Print the chosen batch **and the reason each deferred bead was deferred**. No si
 
 ## 2. Spawn — all of it in ONE message
 
+**Claim every bead in the batch first, in the main tree** — one call per bead, before
+touching worktrees:
+
+```
+bd update <id> --claim
+```
+
+This is the only thing that makes `bd list --status=in_progress` (and `bd ready` for any
+other `/bead-loop` or `/bead-fleet` running concurrently) reflect reality while the agents
+work. Skip it and a bead sits `open` with an agent silently on it — indistinguishable from
+untouched work, and re-pickable by another loop.
+
 ```
 git worktree add -b work/bead-<id> ../wt-<id> <BASE>
 ```
@@ -124,14 +136,16 @@ The goal: **make progress without a person**, and never merge anything unproven.
 
 - A bead's tests are red → the agent gets at most **2** fix rounds. Still red → drop that
   bead from the batch, `--append-notes` with the *verbatim* error plus the reproduction
-  command, remove the worktree, and **move on to another bead**.
+  command, **release the claim** (`bd update <id> --status open -a ""`) so it does not sit
+  `in_progress` forever, remove the worktree, and **move on to another bead**.
 - A rebase conflict in an **ordinary** file → resolve it in the worktree and re-run §3.3.
 - A rebase conflict in a **generated file or snapshot** → do **NOT** resolve it yourself.
   Drop the bead and append notes. Resolving it wrong here produces a green snapshot whose
   content is false.
 - The composite gate goes red after an ff-only merge → find the culprit with `git bisect`
   over exactly that batch's commit range; `git revert` that bead, `bd update
-  --append-notes`, and reopen it with `bd update <id> --status open`. Do **not**
+  --append-notes`, and reopen it with `bd update <id> --status open -a ""` (clears the
+  claim too — the culprit is unassigned again, not still "yours"). Do **not**
   `git reset --hard` (it would erase the other beads too).
 - Newly discovered debt → `bd create` immediately (with `--parent <epic>` + a classification
   label + the measurable reason). If no epic fits, create one — do not park it in an
