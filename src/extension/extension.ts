@@ -8,7 +8,7 @@
  */
 import * as vscode from 'vscode';
 
-import type { DashboardTab } from '../shared/protocol';
+import { resolveDashboardTab } from '../shared/protocol';
 import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
 import { DashboardPanel } from './panel/DashboardPanel';
@@ -86,9 +86,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   const openDashboard = (id?: string): void => {
-    const defaultTab = vscode.workspace
+    // `.get<string>` rather than `.get<DashboardTab>`: the value on disk is
+    // whatever a past version of this extension (or a hand-edited settings
+    // file) put there, not something the current build's type can vouch for.
+    // `resolveDashboardTab` is what turns that into a tab this build can
+    // actually render — e.g. a leftover `'graph'` from before Graph merged
+    // into Roadmap falls back to `'roadmap'` instead of reaching the webview.
+    const rawTab = vscode.workspace
       .getConfiguration('beadsDashboard')
-      .get<DashboardTab>('defaultTab', 'overview');
+      .get<string>('defaultTab', 'overview');
+    const defaultTab = resolveDashboardTab(rawTab);
 
     const panel = DashboardPanel.show(context, store!, { revealBead }, defaultTab);
     if (id) panel.focus(id);

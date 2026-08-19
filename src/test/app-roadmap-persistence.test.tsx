@@ -197,6 +197,16 @@ describe('App Roadmap persistence integration', () => {
   });
 });
 
+describe('App dashboard tabs', () => {
+  it('no longer offers a separate Graph tab — it is a Roadmap shape now', async () => {
+    const container = await mountApp();
+
+    const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim());
+
+    expect(tabs).toEqual(['Overview', 'Roadmap', 'Board']);
+  });
+});
+
 describe('App detail pane width', () => {
   it('gives the preference back when the panel is wide enough for it again', async () => {
     // Overwriting the stored width on every narrowing destroys the only copy

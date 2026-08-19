@@ -168,9 +168,20 @@ export type HostEvent =
   | { kind: 'event'; name: 'settings'; settings: DashboardSettings }
   | { kind: 'event'; name: 'error'; error: RpcError };
 
-export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'graph';
+export type DashboardTab = 'overview' | 'roadmap' | 'board';
 
-export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board', 'graph'];
+export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board'];
+
+/**
+ * `beadsDashboard.defaultTab` is user-authored config that outlives the
+ * extension version that wrote it. Graph was folded into Roadmap as a shape
+ * rather than a tab, so a saved `'graph'` — or any other value this build no
+ * longer recognises — must resolve to something renderable instead of
+ * reaching the webview unchecked, where it would match no tab at all.
+ */
+export function resolveDashboardTab(value: string): DashboardTab {
+  return (DASHBOARD_TABS as string[]).includes(value) ? (value as DashboardTab) : 'roadmap';
+}
 
 /** Anything the webview may post to the host. */
 export type WebviewMessage = RpcRequest | { kind: 'ready' };

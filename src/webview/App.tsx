@@ -4,14 +4,7 @@
  * The detail pane docks beside the content when the container is wide and takes
  * the whole panel when it is not — same component, no duplicate markup.
  */
-import {
-  AlertCircle,
-  LayoutDashboard,
-  Map as MapIcon,
-  RefreshCw,
-  Columns3,
-  Waypoints,
-} from 'lucide-react';
+import { AlertCircle, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -42,7 +35,6 @@ import {
 import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
-import { GraphView } from './views/GraphView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
@@ -65,7 +57,6 @@ const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
   overview: { label: 'Overview', icon: <LayoutDashboard aria-hidden="true" className="size-4" /> },
   roadmap: { label: 'Roadmap', icon: <MapIcon aria-hidden="true" className="size-4" /> },
   board: { label: 'Board', icon: <Columns3 aria-hidden="true" className="size-4" /> },
-  graph: { label: 'Graph', icon: <Waypoints aria-hidden="true" className="size-4" /> },
 };
 
 export function App(): ReactNode {
@@ -274,7 +265,7 @@ export function App(): ReactNode {
                 gutter={roadmapGutter}
                 onGutterChange={setRoadmapGutter}
               />
-            ) : tab === 'board' ? (
+            ) : (
               <BoardView
                 beads={beads}
                 index={index}
@@ -287,13 +278,6 @@ export function App(): ReactNode {
                 onCollapsedColumnsChange={setCollapsedColumns}
                 swimlanes={boardSwimlanes}
                 onSwimlanesChange={setBoardSwimlanes}
-              />
-            ) : (
-              <GraphView
-                beads={beads}
-                onSelect={onSelect}
-                selectedId={focusedId}
-                blockedIds={blockedIds}
               />
             )}
           </div>
