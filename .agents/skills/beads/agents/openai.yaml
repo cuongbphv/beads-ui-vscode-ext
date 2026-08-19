@@ -2,3 +2,11 @@ interface:
   display_name: "Beads"
   short_description: "Project task tracking with bd"
   default_prompt: "Use $beads to inspect ready work and manage durable project tasks."
+
+# Deliberately true, unlike the five bead-* workflow skills. This is baseline
+# guidance whose own description is written as a trigger ("Use when working in a
+# repository that uses bd..."), so it must stay in the model's context. The
+# workflow skills set false because they write to the real board or create
+# worktrees. Do not copy false here.
+policy:
+  allow_implicit_invocation: true

@@ -7,7 +7,7 @@ in `.agents/skills/`, which is the current Codex Agent Skills discovery path.
 
 | Path | Purpose |
 |---|---|
-| `.agents/skills/beads/SKILL.md` | Baseline Beads task-tracking workflow. |
+| `.agents/skills/beads/SKILL.md` | Baseline Beads task-tracking workflow; `allow_implicit_invocation: true`. |
 | `.agents/skills/bead-*/SKILL.md` | Five explicit Beads workflows: split, take, loop, fleet, and audit. |
 | `.agents/skills/bead-*/agents/openai.yaml` | Codex UI metadata and `allow_implicit_invocation: false`. |
 | `.codex/hooks.json` | Runs `bd codex-hook` on session, prompt, and compaction events. |
@@ -29,9 +29,12 @@ $bead-fleet --batch 3
 $bead-audit epic-123
 ```
 
-All five workflow skills disable implicit invocation in `agents/openai.yaml` because they
-write to the real Beads board or create worktrees. The baseline `$beads` skill remains
-available for ordinary issue tracking.
+All five workflow skills set `allow_implicit_invocation: false` in `agents/openai.yaml`
+because they write to the real Beads board or create worktrees, so Codex must not select
+them on its own. The baseline `$beads` skill sets it to `true` on purpose: its description is
+written as a trigger, and it has to stay in the model's context for ordinary issue tracking.
+The field defaults to `true` when omitted, so the value is spelled out on all six files
+rather than left implicit — do not copy `false` onto the baseline.
 
 ## Workflows
 
