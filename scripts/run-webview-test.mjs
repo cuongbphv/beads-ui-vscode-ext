@@ -117,8 +117,8 @@ async function bdBoardIssues() {
 
 /**
  * Count of `blocks` / `parent-child` edges across the whole board — the same
- * two kinds `graph-layout.ts` renders. The Graph tab's assertion branches on
- * this instead of assuming the board either has or lacks dependencies: a
+ * two kinds `graph-layout.ts` renders. The Roadmap tab's graph-shape assertion
+ * branches on this instead of assuming the board either has or lacks dependencies: a
  * board with none should show the EmptyState, a board with some should show
  * nodes, and guessing wrong either way would make the check meaningless.
  */
@@ -259,7 +259,7 @@ async function main() {
   console.log(`› bd list shows ${visibleIssueCount} issues (what the dashboard itself renders)`);
 
   const graphEdgeCount = countGraphEdges(boardIssues);
-  console.log(`› bd reports ${graphEdgeCount} blocks/parent-child edge(s) for the Graph tab`);
+  console.log(`› bd reports ${graphEdgeCount} blocks/parent-child edge(s) for the Roadmap graph shape`);
 
   const workspaceRoot = await findBeadsWorkspaceRoot();
   if (workspaceRoot !== repoRoot) {
@@ -351,7 +351,7 @@ async function main() {
       `webview header read "${headerText}"`,
     );
 
-    for (const tab of ['Overview', 'Roadmap', 'Board', 'Graph']) {
+    for (const tab of ['Overview', 'Roadmap', 'Board']) {
       check(
         `"${tab}" tab is rendered`,
         await inner
@@ -688,28 +688,37 @@ async function main() {
       await window.waitForTimeout(300);
     }
 
-    // Graph: only beads carrying a `blocks` / `parent-child` edge are drawn
-    // at all (graph-layout.ts), so which branch is correct — nodes or the
+    // Graph used to be its own tab; beads-ui-vscode-ext-615 folded it into the
+    // Roadmap tab as a third shape (`RoadmapView.tsx`'s `role="group"
+    // aria-label="Roadmap shape"` segmented control) alongside Timeline and
+    // List. Only beads carrying a `blocks` / `parent-child` edge are drawn at
+    // all (graph-layout.ts), so which branch is correct — nodes or the
     // EmptyState — depends on whether the real board has any such edge right
     // now, hence branching on `graphEdgeCount` measured up front rather than
     // assuming either shape.
-    await inner.locator('[role="tab"]:has-text("Graph")').first().click();
+    await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
+    await window.waitForTimeout(1000);
+
+    const roadmapShapeGroup = inner.locator('[role="group"][aria-label="Roadmap shape"]');
+    await roadmapShapeGroup.first().waitFor();
+    await roadmapShapeGroup.locator('button:has-text("Graph")').first().click();
     await window.waitForTimeout(1000);
     if (graphEdgeCount > 0) {
-      check('Graph tab renders an svg', (await inner.locator('svg').count()) > 0);
+      check('Roadmap graph shape renders an svg', (await inner.locator('svg').count()) > 0);
       check(
-        'Graph tab renders at least one dependency node',
+        'Roadmap graph shape renders at least one dependency node',
         (await inner.locator('svg [role="button"]').count()) > 0,
       );
       await window.screenshot({ path: join(artifactsDir, 'graph.png') });
     } else {
       check(
-        'Graph tab shows the EmptyState when the board has no dependency edges',
+        'Roadmap graph shape shows the EmptyState when the board has no dependency edges',
         (await inner.locator('text=/No dependencies to show/').count()) > 0,
       );
     }
 
-    await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
+    // Back to the default Timeline shape for the roadmap screenshot below.
+    await roadmapShapeGroup.locator('button:has-text("Timeline")').first().click();
     await window.waitForTimeout(1500);
     await window.screenshot({ path: join(artifactsDir, 'roadmap.png') });
 
