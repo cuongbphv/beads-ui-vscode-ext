@@ -14,5 +14,10 @@ describe('.vscodeignore', () => {
 
     expect(patterns).toContain('.cursor/**');
     expect(patterns).toContain('.superpowers/**');
+    // .velox/ carries agent orchestration state (roadmaps, STATUS.md, run
+    // journals) that is workspace-local and can grow into the hundreds of
+    // KB — real content nothing at runtime reads, and not something meant
+    // for a Marketplace/Open VSX download.
+    expect(patterns).toContain('.velox/**');
   });
 });
