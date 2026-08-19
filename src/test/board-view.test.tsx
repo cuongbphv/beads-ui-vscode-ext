@@ -406,13 +406,39 @@ describe('BoardView keyboard moves', () => {
 
     await act(async () => dnd.onDragStart?.({ active: { id: 'safe-1' } }));
     // The overlay renders a second, non-draggable copy of the picked-up card.
-    expect(root.querySelectorAll('article[aria-label^="safe-1:"]').length).toBeGreaterThan(2);
+    // It is deliberately nameless — see the presentational test below — so the
+    // ghost is counted by what identifies it instead: it is the hidden one.
+    expect(root.querySelectorAll('article[aria-hidden="true"]').length).toBe(1);
 
     expect(dnd.onDragCancel).toBeDefined();
     await act(async () => dnd.onDragCancel?.());
 
+    expect(root.querySelectorAll('article[aria-hidden="true"]').length).toBe(0);
+    // The two real copies — narrow layout and wide — are untouched throughout.
     expect(root.querySelectorAll('article[aria-label^="safe-1:"]').length).toBe(2);
     expect(rpc.calls).toEqual([]);
+  });
+
+  it('renders the overlay copy as decoration: no name, no role, no tab stop', async () => {
+    const root = await mount();
+
+    await act(async () => dnd.onDragStart?.({ active: { id: 'safe-1' } }));
+
+    // The board renders one card per layout (narrow + wide) and that count must
+    // not move when a drag starts: a third element answering to the same name
+    // is a screen reader reading the same issue twice.
+    expect(root.querySelectorAll('[aria-label^="safe-1:"]').length).toBe(2);
+
+    const ghost = root.querySelector('article[aria-hidden="true"]');
+    expect(ghost).not.toBeNull();
+    expect(ghost?.hasAttribute('tabindex')).toBe(false);
+    expect(ghost?.hasAttribute('role')).toBe(false);
+    expect(ghost?.hasAttribute('aria-label')).toBe(false);
+    // The ghost still *shows* the issue; only its semantics are withdrawn.
+    expect(ghost?.textContent).toContain('Auto-applied fix');
+
+    // Nothing focusable may sit inside an aria-hidden subtree.
+    expect(ghost?.querySelectorAll('[tabindex]:not([tabindex="-1"]), a[href], button').length).toBe(0);
   });
 
   it('still opens the issue on enter, which is what enter does on every other card', async () => {

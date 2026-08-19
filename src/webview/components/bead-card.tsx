@@ -37,6 +37,16 @@ export interface CardDrag {
   setActivatorRef: (element: HTMLElement | null) => void;
 }
 
+/**
+ * The attributes that make a card a control rather than a picture.
+ *
+ * A card is normally a button: it has a role, it is a tab stop, and it carries
+ * the issue's accessible name. The one copy that must not be any of those is
+ * the ghost inside `DragOverlay` — see `presentational` below.
+ */
+const CONTROL_ATTRIBUTES = { role: 'button', tabIndex: 0 } as const;
+const GHOST_ATTRIBUTES = { 'aria-hidden': true } as const;
+
 export function BeadCard({
   bead,
   selected,
@@ -44,6 +54,7 @@ export function BeadCard({
   onSelect,
   drag,
   dragging,
+  presentational,
   className,
 }: {
   bead: Bead;
@@ -52,6 +63,23 @@ export function BeadCard({
   onSelect?: (id: string) => void;
   drag?: CardDrag;
   dragging?: boolean;
+  /**
+   * Render this card as a picture of a card, not a card.
+   *
+   * `DragOverlay` renders a second copy of the bead being dragged, and
+   * @dnd-kit/core does nothing to it: its wrapper is a bare
+   * `<div class style>` (`PositionedOverlay`, core.cjs.development.js:3668 —
+   * `createElement(as, { className, style, ref }, children)`), with no
+   * `aria-hidden`, no `inert` and no `tabindex`. Left alone the ghost is a
+   * second `role="button"` tab stop announcing the same name as the real card
+   * that still holds focus. So the ghost drops its role, its name and its
+   * place in the tab order, and hides its whole subtree — it is decoration on
+   * top of a control that exists elsewhere.
+   *
+   * `aria-hidden` and focusability must move together: an `aria-hidden`
+   * subtree containing a tab stop is worse than either problem alone.
+   */
+  presentational?: boolean;
   className?: string;
 }): ReactNode {
   const style = typeStyle(bead.issue_type);
@@ -81,15 +109,14 @@ export function BeadCard({
 
   return (
     <article
-      ref={drag?.setActivatorRef}
-      role="button"
-      tabIndex={0}
-      {...drag?.attributes}
-      {...drag?.listeners}
-      aria-label={`${bead.id}: ${bead.title}`}
-      aria-current={selected ? 'true' : undefined}
-      onClick={() => onSelect?.(bead.id)}
-      onKeyDown={onKeyDown}
+      ref={presentational ? undefined : drag?.setActivatorRef}
+      {...(presentational ? GHOST_ATTRIBUTES : CONTROL_ATTRIBUTES)}
+      {...(presentational ? undefined : drag?.attributes)}
+      {...(presentational ? undefined : drag?.listeners)}
+      aria-label={presentational ? undefined : `${bead.id}: ${bead.title}`}
+      aria-current={!presentational && selected ? 'true' : undefined}
+      onClick={presentational ? undefined : () => onSelect?.(bead.id)}
+      onKeyDown={presentational ? undefined : onKeyDown}
       style={{ '--type-color': style.color } as CSSProperties}
       className={cn(
         'surface-interactive card-raise type-spine group cursor-pointer rounded-md border py-2 pr-2.5 pl-3',

@@ -361,8 +361,14 @@ export function BoardView({
           </>
         )}
 
+        {/*
+          The ghost that follows the pointer. `presentational` is what keeps it
+          a picture: the real card is still mounted in its column, still holds
+          focus and still owns the accessible name, and dnd-kit's overlay
+          wrapper adds no `aria-hidden`, `inert` or `tabindex` of its own.
+        */}
         <DragOverlay dropAnimation={null}>
-          {dragging ? <BeadCard bead={dragging} className="w-64 shadow-lg" /> : null}
+          {dragging ? <BeadCard bead={dragging} presentational className="w-64 shadow-lg" /> : null}
         </DragOverlay>
       </DndContext>
     </div>
