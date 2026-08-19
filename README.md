@@ -163,7 +163,11 @@ The **Fleet** tab answers "what is my agent fleet doing to this workspace right 
 Claude Code sessions are running as orchestrators, which workers they spawned, which git worktrees
 those workers left on disk, and whether a worktree is stale (no worker still claims it, so it is
 either leftover or waiting for review). Click a worker or an orchestrator row to follow its
-transcript live, streamed from the same JSONL file Claude Code itself writes.
+transcript live, streamed from the same JSONL file Claude Code itself writes. Text and thinking
+render through a small hand-rolled markdown renderer — headings, lists, code fences, tables,
+bold/italic, no third-party dependency — parsed to a plain-data AST and drawn as React elements
+directly, never `dangerouslySetInnerHTML`; a transcript is an agent/tool-controlled channel, so
+that renderer is the security boundary, not an afterthought.
 
 Where the data comes from:
 

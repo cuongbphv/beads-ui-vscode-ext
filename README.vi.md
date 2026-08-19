@@ -162,7 +162,11 @@ Tab **Fleet** trả lời câu hỏi "phi đội agent của tôi đang làm gì
 — phiên Claude Code nào đang chạy như orchestrator, chúng đã sinh ra worker nào, các git worktree
 những worker đó để lại trên đĩa, và worktree nào đã cũ (không worker nào còn nhận nó, nên hoặc là
 bỏ quên, hoặc đang chờ review). Bấm vào 1 worker hay 1 orchestrator để xem transcript trực tiếp,
-stream thẳng từ file JSONL mà chính Claude Code ghi ra.
+stream thẳng từ file JSONL mà chính Claude Code ghi ra. Block `text` và `thinking` được render qua
+một markdown renderer tự viết tay — heading, list, code fence, table, bold/italic, không phụ thuộc
+thư viện ngoài — parse ra plain-data AST rồi vẽ trực tiếp thành React element, không bao giờ dùng
+`dangerouslySetInnerHTML`; transcript là kênh do agent/tool kiểm soát, nên renderer này chính là
+lớp bảo vệ, không phải chuyện tiện thể thêm sau.
 
 Dữ liệu lấy từ đâu:
 

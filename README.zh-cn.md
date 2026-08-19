@@ -161,7 +161,10 @@ npm run install:local     # 构建 → 打包 → 安装；然后 reload window
 会话正作为 orchestrator 运行，它们各自派生了哪些 worker，这些 worker 在磁盘上留下了哪些 git
 worktree，以及哪个 worktree 已经过期（没有任何 worker 还在认领它，所以要么是被遗忘了，要么在
 等待review）。点击某个 worker 或 orchestrator 即可实时查看其 transcript，直接从 Claude Code
-自己写入的那份 JSONL 文件里流式读取。
+自己写入的那份 JSONL 文件里流式读取。`text`、`thinking` 这两类 block 会经过一个自己手写、不依赖
+第三方库的 markdown 渲染器 —— 支持标题、列表、代码块、表格、粗体/斜体 —— 先解析成纯数据 AST，
+再直接画成 React element，绝不使用 `dangerouslySetInnerHTML`；transcript 是 agent/tool 可控的
+通道，所以这个渲染器本身就是安全边界，不是事后补上的。
 
 数据来源：
 

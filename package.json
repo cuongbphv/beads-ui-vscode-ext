@@ -2,7 +2,7 @@
   "name": "beads-dashboard",
   "displayName": "Beads Dashboard — Kanban & Roadmap",
   "description": "Dashboard for the beads (bd) issue tracker: Overview, Roadmap and Kanban board, plus an Epic → Task sidebar.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "cuongbphv",
   "license": "MIT",
   "author": "Bùi Phan Viết Cường",

@@ -4,6 +4,45 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-08-20
+
+### Added
+
+- **Fleet monitor — a fourth dashboard tab.** Answers "what is my agent fleet doing to this
+  workspace right now?": which Claude Code sessions are running as orchestrators, which workers
+  they spawned, which git worktrees those workers left on disk, and which worktrees are stale (no
+  worker still claims them). Sessions and workers are read from Claude Code's own transcript store;
+  worktree status comes from `git worktree list` plus `git status`/`git diff --numstat` per
+  worktree — none of it is `bd` data, so none of it goes through `BdService`. A 5-second poll is
+  the always-on baseline, with a `FileSystemWatcher` on `~/.claude/projects` layered on top as a
+  fast path. The worker list sorts by recency and can be filtered by status.
+- **Live transcript streaming.** Click a worker or orchestrator row to follow its transcript live,
+  streamed from the same JSONL file Claude Code itself writes, with follow-mode auto-scroll that
+  releases the moment you scroll up. `thinking`/`tool_use`/`tool_result` render as collapsed,
+  colour-coded `<details>` chips (one theme-derived hue per block type, `--color-danger` when a
+  tool result errored); `text` and `thinking` render through a small hand-rolled markdown renderer
+  — headings, lists, code fences, tables, bold/italic, no third-party dependency — parsed to a
+  plain-data AST and drawn as React elements directly, never `dangerouslySetInnerHTML`, because a
+  transcript is an agent/tool-controlled channel and this view treats it as such.
+- **Move a board card between categories with the keyboard**, not just by dragging, in the narrow
+  (stacked-column) layout — the wide layout's drag-and-drop was already keyboard-reachable via the
+  existing per-card move action; this closes the gap for small panels.
+
+### Fixed
+
+- The worker list and the transcript pane were flex-column siblings instead of a row at `@3xl`+,
+  so the detail panel rendered squeezed under the list instead of beside it.
+- The transcript splitter's `ResizeObserver` never attached when the container was conditionally
+  absent on first render (loading/empty state), so dragging it to resize did nothing; the container
+  now always mounts, matching the rest of the dashboard's own layout pattern.
+- A `tool_use` block's JSON input rendered as one unbroken line; it now pretty-prints with
+  `JSON.stringify(_, null, 2)` so a multi-property input (an Edit's `old_string`/`new_string`, a
+  Bash command plus a description) reads as more than a single scroll-right blob.
+- The orchestrator header's worker count reflected whatever filter was applied to the list instead
+  of the true total.
+- The board's drag ghost sized itself from a hardcoded width instead of the column it was dragged
+  out of.
+
 ## [0.1.4] — 2026-08-18
 
 Documentation and repository housekeeping only — not one line under `src/` differs from
