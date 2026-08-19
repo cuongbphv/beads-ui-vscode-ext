@@ -499,8 +499,10 @@ function Column({
   const [limit, setLimit] = useState(PAGE);
   const accent = CATEGORY_ACCENT[column.category] ?? 'var(--color-fg-muted)';
 
-  // A filter change can shrink a column below the current window; reset so the
-  // "Load more" count never claims more than is there.
+  // A filter change can shrink a column below the current window. There is no
+  // reset on `column.beads` changing — `limit` just stays as-is and this slice
+  // clamps `shown` to whatever is actually there, so `hidden` naturally falls
+  // to 0 instead of claiming more than exists.
   const shown = column.beads.slice(0, limit);
   const hidden = column.beads.length - shown.length;
 
