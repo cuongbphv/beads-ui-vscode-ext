@@ -7,6 +7,7 @@
  */
 import * as vscode from 'vscode';
 
+import type { TranscriptBackfill } from '../../shared/fleet';
 import {
   MUTATING_METHODS,
   type RpcMethodName,
@@ -25,6 +26,15 @@ export interface RouterHost {
   fleetSubscribe(): void;
   /** Stop forwarding `fleetChanged` to this webview session (`unsubscribeFleet`). */
   fleetUnsubscribe(): void;
+  /**
+   * Start following one transcript target (`subscribeTranscript`). Resolves
+   * with the initial backfill; rejects (e.g. an unknown target, or the
+   * containment guard refusing a resolved path) surface as a normal
+   * `RpcError` to the webview.
+   */
+  transcriptSubscribe(targetId: string): Promise<TranscriptBackfill>;
+  /** Stop following a transcript target (`unsubscribeTranscript`). */
+  transcriptUnsubscribe(targetId: string): void;
 }
 
 export async function handleRequest(
@@ -124,16 +134,12 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       host.fleetUnsubscribe();
       return { ok: true };
 
-    // Transcript tailing is a later bead (7uk); this stub exists so the
-    // webview can wire the whole round trip now and swap in real data later
-    // without touching the protocol again.
     case 'subscribeTranscript':
-      requireTargetId(params.targetId, 'targetId');
-      throw new Error('not available');
+      return host.transcriptSubscribe(requireTargetId(params.targetId, 'targetId'));
 
     case 'unsubscribeTranscript':
-      requireTargetId(params.targetId, 'targetId');
-      throw new Error('not available');
+      host.transcriptUnsubscribe(requireTargetId(params.targetId, 'targetId'));
+      return { ok: true };
 
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);

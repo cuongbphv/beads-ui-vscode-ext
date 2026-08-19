@@ -355,3 +355,85 @@ describe('FleetService fleetChanged debounce and dedupe', () => {
     service.dispose();
   });
 });
+
+describe('FleetService transcript path resolution (P4 reuse)', () => {
+  it('resolves an agent target to its subagents file using the session it was discovered under', async () => {
+    await writeSessionFile('session-1', new Date());
+    await writeAgentFile('session-1', 'agent-a', 'no bead here', new Date());
+
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    await service.tick();
+
+    expect(service.filePathFor('agent:agent-a')).toBe(
+      join(projectDir, 'session-1', 'subagents', 'agent-agent-a.jsonl'),
+    );
+    service.dispose();
+  });
+
+  it('resolves a session target to the top-level session transcript', async () => {
+    await writeSessionFile('session-1', new Date());
+    await writeAgentFile('session-1', 'agent-a', 'no bead here', new Date());
+
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    await service.tick();
+
+    expect(service.filePathFor('session:session-1')).toBe(join(projectDir, 'session-1.jsonl'));
+    service.dispose();
+  });
+
+  it('returns null for an agent id that was never discovered', async () => {
+    await writeSessionFile('session-1', new Date());
+    await writeAgentFile('session-1', 'agent-a', 'no bead here', new Date());
+
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    await service.tick();
+
+    expect(service.filePathFor('agent:never-seen')).toBeNull();
+    service.dispose();
+  });
+
+  it('returns null for a session id that is not a known fleet orchestrator', async () => {
+    // A plain session file exists on disk but never got a `subagents` dir, so
+    // discovery never made it an orchestrator — it must not resolve either.
+    await writeSessionFile('ordinary-session', new Date());
+
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    await service.tick();
+
+    expect(service.filePathFor('session:ordinary-session')).toBeNull();
+    service.dispose();
+  });
+
+  it('returns null for a targetId with an unrecognized prefix', async () => {
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    await service.tick();
+
+    expect(service.filePathFor('bogus:whatever')).toBeNull();
+    service.dispose();
+  });
+
+  it('returns null before any scan has run (no cached project directory yet)', () => {
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    expect(service.filePathFor('agent:agent-a')).toBeNull();
+    expect(service.transcriptsBaseDir).toBeNull();
+    service.dispose();
+  });
+
+  it('returns null when the workspace has no matching ~/.claude/projects directory', async () => {
+    const service = new FleetService(cwd, undefined, { projectsRoot: join(root, 'does-not-exist') });
+    await service.tick();
+
+    expect(service.filePathFor('agent:agent-a')).toBeNull();
+    expect(service.transcriptsBaseDir).toBeNull();
+    service.dispose();
+  });
+
+  it('exposes the resolved project directory as transcriptsBaseDir once known', async () => {
+    await writeSessionFile('session-1', new Date());
+    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    await service.tick();
+
+    expect(service.transcriptsBaseDir).toBe(projectDir);
+    service.dispose();
+  });
+});

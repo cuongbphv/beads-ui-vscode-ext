@@ -65,6 +65,8 @@ export class FleetService implements vscode.Disposable {
   private scanning: Promise<void> | undefined;
   private lastEmittedComparable: string | undefined;
   private current: FleetSnapshot | undefined;
+  /** The on-disk directory name matching `cwd`, cached from the last successful scan (P4's transcript resolution). */
+  private projectDirName: string | null = null;
 
   private readonly emitter = new vscode.EventEmitter<FleetSnapshot>();
   /** Fires with a fresh snapshot — debounced and skipped on no real change; see `maybeEmit`. */
@@ -85,6 +87,44 @@ export class FleetService implements vscode.Disposable {
   /** The last snapshot computed, if any — for a fresh subscriber to catch up on without waiting for a tick. */
   get snapshot(): FleetSnapshot | undefined {
     return this.current;
+  }
+
+  /**
+   * The directory every transcript path this service resolves must live
+   * under — `TranscriptTailer`'s containment-check base. `null` until at
+   * least one scan has found the project directory matching `cwd`.
+   */
+  get transcriptsBaseDir(): string | null {
+    return this.projectDirName ? join(this.projectsRoot, this.projectDirName) : null;
+  }
+
+  /**
+   * Resolve a transcript `targetId` (`agent:<agentId>` or `session:<sessionId>`,
+   * per `TranscriptTarget`) to the absolute path of its transcript file, using
+   * the session/worker associations the last scan already discovered — never
+   * a fresh directory walk (Fleet P4 reuses P3's discovery here rather than
+   * re-deriving it). Returns `null` when the project directory, or the
+   * specific agent/session, is not (yet) known.
+   */
+  filePathFor(targetId: string): string | null {
+    if (!this.projectDirName) return null;
+    const projectPath = join(this.projectsRoot, this.projectDirName);
+
+    if (targetId.startsWith('agent:')) {
+      const agentId = targetId.slice('agent:'.length);
+      const worker = this.current?.workers.find((candidate) => candidate.agentId === agentId);
+      if (!worker) return null;
+      return join(projectPath, worker.sessionId, 'subagents', `agent-${agentId}.jsonl`);
+    }
+
+    if (targetId.startsWith('session:')) {
+      const sessionId = targetId.slice('session:'.length);
+      const orchestrator = this.current?.orchestrators.find((candidate) => candidate.sessionId === sessionId);
+      if (!orchestrator) return null;
+      return join(projectPath, `${sessionId}.jsonl`);
+    }
+
+    return null;
   }
 
   /**
@@ -179,12 +219,14 @@ export class FleetService implements vscode.Disposable {
       const entries = await fs.readdir(this.projectsRoot, { withFileTypes: true });
       projectDirNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     } catch (error) {
+      this.projectDirName = null;
       if (isEnoent(error)) return { orchestrators: [], workers: [], degraded: { reason: 'no-claude-dir' } };
       this.log(`fleet discovery: could not read ${this.projectsRoot}: ${errorMessage(error)}`);
       return { orchestrators: [], workers: [], degraded: { reason: 'no-claude-dir' } };
     }
 
     const projectDirName = findProjectDirFor(projectDirNames, this.cwd);
+    this.projectDirName = projectDirName;
     if (!projectDirName) return { orchestrators: [], workers: [] };
 
     const projectPath = join(this.projectsRoot, projectDirName);

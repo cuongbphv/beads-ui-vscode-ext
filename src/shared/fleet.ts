@@ -126,4 +126,10 @@ export interface TranscriptBackfill {
   /** True when the backfill window was smaller than the whole transcript file. */
   truncated: boolean;
   totalBytes: number;
+  /**
+   * Set when more than half the lines in the backfilled window failed to
+   * parse — the transcript format is an unofficial contract, so this is a
+   * "the data may be incomplete" signal for the UI rather than a thrown error.
+   */
+  degraded?: boolean;
 }

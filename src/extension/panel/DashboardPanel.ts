@@ -5,8 +5,10 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
 
+import type { TranscriptBackfill } from '../../shared/fleet';
 import { isRpcRequest, type DashboardTab, type HostEvent } from '../../shared/protocol';
 import type { FleetService } from '../fleet/FleetService';
+import { TranscriptTailer, type TranscriptResolution } from '../fleet/TranscriptTailer';
 import { bindVisibility, type BeadsStore } from '../store';
 import { handleRequest, isMutation, type RouterHost } from './router';
 
@@ -54,6 +56,14 @@ export class DashboardPanel implements vscode.Disposable {
   private fleetSubscribed = false;
   /** Non-`undefined` exactly while `fleet.observe()` is held for this panel; see `syncFleetObservation`. */
   private fleetHold: vscode.Disposable | undefined;
+  /**
+   * One tailer per panel — the Fleet tab only ever shows one transcript at a
+   * time, and `TranscriptTailer` itself already enforces "a new subscribe
+   * replaces the old one" (see its own class doc). Path resolution reuses
+   * `fleet.filePathFor`/`fleet.transcriptsBaseDir` rather than re-deriving
+   * `~/.claude/projects` layout here.
+   */
+  private readonly transcriptTailer: TranscriptTailer;
 
   private constructor(
     context: vscode.ExtensionContext,
@@ -65,6 +75,8 @@ export class DashboardPanel implements vscode.Disposable {
   ) {
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'activity-bar.svg');
     panel.webview.html = this.render(context, panel.webview);
+
+    this.transcriptTailer = new TranscriptTailer((targetId) => this.resolveTranscriptTarget(targetId));
 
     this.disposables.push(
       panel.webview.onDidReceiveMessage((message: unknown) => void this.onMessage(message)),
@@ -116,6 +128,40 @@ export class DashboardPanel implements vscode.Disposable {
   /** `RouterHost.revealBead`: delegates to the extension-level host supplied at construction. */
   revealBead(id: string): void {
     this.host.revealBead(id);
+  }
+
+  /**
+   * `RouterHost.transcriptSubscribe`: start (or switch) this panel's single
+   * transcript tail. `TranscriptTailer.subscribe` itself cancels whatever was
+   * previously tailed, so there is nothing extra to release here first.
+   */
+  transcriptSubscribe(targetId: string): Promise<TranscriptBackfill> {
+    return this.transcriptTailer.subscribe(targetId, (payload) => {
+      this.post({
+        kind: 'event',
+        name: 'transcriptAppend',
+        targetId,
+        events: payload.events,
+        totalBytes: payload.totalBytes,
+        ...(payload.degraded ? { degraded: true } : {}),
+      });
+    });
+  }
+
+  /** `RouterHost.transcriptUnsubscribe`: stop tailing, if `targetId` is still the active one. */
+  transcriptUnsubscribe(targetId: string): void {
+    this.transcriptTailer.unsubscribe(targetId);
+  }
+
+  /**
+   * Resolve a transcript `targetId` to the file/base-directory pair
+   * `TranscriptTailer` needs, reusing `FleetService`'s already-discovered
+   * session/worker associations (Fleet P3) rather than re-deriving them.
+   */
+  private resolveTranscriptTarget(targetId: string): TranscriptResolution | null {
+    const filePath = this.fleet.filePathFor(targetId);
+    const baseDir = this.fleet.transcriptsBaseDir;
+    return filePath && baseDir ? { filePath, baseDir } : null;
   }
 
   /**
@@ -229,6 +275,7 @@ export class DashboardPanel implements vscode.Disposable {
     DashboardPanel.current = undefined;
     this.fleetHold?.dispose();
     this.fleetHold = undefined;
+    this.transcriptTailer.dispose();
     for (const disposable of this.disposables) disposable.dispose();
     this.panel.dispose();
   }

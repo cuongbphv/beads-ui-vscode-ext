@@ -199,6 +199,8 @@ export type HostEvent =
       targetId: string;
       events: TranscriptEvent[];
       totalBytes: number;
+      /** See `TranscriptBackfill.degraded` — the same schema-drift signal, for a later batch. */
+      degraded?: boolean;
     };
 
 export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'fleet';
