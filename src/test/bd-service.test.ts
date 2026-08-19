@@ -201,6 +201,25 @@ describe('BdService', () => {
     expect(spawned).toBe(1);
   });
 
+  it('does not coalesce two argv lists that only a space-joined key would confuse', async () => {
+    let spawned = 0;
+    impl = async () => {
+      spawned += 1;
+      return { stdout: '[]', stderr: '' };
+    };
+
+    const bd = service();
+    // These two join to the SAME key under a space separator, yet they are
+    // different commands. The NUL separator keeps them apart, because a NUL
+    // cannot occur inside an argv element.
+    await Promise.all([
+      bd.jsonShared(['list', '--status', 'open closed']),
+      bd.jsonShared(['list', '--status open', 'closed']),
+    ]);
+
+    expect(spawned).toBe(2);
+  });
+
   it('does not append --json to a mutating command', async () => {
     impl = ok('updated bd-1');
 
