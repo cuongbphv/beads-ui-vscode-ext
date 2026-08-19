@@ -15,13 +15,18 @@
  * covering the whole tab below that — same `Splitter`, same clamp/range
  * maths (`lib/drag-resize.ts`), just measured against this view's own
  * container instead of the whole dashboard's.
+ *
+ * The status filter above the list (beads-ui-vscode-ext-w9a.6) is owned here
+ * and persisted by `App.tsx` alongside `fleetDetailWidth`; `WorkerList` itself
+ * stays a pure function of `snapshot` + `statusFilter`.
  */
 import { Bot, ScrollText, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
+import { FLEET_STATUS_FILTERS, type FleetStatusFilter } from '../../shared/fleet-filter';
 import { Transcript } from '../components/fleet/transcript';
 import { WorkerList } from '../components/fleet/worker-list';
-import { EmptyState, Skeleton } from '../components/primitives';
+import { EmptyState, Select, Skeleton } from '../components/primitives';
 import { Splitter } from '../components/splitter';
 import { useFleet } from '../hooks/use-fleet';
 import { clamp, DETAIL_MIN_PX, detailMaxWidth, type Range } from '../lib/drag-resize';
@@ -33,13 +38,29 @@ function targetLabel(targetId: string): string {
   return targetId;
 }
 
+const STATUS_FILTER_LABELS: Record<FleetStatusFilter, string> = {
+  all: 'All statuses',
+  running: 'Running',
+  idle: 'Idle',
+};
+
+const STATUS_FILTER_OPTIONS = FLEET_STATUS_FILTERS.map((value) => ({
+  value,
+  label: STATUS_FILTER_LABELS[value],
+}));
+
 export function FleetView({
   detailWidth,
   onDetailWidthChange,
+  statusFilter,
+  onStatusFilterChange,
 }: {
   /** Persisted width (px) for the transcript side panel; see `App.tsx`'s `fleetDetailWidth`. */
   detailWidth: number;
   onDetailWidthChange: (px: number) => void;
+  /** Persisted worker status filter; see `App.tsx`'s `fleetStatusFilter`. */
+  statusFilter: FleetStatusFilter;
+  onStatusFilterChange: (filter: FleetStatusFilter) => void;
 }): ReactNode {
   const { snapshot, loading } = useFleet();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
@@ -92,8 +113,26 @@ export function FleetView({
       className="@container relative flex h-full min-h-0 flex-col"
       style={{ '--fleet-detail-w': `${detailPx}px` } as CSSProperties}
     >
+      {/* Same band wrapper Board/Roadmap use for their own `QuickFilterBar`
+          (`border-border border-b px-3 py-2`), and the same compact `Select`
+          Roadmap's own Sort/Zoom trailing controls use — the Fleet tab has no
+          text query to filter, so a single picker fills the whole band. */}
+      <div className="border-border flex items-center gap-2 border-b px-3 py-2">
+        <Select
+          label="Status"
+          value={statusFilter}
+          onChange={(value) => onStatusFilterChange(value as FleetStatusFilter)}
+          options={STATUS_FILTER_OPTIONS}
+        />
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <WorkerList snapshot={snapshot} selectedTarget={selectedTarget} onSelectTarget={setSelectedTarget} />
+        <WorkerList
+          snapshot={snapshot}
+          selectedTarget={selectedTarget}
+          onSelectTarget={setSelectedTarget}
+          statusFilter={statusFilter}
+        />
       </div>
 
       {selectedTarget ? (

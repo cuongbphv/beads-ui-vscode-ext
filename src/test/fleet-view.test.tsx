@@ -15,6 +15,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FleetSnapshot, TranscriptBackfill } from '../shared/fleet';
+import type { FleetStatusFilter } from '../shared/fleet-filter';
 import type { HostEvent } from '../shared/protocol';
 
 declare global {
@@ -98,12 +99,21 @@ afterEach(async () => {
   rpc.listeners.clear();
 });
 
-async function mount(): Promise<HTMLElement> {
+async function mount(
+  options: { statusFilter?: FleetStatusFilter; onStatusFilterChange?: (filter: FleetStatusFilter) => void } = {},
+): Promise<HTMLElement> {
   container = document.createElement('div');
   document.body.append(container);
   mounted = createRoot(container);
   await act(async () =>
-    mounted?.render(createElement(FleetView, { detailWidth: 384, onDetailWidthChange: () => {} })),
+    mounted?.render(
+      createElement(FleetView, {
+        detailWidth: 384,
+        onDetailWidthChange: () => {},
+        statusFilter: options.statusFilter ?? 'all',
+        onStatusFilterChange: options.onStatusFilterChange ?? (() => {}),
+      }),
+    ),
   );
   return container;
 }
@@ -213,5 +223,87 @@ describe('FleetView transcript pane (beads-ui-vscode-ext-37b)', () => {
       method: 'unsubscribeTranscript',
       params: { targetId: 'agent:agent-a' },
     });
+  });
+});
+
+describe('FleetView status filter (beads-ui-vscode-ext-w9a.6)', () => {
+  it('narrows the visible workers and reports the choice to onStatusFilterChange', async () => {
+    const onStatusFilterChange = vi.fn();
+    const el = await mount({ statusFilter: 'all', onStatusFilterChange });
+
+    await act(async () =>
+      fire(
+        snapshot({
+          orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a', 'agent-b'], lastActivityAt: null }],
+          workers: [
+            {
+              agentId: 'agent-running',
+              sessionId: 'session-1',
+              beadId: null,
+              worktreePath: null,
+              briefSummary: '',
+              lastActivityAt: null,
+              status: 'running',
+            },
+            {
+              agentId: 'agent-idle',
+              sessionId: 'session-1',
+              beadId: null,
+              worktreePath: null,
+              briefSummary: '',
+              lastActivityAt: null,
+              status: 'idle',
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(el.querySelectorAll('li[role="button"]')).toHaveLength(2);
+
+    const select = el.querySelector('select[aria-label="Status"]') as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    await act(async () => {
+      select.value = 'running';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(onStatusFilterChange).toHaveBeenCalledWith('running');
+  });
+
+  it('actually narrows the rendered list when statusFilter="running" is passed in', async () => {
+    const el = await mount({ statusFilter: 'running' });
+
+    await act(async () =>
+      fire(
+        snapshot({
+          orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a', 'agent-b'], lastActivityAt: null }],
+          workers: [
+            {
+              agentId: 'agent-running',
+              sessionId: 'session-1',
+              beadId: null,
+              worktreePath: null,
+              briefSummary: '',
+              lastActivityAt: null,
+              status: 'running',
+            },
+            {
+              agentId: 'agent-idle',
+              sessionId: 'session-1',
+              beadId: null,
+              worktreePath: null,
+              briefSummary: '',
+              lastActivityAt: null,
+              status: 'idle',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const rows = Array.from(el.querySelectorAll('li[role="button"]'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('aria-label')).toContain('agent-running');
   });
 });

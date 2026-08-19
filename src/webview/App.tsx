@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import type { FleetStatusFilter } from '../shared/fleet-filter';
 import type { BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
 import type { RoadmapSort } from '../shared/roadmap-sort';
@@ -26,6 +27,11 @@ import { Splitter } from './components/splitter';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import {
+  persistedFleetPreferences,
+  restoreFleetPreferences,
+  type PersistedFleetPreferences,
+} from './lib/fleet-preferences';
 import { clamp, DETAIL_DEFAULT_PX, DETAIL_MIN_PX, detailMaxWidth, type Range } from './lib/drag-resize';
 import {
   persistedRoadmapPreferences,
@@ -39,7 +45,7 @@ import { FleetView } from './views/FleetView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
-interface PersistedState extends PersistedRoadmapPreferences {
+interface PersistedState extends PersistedRoadmapPreferences, PersistedFleetPreferences {
   tab: DashboardTab;
   query: BeadQuery;
   /** Absent until the user first folds or unfolds a board column. */
@@ -66,6 +72,7 @@ const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
 export function App(): ReactNode {
   const saved = restore<PersistedState>();
   const restoredRoadmap = restoreRoadmapPreferences(saved);
+  const restoredFleet = restoreFleetPreferences(saved);
   const { snapshot, index, error, loading, focusedId, setFocusedId, refresh } = useBeads();
 
   const [tab, setTab] = useState<DashboardTab>(saved?.tab ?? 'overview');
@@ -84,6 +91,7 @@ export function App(): ReactNode {
   // measured against `FleetView`'s own container, not `mainWidth` below,
   // since it is the only tab with its own list+detail split.
   const [fleetDetailWidth, setFleetDetailWidth] = useState(saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX);
+  const [fleetStatusFilter, setFleetStatusFilter] = useState<FleetStatusFilter>(restoredFleet.statusFilter);
   const mainRef = useRef<HTMLElement>(null);
   const [mainWidth, setMainWidth] = useState(0);
 
@@ -125,6 +133,7 @@ export function App(): ReactNode {
         }),
         detailWidth,
         fleetDetailWidth,
+        ...persistedFleetPreferences({ statusFilter: fleetStatusFilter }),
       }),
     [
       tab,
@@ -138,6 +147,7 @@ export function App(): ReactNode {
       roadmapGutter,
       detailWidth,
       fleetDetailWidth,
+      fleetStatusFilter,
     ],
   );
 
@@ -290,7 +300,12 @@ export function App(): ReactNode {
                 onSwimlanesChange={setBoardSwimlanes}
               />
             ) : (
-              <FleetView detailWidth={fleetDetailWidth} onDetailWidthChange={setFleetDetailWidth} />
+              <FleetView
+                detailWidth={fleetDetailWidth}
+                onDetailWidthChange={setFleetDetailWidth}
+                statusFilter={fleetStatusFilter}
+                onStatusFilterChange={setFleetStatusFilter}
+              />
             )}
           </div>
 

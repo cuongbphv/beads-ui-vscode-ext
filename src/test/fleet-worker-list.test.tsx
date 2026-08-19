@@ -11,6 +11,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { FleetSnapshot, FleetWorker, FleetWorktree } from '../shared/fleet';
+import type { FleetStatusFilter } from '../shared/fleet-filter';
 import { WorkerList } from '../webview/components/fleet/worker-list';
 
 declare global {
@@ -35,7 +36,11 @@ afterEach(async () => {
 
 async function render(
   snapshot: FleetSnapshot,
-  options: { selectedTarget?: string | null; onSelectTarget?: (targetId: string) => void } = {},
+  options: {
+    selectedTarget?: string | null;
+    onSelectTarget?: (targetId: string) => void;
+    statusFilter?: FleetStatusFilter;
+  } = {},
 ): Promise<HTMLElement> {
   container = document.createElement('div');
   document.body.append(container);
@@ -46,6 +51,7 @@ async function render(
         snapshot,
         selectedTarget: options.selectedTarget ?? null,
         onSelectTarget: options.onSelectTarget ?? (() => {}),
+        statusFilter: options.statusFilter,
       }),
     ),
   );
@@ -298,5 +304,104 @@ describe('WorkerList selection (beads-ui-vscode-ext-37b)', () => {
     );
 
     expect(el.querySelectorAll('[aria-current]')).toHaveLength(0);
+  });
+});
+
+describe('WorkerList recency order (beads-ui-vscode-ext-w9a.6)', () => {
+  it('lists workers under an orchestrator most-recently-active first', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [
+          { sessionId: 'session-1', workerIds: ['agent-a', 'agent-b', 'agent-c'], lastActivityAt: null },
+        ],
+        workers: [
+          // Deliberately out of order on input.
+          worker({ agentId: 'agent-oldest', lastActivityAt: '2026-01-01T00:00:00.000Z' }),
+          worker({ agentId: 'agent-newest', lastActivityAt: '2026-03-01T00:00:00.000Z' }),
+          worker({ agentId: 'agent-no-time', lastActivityAt: null }),
+          worker({ agentId: 'agent-middle', lastActivityAt: '2026-02-01T00:00:00.000Z' }),
+        ],
+      }),
+    );
+
+    const rows = Array.from(el.querySelectorAll('li[role="button"]'));
+    const order = rows.map((row) => row.getAttribute('aria-label'));
+    expect(order[0]).toContain('agent-newest');
+    expect(order[1]).toContain('agent-middle');
+    expect(order[2]).toContain('agent-oldest');
+    expect(order[3]).toContain('agent-no-time');
+  });
+
+  it('lists orchestrator sections most-recently-active first', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [
+          { sessionId: 'oldest-session', workerIds: [], lastActivityAt: '2026-01-01T00:00:00.000Z' },
+          { sessionId: 'newest-session', workerIds: [], lastActivityAt: '2026-03-01T00:00:00.000Z' },
+        ],
+      }),
+    );
+
+    const headers = Array.from(el.querySelectorAll('header[role="button"]'));
+    expect(headers[0]?.getAttribute('aria-label')).toContain('newest-session');
+    expect(headers[1]?.getAttribute('aria-label')).toContain('oldest-session');
+  });
+});
+
+describe('WorkerList status filter (beads-ui-vscode-ext-w9a.6)', () => {
+  it('shows every worker when the filter is "all" (the default)', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a', 'agent-b'], lastActivityAt: null }],
+        workers: [
+          worker({ agentId: 'agent-a', status: 'running' }),
+          worker({ agentId: 'agent-b', status: 'idle' }),
+        ],
+      }),
+    );
+
+    expect(el.querySelectorAll('li[role="button"]')).toHaveLength(2);
+  });
+
+  it('narrows to only running workers under the "running" filter', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [
+          { sessionId: 'session-1', workerIds: ['agent-a', 'agent-b', 'agent-c'], lastActivityAt: null },
+        ],
+        workers: [
+          worker({ agentId: 'agent-running', status: 'running' }),
+          worker({ agentId: 'agent-idle', status: 'idle' }),
+          worker({ agentId: 'agent-unknown', status: 'unknown' }),
+        ],
+      }),
+      { statusFilter: 'running' },
+    );
+
+    const rows = Array.from(el.querySelectorAll('li[role="button"]'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('aria-label')).toContain('agent-running');
+  });
+
+  it('narrows to idle and unknown workers under the "idle" filter', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [
+          { sessionId: 'session-1', workerIds: ['agent-a', 'agent-b', 'agent-c'], lastActivityAt: null },
+        ],
+        workers: [
+          worker({ agentId: 'agent-running', status: 'running' }),
+          worker({ agentId: 'agent-idle', status: 'idle' }),
+          worker({ agentId: 'agent-unknown', status: 'unknown' }),
+        ],
+      }),
+      { statusFilter: 'idle' },
+    );
+
+    const rows = Array.from(el.querySelectorAll('li[role="button"]'));
+    const labels = rows.map((row) => row.getAttribute('aria-label'));
+    expect(rows).toHaveLength(2);
+    expect(labels.some((label) => label?.includes('agent-idle'))).toBe(true);
+    expect(labels.some((label) => label?.includes('agent-unknown'))).toBe(true);
   });
 });

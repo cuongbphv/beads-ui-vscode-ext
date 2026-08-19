@@ -15,11 +15,17 @@
  * `use-fleet.ts` via the RPC bridge. This component never touches
  * `child_process`, the filesystem, or the network — the cardinal sin the
  * dashboard's webview half exists to never commit.
+ *
+ * Ordering and the status filter (beads-ui-vscode-ext-w9a.6) are both pure
+ * functions from `shared/` (`sortByRecency`, `filterWorkersByStatus`) applied
+ * here rather than inline, so they stay testable without mounting React.
  */
 import { Bot, GitBranch, User } from 'lucide-react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
 import type { FleetSnapshot, FleetWorker } from '../../../shared/fleet';
+import { filterWorkersByStatus, type FleetStatusFilter } from '../../../shared/fleet-filter';
+import { sortByRecency } from '../../../shared/fleet-sort';
 import { cn, relativeTime } from '../../lib/utils';
 import { EmptyState } from '../primitives';
 import { GitChanges } from './git-changes';
@@ -52,11 +58,14 @@ export function WorkerList({
   snapshot,
   selectedTarget,
   onSelectTarget,
+  statusFilter = 'all',
 }: {
   snapshot: FleetSnapshot;
   /** The `TranscriptTarget` string currently shown in the detail pane, or `null` when none is. */
   selectedTarget: string | null;
   onSelectTarget: (targetId: string) => void;
+  /** Narrows which workers are listed under each orchestrator. Defaults to 'all'. */
+  statusFilter?: FleetStatusFilter;
 }): ReactNode {
   if (snapshot.degraded) {
     return (
@@ -72,6 +81,11 @@ export function WorkerList({
   const orphanPaths = new Set(snapshot.orphanWorktrees);
   const staleWorktrees = snapshot.worktrees.filter((worktree) => orphanPaths.has(worktree.path));
 
+  // Most recently active first; the status filter only ever narrows which
+  // workers show up under their (still recency-sorted) orchestrator.
+  const orchestrators = sortByRecency(snapshot.orchestrators);
+  const sortedWorkers = filterWorkersByStatus(sortByRecency(snapshot.workers), statusFilter);
+
   if (snapshot.orchestrators.length === 0 && staleWorktrees.length === 0) {
     return (
       <EmptyState
@@ -84,8 +98,8 @@ export function WorkerList({
 
   return (
     <div className="flex flex-col gap-4 p-3">
-      {snapshot.orchestrators.map((orchestrator) => {
-        const workers = snapshot.workers.filter((worker) => worker.sessionId === orchestrator.sessionId);
+      {orchestrators.map((orchestrator) => {
+        const workers = sortedWorkers.filter((worker) => worker.sessionId === orchestrator.sessionId);
         const sessionTarget = `session:${orchestrator.sessionId}`;
         const sessionSelected = selectedTarget === sessionTarget;
         return (
