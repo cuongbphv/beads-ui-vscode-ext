@@ -86,7 +86,14 @@ function parseBlock(raw: unknown): TranscriptBlock | null {
     case 'tool_use': {
       let serialized: string;
       try {
-        serialized = JSON.stringify(block.input ?? {});
+        // Indented, not compact: a multi-property input (an Edit's
+        // old_string/new_string, a Bash command plus a description) reads as
+        // one unbroken line otherwise. This does not decode the `\n` a real
+        // newline inside one of those string values still serializes to —
+        // that escape is what makes the result valid JSON — but it does put
+        // each property on its own line, which is the part a reader actually
+        // scans for.
+        serialized = JSON.stringify(block.input ?? {}, null, 2);
       } catch {
         serialized = '';
       }

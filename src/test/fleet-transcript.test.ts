@@ -83,8 +83,46 @@ describe('parseTranscriptLine', () => {
       }),
     );
     expect(event?.blocks).toEqual([
-      { type: 'tool_use', id: 'call_1', name: 'Read', input: JSON.stringify({ path: 'a.ts' }), truncated: false },
+      {
+        type: 'tool_use',
+        id: 'call_1',
+        name: 'Read',
+        input: JSON.stringify({ path: 'a.ts' }, null, 2),
+        truncated: false,
+      },
     ]);
+  });
+
+  it('pretty-prints a multi-property tool_use input across lines instead of one unbroken blob', () => {
+    const event = parseTranscriptLine(
+      line({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'call_edit',
+              name: 'Edit',
+              input: { file_path: 'a.ts', old_string: 'line one\nline two', new_string: 'line one\nline three' },
+            },
+          ],
+        },
+      }),
+    );
+    const block = event?.blocks[0] as { type: 'tool_use'; input: string };
+
+    // Each top-level property gets its own line; a real newline inside
+    // `old_string`/`new_string` still serializes to the two characters `\n`
+    // (JSON has no other way to keep it valid), so this only asserts the
+    // structural indentation, not decoding that escape.
+    expect(block.input).toBe(
+      JSON.stringify(
+        { file_path: 'a.ts', old_string: 'line one\nline two', new_string: 'line one\nline three' },
+        null,
+        2,
+      ),
+    );
+    expect(block.input.split('\n').length).toBeGreaterThan(1);
   });
 
   it('parses a tool_result whose content is a plain string', () => {
