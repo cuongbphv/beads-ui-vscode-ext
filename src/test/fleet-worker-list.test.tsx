@@ -383,6 +383,28 @@ describe('WorkerList status filter (beads-ui-vscode-ext-w9a.6)', () => {
     expect(rows[0]?.getAttribute('aria-label')).toContain('agent-running');
   });
 
+  it('never reads the header count as 0 when the orchestrator has real workers, even when every one is filtered out (beads-ui-vscode-ext-w9a.9)', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [
+          { sessionId: 'session-1', workerIds: ['agent-a', 'agent-b', 'agent-c'], lastActivityAt: null },
+        ],
+        workers: [
+          worker({ agentId: 'agent-a', sessionId: 'session-1', status: 'idle' }),
+          worker({ agentId: 'agent-b', sessionId: 'session-1', status: 'idle' }),
+          worker({ agentId: 'agent-c', sessionId: 'session-1', status: 'idle' }),
+        ],
+      }),
+      { statusFilter: 'running' },
+    );
+
+    // The row list is correctly empty under the "running" filter...
+    expect(el.querySelectorAll('li[role="button"]')).toHaveLength(0);
+    // ...but the header must still report the true total, never 0 or "no data".
+    expect(el.textContent).toContain('0 of 3 workers');
+    expect(el.textContent).not.toContain('0 workers');
+  });
+
   it('narrows to idle and unknown workers under the "idle" filter', async () => {
     const el = await render(
       snapshot({

@@ -37,6 +37,18 @@ function onSelectableKeyDown(event: KeyboardEvent<HTMLElement>, onSelect: () => 
   onSelect();
 }
 
+/**
+ * Orchestrator header count (beads-ui-vscode-ext-w9a.9): always describes the
+ * orchestrator's TRUE total worker count, never the status-filtered subset,
+ * so an idle-but-real fleet never reads as "0 workers" / "no data". When the
+ * filter hides some of that total, the count spells out the split instead of
+ * silently reporting only what's visible below.
+ */
+function workerCountLabel(filteredCount: number, totalCount: number): string {
+  const noun = `worker${totalCount === 1 ? '' : 's'}`;
+  return filteredCount === totalCount ? `${totalCount} ${noun}` : `${filteredCount} of ${totalCount} ${noun}`;
+}
+
 const STATUS_LABEL: Record<FleetWorker['status'], string> = {
   running: 'Running',
   idle: 'Idle',
@@ -84,7 +96,8 @@ export function WorkerList({
   // Most recently active first; the status filter only ever narrows which
   // workers show up under their (still recency-sorted) orchestrator.
   const orchestrators = sortByRecency(snapshot.orchestrators);
-  const sortedWorkers = filterWorkersByStatus(sortByRecency(snapshot.workers), statusFilter);
+  const allSortedWorkers = sortByRecency(snapshot.workers);
+  const sortedWorkers = filterWorkersByStatus(allSortedWorkers, statusFilter);
 
   if (snapshot.orchestrators.length === 0 && staleWorktrees.length === 0) {
     return (
@@ -100,6 +113,9 @@ export function WorkerList({
     <div className="flex flex-col gap-4 p-3">
       {orchestrators.map((orchestrator) => {
         const workers = sortedWorkers.filter((worker) => worker.sessionId === orchestrator.sessionId);
+        const totalWorkers = allSortedWorkers.filter(
+          (worker) => worker.sessionId === orchestrator.sessionId,
+        ).length;
         const sessionTarget = `session:${orchestrator.sessionId}`;
         const sessionSelected = selectedTarget === sessionTarget;
         return (
@@ -118,7 +134,7 @@ export function WorkerList({
             >
               <Bot aria-hidden="true" className="size-3.5" />
               <span className="font-mono">orchestrator {orchestrator.sessionId.slice(0, 8)}</span>
-              <span>· {workers.length} worker{workers.length === 1 ? '' : 's'}</span>
+              <span>· {workerCountLabel(workers.length, totalWorkers)}</span>
               {orchestrator.lastActivityAt ? (
                 <span className="ml-auto" title={orchestrator.lastActivityAt}>
                   {relativeTime(orchestrator.lastActivityAt)}
