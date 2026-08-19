@@ -12,6 +12,7 @@
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useDraggable,
   useDroppable,
@@ -47,6 +48,12 @@ import {
   collapsedSet,
   toggleCollapsed as nextCollapsed,
 } from '../lib/board-columns';
+import {
+  BOARD_ANNOUNCEMENTS,
+  BOARD_KEYBOARD_CODES,
+  BOARD_SCREEN_READER_INSTRUCTIONS,
+  boardKeyboardCoordinates,
+} from '../lib/board-keyboard';
 import { buildSwimlanes, laneDropId, parseLaneDropId, type Swimlane } from '../lib/board-swimlanes';
 import { labelChipStyle } from '../lib/label-color';
 import { cn } from '../lib/utils';
@@ -149,7 +156,17 @@ export function BoardView({
 
   // A pointer must travel a few pixels before a drag starts, otherwise clicking
   // a card to open its details would be swallowed by the drag sensor.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  //
+  // The keyboard sensor is the same board without a mouse: space picks a card
+  // up, the arrow keys move it one *column* at a time (see `board-keyboard`),
+  // space drops it and escape puts it back.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: boardKeyboardCoordinates,
+      keyboardCodes: BOARD_KEYBOARD_CODES,
+    }),
+  );
 
   const collapsed = useMemo(() => collapsedSet(collapsedColumns), [collapsedColumns]);
 
@@ -262,7 +279,19 @@ export function BoardView({
         </div>
       </div>
 
-      <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={(e) => void onDragEnd(e)}>
+      <DndContext
+        sensors={sensors}
+        accessibility={{
+          announcements: BOARD_ANNOUNCEMENTS,
+          screenReaderInstructions: BOARD_SCREEN_READER_INSTRUCTIONS,
+        }}
+        onDragStart={onDragStart}
+        onDragEnd={(e) => void onDragEnd(e)}
+        // Escape only reaches the board through the keyboard sensor, and it
+        // ends the drag without an `onDragEnd` — without this the overlay card
+        // would hang around after the move was called off.
+        onDragCancel={() => setDragging(undefined)}
+      >
         {swimlanes ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
             {swimlanes.map((swimlane) => (
@@ -619,16 +648,26 @@ function DraggableCard({
   selected: boolean;
   onSelect: (id: string) => void;
 }): ReactNode {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: bead.id });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
+    id: bead.id,
+  });
 
+  // The wrapper is the thing that moves; the card inside it is the thing you
+  // focus and press space on. They have to be split: the keyboard sensor only
+  // fires when the key event's target *is* the activator node, so the activator
+  // belongs on the element focus lands on. Spreading the attributes out here as
+  // well would wrap one button role around another and cost a second tab stop
+  // on every card. The pointer sensor is unaffected — it has no such check, so
+  // a press anywhere inside the card still bubbles up and starts a drag.
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes}>
+    <div ref={setNodeRef}>
       <BeadCard
         bead={bead}
         blocked={blocked}
         selected={selected}
         dragging={isDragging}
         onSelect={onSelect}
+        drag={{ attributes, listeners, setActivatorRef: setActivatorNodeRef }}
       />
     </div>
   );

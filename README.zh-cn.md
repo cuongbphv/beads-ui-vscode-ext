@@ -158,14 +158,18 @@ npm run install:local     # 构建 → 打包 → 安装；然后 reload window
 没有时间表，下面也没有任何一条是承诺。这份清单的用途是让"我该从哪里下手"有答案：Planned 里的每一项
 都对应一个已经开着的 issue。
 
+**Shipped** —— 已完成，现在就在扩展里：
+
+- **用键盘移动卡片** —— 空格键把卡片拿起来，方向键让它一列一列、一条泳道一条泳道地移动，再按空格
+  放下，按 Escape 放回原处。屏幕阅读器读到的是列名，而不是 droppable 的 id。
+  （[#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7)）
+
 **Planned** —— 完全贴合现有架构的设计：
 
 - **Molecule 进度** —— `bd mol` 目前在界面上毫无体现。为正在运行的 molecule 和即将自动消失的 wisp
   加一条进度条。（[#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10)）
 - **Fleet monitor** —— 把磁盘上的 worktree 和 `work/bead-*` 分支与它们各自承载的 bead 对齐排列，
   让被遗忘的 worktree 显形。（[#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11)）
-- **用键盘移动卡片** —— Board 上的拖拽目前只认指针，而卡片已经向屏幕阅读器自称"可拖拽"。
-  （[#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7) —— good first issue）
 - **在 pull request 上运行的 workflow** —— 目前一个都没有，因为测试套件里有一部分直接驱动真实的
   `bd` 可执行文件。（[#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9)）
 - **Windows，由 Windows 用户亲自确认** —— `.cmd` shim 的回退路径和 Git-Bash 下的路径都已写好，

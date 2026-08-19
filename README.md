@@ -159,14 +159,18 @@ extension spawn nothing you did not ask for.
 No dates, and nothing below is a promise. What the list is for: every planned item is an open
 issue, so "where would I even start?" has an answer.
 
+**Shipped** — done, and in the extension today:
+
+- **Keyboard-movable cards** — space picks a card up, the arrow keys move it column by column and
+  swimlane by swimlane, space drops it and escape puts it back. A screen reader hears the column
+  name rather than the droppable id. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7))
+
 **Planned** — designed against the architecture that already exists:
 
 - **Molecule progress** — `bd mol` has no UI at all today. A progress strip for the running
   molecule and the wisps about to expire. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
 - **Fleet monitor** — the worktrees and `work/bead-*` branches on disk, lined up against the beads
   they are carrying, so a stale one is visible. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
-- **Keyboard-movable cards** — the board's drag is pointer-only, while the card already announces
-  itself as draggable to a screen reader. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7) — good first issue)
 - **A workflow that runs on pull requests** — nothing does today, because part of the suite drives
   a real `bd` binary. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 - **Windows, confirmed by someone on Windows** — the `.cmd` shim fallback and the Git-Bash paths are

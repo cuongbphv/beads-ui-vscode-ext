@@ -27,29 +27,81 @@ vi.mock('../webview/bridge/rpc', () => ({
 // lane half. Capturing the real onDragEnd/onDragStart callbacks BoardView
 // hands to DndContext, and invoking one directly with a synthetic
 // `DragEndEvent`, exercises exactly that wiring without faking a pointer.
+//
+// The sensors, the accessibility wiring and the per-card activator listener are
+// recorded too, because a keyboard move is those three pieces meeting: a
+// KeyboardSensor that is actually registered, an activator sitting on the
+// element keyboard focus lands on, and announcements naming a column rather
+// than a droppable id.
 const dnd = vi.hoisted(() => ({
   onDragEnd: undefined as ((event: { active: { id: string }; over?: { id: string } }) => void) | undefined,
+  onDragStart: undefined as ((event: { active: { id: string } }) => void) | undefined,
+  onDragCancel: undefined as (() => void) | undefined,
+  accessibility: undefined as
+    | { announcements?: unknown; screenReaderInstructions?: unknown }
+    | undefined,
+  sensors: new Array<{ sensor: unknown; options: unknown }>(),
+  activated: new Array<string>(),
 }));
 
-vi.mock('@dnd-kit/core', () => ({
-  DndContext: ({
-    children,
-    onDragEnd,
-  }: {
-    children: unknown;
-    onDragEnd: (event: { active: { id: string }; over?: { id: string } }) => void;
-  }) => {
-    dnd.onDragEnd = onDragEnd;
-    return children;
-  },
-  DragOverlay: ({ children }: { children: unknown }) => children,
-  useDraggable: () => ({ attributes: {}, listeners: {}, setNodeRef: () => {}, isDragging: false }),
-  useDroppable: () => ({ setNodeRef: () => {}, isOver: false }),
-  useSensor: () => undefined,
-  useSensors: () => [],
-  PointerSensor: class {},
-}));
+vi.mock('@dnd-kit/core', () => {
+  class PointerSensor {}
+  class KeyboardSensor {}
 
+  return {
+    DndContext: ({
+      children,
+      onDragStart,
+      onDragEnd,
+      onDragCancel,
+      accessibility,
+    }: {
+      children: unknown;
+      onDragStart: (event: { active: { id: string } }) => void;
+      onDragEnd: (event: { active: { id: string }; over?: { id: string } }) => void;
+      onDragCancel?: () => void;
+      accessibility?: { announcements?: unknown; screenReaderInstructions?: unknown };
+    }) => {
+      dnd.onDragStart = onDragStart;
+      dnd.onDragEnd = onDragEnd;
+      dnd.onDragCancel = onDragCancel;
+      dnd.accessibility = accessibility;
+      return children;
+    },
+    DragOverlay: ({ children }: { children: unknown }) => children,
+    // The real hook hands back the aria wiring that makes a card announce
+    // itself draggable, plus the activator listener the sensors install.
+    useDraggable: ({ id }: { id: string }) => ({
+      attributes: {
+        role: 'button',
+        tabIndex: 0,
+        'aria-roledescription': 'draggable',
+        'aria-describedby': 'DndDescribedBy-0',
+      },
+      listeners: { onKeyDown: () => dnd.activated.push(id) },
+      setNodeRef: () => {},
+      setActivatorNodeRef: () => {},
+      isDragging: false,
+    }),
+    useDroppable: () => ({ setNodeRef: () => {}, isOver: false }),
+    useSensor: (sensor: unknown, options: unknown) => {
+      dnd.sensors.push({ sensor, options });
+      return { sensor, options };
+    },
+    useSensors: (...descriptors: unknown[]) => descriptors,
+    PointerSensor,
+    KeyboardSensor,
+  };
+});
+
+import { KeyboardSensor, PointerSensor } from '@dnd-kit/core';
+
+import {
+  BOARD_ANNOUNCEMENTS,
+  BOARD_KEYBOARD_CODES,
+  BOARD_SCREEN_READER_INSTRUCTIONS,
+  boardKeyboardCoordinates,
+} from '../webview/lib/board-keyboard';
 import { BoardView } from '../webview/views/BoardView';
 
 let mountedRoot: ReturnType<typeof createRoot> | undefined;
@@ -68,6 +120,11 @@ afterEach(async () => {
   container = undefined;
   rpc.calls.length = 0;
   dnd.onDragEnd = undefined;
+  dnd.onDragStart = undefined;
+  dnd.onDragCancel = undefined;
+  dnd.accessibility = undefined;
+  dnd.sensors.length = 0;
+  dnd.activated.length = 0;
 });
 
 const index = new StatusIndex([
@@ -187,3 +244,91 @@ describe('BoardView drag-and-drop with swimlanes on', () => {
     expect(rpc.calls).toEqual([{ id: 'human-1', status: 'done' }]);
   });
 });
+
+describe('BoardView keyboard moves', () => {
+  it('registers a keyboard sensor alongside the pointer one, so a card is movable without a mouse', async () => {
+    await mount();
+
+    const registered = dnd.sensors.map((entry) => entry.sensor);
+    expect(registered).toContain(PointerSensor);
+    expect(registered).toContain(KeyboardSensor);
+  });
+
+  it('gives the keyboard sensor the board’s own column-to-column geometry and key map', async () => {
+    await mount();
+
+    const keyboard = dnd.sensors.find((entry) => entry.sensor === KeyboardSensor);
+    expect(keyboard?.options).toEqual({
+      coordinateGetter: boardKeyboardCoordinates,
+      keyboardCodes: BOARD_KEYBOARD_CODES,
+    });
+  });
+
+  it('announces moves by column name and explains the keys, instead of using dnd-kit’s id-reading defaults', async () => {
+    await mount();
+
+    expect(dnd.accessibility?.announcements).toBe(BOARD_ANNOUNCEMENTS);
+    expect(dnd.accessibility?.screenReaderInstructions).toBe(BOARD_SCREEN_READER_INSTRUCTIONS);
+  });
+
+  it('puts the drag activator on the card itself, so focus and the pick-up key are the same element', async () => {
+    const root = await mount();
+
+    const cards = [...root.querySelectorAll('[aria-roledescription="draggable"]')];
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      expect(card.tagName).toBe('ARTICLE');
+      expect(card.getAttribute('tabindex')).toBe('0');
+      // A wrapper that also took a tab stop would make every card cost two
+      // tabs and nest one button role inside another.
+      expect(card.querySelector('[tabindex]')).toBeNull();
+      expect(card.parentElement?.hasAttribute('tabindex')).toBe(false);
+    }
+  });
+
+  it('picks a card up on space rather than opening it', async () => {
+    const onSelect = vi.fn();
+    const root = await mount({ onSelect });
+
+    press(card(root, 'safe-1'), { key: ' ', code: 'Space' });
+
+    expect(dnd.activated).toEqual(['safe-1']);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('puts the card back and clears the overlay when a move is cancelled', async () => {
+    const root = await mount();
+
+    await act(async () => dnd.onDragStart?.({ active: { id: 'safe-1' } }));
+    // The overlay renders a second, non-draggable copy of the picked-up card.
+    expect(root.querySelectorAll('article[aria-label^="safe-1:"]').length).toBeGreaterThan(2);
+
+    expect(dnd.onDragCancel).toBeDefined();
+    await act(async () => dnd.onDragCancel?.());
+
+    expect(root.querySelectorAll('article[aria-label^="safe-1:"]').length).toBe(2);
+    expect(rpc.calls).toEqual([]);
+  });
+
+  it('still opens the issue on enter, which is what enter does on every other card', async () => {
+    const onSelect = vi.fn();
+    const root = await mount({ onSelect });
+
+    press(card(root, 'safe-1'), { key: 'Enter', code: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledWith('safe-1');
+  });
+});
+
+/** The first rendered card for a bead. Narrow and wide layouts both render one. */
+function card(root: HTMLElement, id: string): Element {
+  const found = root.querySelector(`article[aria-label^="${id}:"]`);
+  if (!found) throw new Error(`no card rendered for ${id}`);
+  return found;
+}
+
+function press(element: Element, init: { key: string; code: string }): void {
+  act(() => {
+    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
+  });
+}

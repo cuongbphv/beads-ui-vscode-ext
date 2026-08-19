@@ -7,8 +7,9 @@
  * with a stable per-label hue. Both are colour on top of an existing text
  * signal, never colour instead of one.
  */
+import type { DraggableAttributes, DraggableSyntheticListeners } from '@dnd-kit/core';
 import { CalendarClock, Lock } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 
 import { typeStyle, type Bead } from '../../shared/types';
 import { labelChipStyle } from '../lib/label-color';
@@ -18,11 +19,30 @@ import { PriorityDot, TypeIcon } from './primitives';
 /** Beyond this many chips a card stops being scannable; the rest get a count. */
 const MAX_LABELS = 3;
 
+/**
+ * What a card needs to be picked up and moved.
+ *
+ * Only the board hands this over. A card in Overview or Roadmap goes without
+ * it, keeps its plain click-and-Enter behaviour, and — importantly — does not
+ * tell a screen reader it is draggable when nothing can move it.
+ *
+ * All three pieces land on the *same* element, the card itself: dnd-kit only
+ * fires its activator when the key event's target is the activator node, and
+ * putting the aria attributes anywhere but the focusable element would leave
+ * the announcement on one node and the keyboard on another.
+ */
+export interface CardDrag {
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  setActivatorRef: (element: HTMLElement | null) => void;
+}
+
 export function BeadCard({
   bead,
   selected,
   blocked,
   onSelect,
+  drag,
   dragging,
   className,
 }: {
@@ -30,6 +50,7 @@ export function BeadCard({
   selected?: boolean;
   blocked?: boolean;
   onSelect?: (id: string) => void;
+  drag?: CardDrag;
   dragging?: boolean;
   className?: string;
 }): ReactNode {
@@ -38,19 +59,37 @@ export function BeadCard({
   const overflow = labels.length - MAX_LABELS;
   const overdue = bead.due_at !== undefined && Date.parse(bead.due_at) < Date.now() && !bead.closed_at;
 
+  // dnd-kit hands its activator over as an untyped synthetic listener map.
+  const pickUp = drag?.listeners?.onKeyDown as
+    | ((event: KeyboardEvent<HTMLElement>) => void)
+    | undefined;
+
+  function onKeyDown(event: KeyboardEvent<HTMLElement>): void {
+    // Mid-move the keyboard belongs to the drag: space drops, escape cancels,
+    // and enter means "drop here" — none of them mean "open this issue".
+    if (!dragging) {
+      // Enter always opens. Space opens too, but only where the card cannot be
+      // picked up; on the board that key is the pick-up gesture instead.
+      if (event.key === 'Enter' || (event.key === ' ' && !drag)) {
+        event.preventDefault();
+        onSelect?.(bead.id);
+        return;
+      }
+    }
+    pickUp?.(event);
+  }
+
   return (
     <article
+      ref={drag?.setActivatorRef}
       role="button"
       tabIndex={0}
+      {...drag?.attributes}
+      {...drag?.listeners}
       aria-label={`${bead.id}: ${bead.title}`}
       aria-current={selected ? 'true' : undefined}
       onClick={() => onSelect?.(bead.id)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onSelect?.(bead.id);
-        }
-      }}
+      onKeyDown={onKeyDown}
       style={{ '--type-color': style.color } as CSSProperties}
       className={cn(
         'surface-interactive card-raise type-spine group cursor-pointer rounded-md border py-2 pr-2.5 pl-3',

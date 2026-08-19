@@ -158,14 +158,18 @@ không yêu cầu.
 Không có deadline, và không có gạch đầu dòng nào dưới đây là lời hứa. Danh sách này tồn tại để câu
 "bắt đầu từ đâu?" có câu trả lời: mỗi hạng mục Planned đều là một issue đang mở.
 
+**Shipped** — đã xong, và đã có trong extension:
+
+- **Di chuyển card bằng bàn phím** — nhấn space để nhấc một card lên, các phím mũi tên đưa nó qua
+  từng cột và từng swimlane, space để thả và escape để trả nó về chỗ cũ. Screen reader đọc lên tên
+  cột chứ không phải id của droppable. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7))
+
 **Planned** — thiết kế bám đúng kiến trúc đã có:
 
 - **Tiến độ molecule** — `bd mol` hiện chưa có UI nào. Một thanh tiến độ cho molecule đang chạy và
   những wisp sắp tự hủy. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
 - **Fleet monitor** — các worktree và nhánh `work/bead-*` trên đĩa, xếp cạnh đúng bead chúng đang
   mang, để một worktree bỏ quên trở nên nhìn thấy được. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
-- **Di chuyển card bằng bàn phím** — kéo thả trên Board hiện chỉ chạy bằng con trỏ, trong khi card
-  đã tự giới thiệu là "draggable" với screen reader. ([#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7) — good first issue)
 - **Workflow chạy trên pull request** — hiện chưa có, vì một phần test suite gọi thẳng binary `bd`
   thật. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 - **Windows, do người dùng Windows xác nhận** — nhánh fallback cho `.cmd` shim và đường dẫn Git-Bash
