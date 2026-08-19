@@ -203,7 +203,7 @@ describe('App dashboard tabs', () => {
 
     const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim());
 
-    expect(tabs).toEqual(['Overview', 'Roadmap', 'Board']);
+    expect(tabs).toEqual(['Overview', 'Roadmap', 'Board', 'Fleet']);
   });
 });
 

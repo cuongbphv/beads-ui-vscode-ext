@@ -4,7 +4,7 @@
  * The detail pane docks beside the content when the container is wide and takes
  * the whole panel when it is not — same component, no duplicate markup.
  */
-import { AlertCircle, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
+import { AlertCircle, Bot, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -51,12 +51,15 @@ interface PersistedState extends PersistedRoadmapPreferences {
   roadmapShape?: RoadmapShape;
   /** Detail-pane width in px. Absent until the user first drags it. */
   detailWidth?: number;
+  /** Fleet tab's own detail-pane width in px. Absent until the user first drags it. */
+  fleetDetailWidth?: number;
 }
 
 const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
   overview: { label: 'Overview', icon: <LayoutDashboard aria-hidden="true" className="size-4" /> },
   roadmap: { label: 'Roadmap', icon: <MapIcon aria-hidden="true" className="size-4" /> },
   board: { label: 'Board', icon: <Columns3 aria-hidden="true" className="size-4" /> },
+  fleet: { label: 'Fleet', icon: <Bot aria-hidden="true" className="size-4" /> },
 };
 
 export function App(): ReactNode {
@@ -76,6 +79,12 @@ export function App(): ReactNode {
   const [roadmapZoom, setRoadmapZoom] = useState<RoadmapZoom>(restoredRoadmap.zoom);
   const [roadmapGutter, setRoadmapGutter] = useState(restoredRoadmap.gutter);
   const [detailWidth, setDetailWidth] = useState(saved?.detailWidth ?? DETAIL_DEFAULT_PX);
+  // Nothing reads or writes this yet — Fleet's own detail pane (the
+  // transcript view) is a later bead, and until it exists there is no
+  // splitter to drag — but round-tripping it through persist/restore now
+  // means a value the user set in a future build is never dropped by an
+  // App.tsx from before that build ships.
+  const fleetDetailWidth = saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX;
   const mainRef = useRef<HTMLElement>(null);
   const [mainWidth, setMainWidth] = useState(0);
 
@@ -116,6 +125,7 @@ export function App(): ReactNode {
           gutter: roadmapGutter,
         }),
         detailWidth,
+        fleetDetailWidth,
       }),
     [
       tab,
@@ -128,6 +138,7 @@ export function App(): ReactNode {
       roadmapZoom,
       roadmapGutter,
       detailWidth,
+      fleetDetailWidth,
     ],
   );
 
@@ -265,7 +276,7 @@ export function App(): ReactNode {
                 gutter={roadmapGutter}
                 onGutterChange={setRoadmapGutter}
               />
-            ) : (
+            ) : tab === 'board' ? (
               <BoardView
                 beads={beads}
                 index={index}
@@ -278,6 +289,12 @@ export function App(): ReactNode {
                 onCollapsedColumnsChange={setCollapsedColumns}
                 swimlanes={boardSwimlanes}
                 onSwimlanesChange={setBoardSwimlanes}
+              />
+            ) : (
+              <EmptyState
+                icon={<Bot className="size-10" />}
+                title="Fleet is not available yet"
+                hint="Discovery and the transcript view are coming in a later update."
               />
             )}
           </div>

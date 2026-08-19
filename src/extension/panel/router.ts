@@ -16,7 +16,7 @@ import {
 import { toPriority } from '../../shared/types';
 import type { BeadsStore } from '../store';
 import { toRpcError } from '../store';
-import { requireDueDate } from './param-validation';
+import { requireDueDate, requireTargetId } from './param-validation';
 
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
@@ -111,6 +111,23 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'appendNotes':
       await mutations.appendNotes(id(), requireString(params.text, 'text'));
       return { ok: true };
+
+    // Fleet's real data layer (discovery, transcript tailing) is a later bead
+    // (P3); these stubs exist so the webview can wire the whole round trip
+    // now and swap in real data later without touching the protocol again.
+    case 'subscribeFleet':
+      throw new Error('not available');
+
+    case 'unsubscribeFleet':
+      throw new Error('not available');
+
+    case 'subscribeTranscript':
+      requireTargetId(params.targetId, 'targetId');
+      throw new Error('not available');
+
+    case 'unsubscribeTranscript':
+      requireTargetId(params.targetId, 'targetId');
+      throw new Error('not available');
 
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);

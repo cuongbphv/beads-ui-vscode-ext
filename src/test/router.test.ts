@@ -116,3 +116,82 @@ describe('router appendNotes', () => {
     expect(mutations.calls).toEqual([]);
   });
 });
+
+describe('router Fleet stubs', () => {
+  it('subscribeFleet returns a clean "not available" RpcError', async () => {
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      host,
+      request('subscribeFleet', {}),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).toBe('not available');
+  });
+
+  it('unsubscribeFleet returns a clean "not available" RpcError', async () => {
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      host,
+      request('unsubscribeFleet', {}),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).toBe('not available');
+  });
+
+  it('subscribeTranscript returns a clean "not available" RpcError for a valid targetId', async () => {
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      host,
+      request('subscribeTranscript', { targetId: 'agent:worker-1' }),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).toBe('not available');
+  });
+
+  it('unsubscribeTranscript returns a clean "not available" RpcError for a valid targetId', async () => {
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      host,
+      request('unsubscribeTranscript', { targetId: 'session:abc123' }),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).toBe('not available');
+  });
+
+  it('subscribeTranscript rejects a targetId containing a space, before the stub runs', async () => {
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      host,
+      request('subscribeTranscript', { targetId: 'agent: bad id' }),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).not.toBe('not available');
+  });
+
+  it('subscribeTranscript rejects a targetId containing a path traversal segment', async () => {
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      host,
+      request('subscribeTranscript', { targetId: '../../etc/passwd' }),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).not.toBe('not available');
+  });
+
+  it('unsubscribeTranscript rejects a missing targetId', async () => {
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      host,
+      request('unsubscribeTranscript', {}),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.message).not.toBe('not available');
+  });
+});
