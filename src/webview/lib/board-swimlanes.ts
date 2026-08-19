@@ -13,6 +13,7 @@
  */
 import type { StatusIndex } from '../../shared/model';
 import { buildColumns } from '../../shared/model';
+import { isPlanType } from '../../shared/types';
 import type { Bead, BoardColumn, StatusCategory } from '../../shared/types';
 
 /** Fixed lane order, most-conservative last so it reads left-to-right as "safer → needs attention". */
@@ -56,6 +57,11 @@ export function laneOf(bead: Bead): Lane {
  * first place, conceptually — today it only moves status, see BoardView).
  * `unlabeled` only emits when it actually has beads, so a fully-triaged board
  * does not carry a permanent empty warning lane.
+ *
+ * Plan-type beads (epics, milestones) never enter the unlabeled lane: the
+ * review pipeline labels work, not plans, so an unlabeled epic is the normal
+ * state of an epic — not a triage gap worth a warning. One that a human
+ * explicitly labelled still lands in its taxonomy lane.
  */
 export function buildSwimlanes(beads: Bead[], index: StatusIndex): Swimlane[] {
   const buckets = new Map<TaxonomyLane, Bead[]>(TAXONOMY_LANES.map((lane) => [lane, []]));
@@ -63,8 +69,11 @@ export function buildSwimlanes(beads: Bead[], index: StatusIndex): Swimlane[] {
 
   for (const bead of beads) {
     const lane = laneOf(bead);
-    if (lane === UNLABELED) unlabeled.push(bead);
-    else buckets.get(lane)?.push(bead);
+    if (lane === UNLABELED) {
+      if (!isPlanType(bead.issue_type)) unlabeled.push(bead);
+    } else {
+      buckets.get(lane)?.push(bead);
+    }
   }
 
   const lanes: Swimlane[] = TAXONOMY_LANES.map((lane) => ({

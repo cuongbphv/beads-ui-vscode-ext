@@ -27,6 +27,10 @@ function bead(id: string, labels?: string[], status = 'open'): Bead {
   return { id, title: id, status, priority: 2, issue_type: 'task', labels };
 }
 
+function planBead(id: string, issueType: 'epic' | 'milestone', labels?: string[]): Bead {
+  return { id, title: id, status: 'open', priority: 2, issue_type: issueType, labels };
+}
+
 describe('laneOf', () => {
   it('falls back to unlabeled when no taxonomy label is present', () => {
     expect(laneOf(bead('b-1'))).toBe(UNLABELED);
@@ -69,6 +73,23 @@ describe('buildSwimlanes', () => {
     const lanes = buildSwimlanes([bead('b-1', ['auto-ok', 'needs-human'])], index());
     const counts = lanes.map((lane) => lane.columns.reduce((sum, c) => sum + c.beads.length, 0));
     expect(counts).toEqual([0, 0, 1]); // auto-ok, auto-partial, needs-human
+  });
+
+  it('keeps unlabeled plan-type beads (epic, milestone) out of the unlabeled warning lane', () => {
+    const lanes = buildSwimlanes([planBead('e-1', 'epic'), planBead('m-1', 'milestone')], index());
+    expect(lanes.map((lane) => lane.lane)).toEqual([...TAXONOMY_LANES]);
+  });
+
+  it('does not let plan-type beads inflate the unlabeled lane a real task earned', () => {
+    const lanes = buildSwimlanes([bead('b-1'), planBead('e-1', 'epic')], index());
+    const unlabeled = lanes.find((lane) => lane.lane === UNLABELED);
+    expect(unlabeled?.columns.flatMap((c) => c.beads.map((b) => b.id))).toEqual(['b-1']);
+  });
+
+  it('still places an explicitly labeled epic in its taxonomy lane', () => {
+    const lanes = buildSwimlanes([planBead('e-1', 'epic', ['needs-human'])], index());
+    const needsHuman = lanes.find((lane) => lane.lane === 'needs-human');
+    expect(needsHuman?.columns.flatMap((c) => c.beads.map((b) => b.id))).toEqual(['e-1']);
   });
 
   it('runs buildColumns per lane so each lane still groups by status category', () => {
