@@ -428,9 +428,17 @@ export function BoardView({
           a picture: the real card is still mounted in its column, still holds
           focus and still owns the accessible name, and dnd-kit's overlay
           wrapper adds no `aria-hidden`, `inert` or `tabindex` of its own.
+
+          `w-full` rather than a hardcoded width: dnd-kit's own `PositionedOverlay`
+          wrapper around this component already sets its `style.width` from the
+          *real* dragged card's measured rect at drag-start, so the wrapper is
+          already the right width for whichever column (collapsed `w-52`, expanded
+          `w-72 @5xl:flex-1`, or the narrow single-column layout) the drag started
+          in. A fixed width here (previously `w-64`, matching none of those) fought
+          that correct outer sizing from the inside instead of filling it.
         */}
         <DragOverlay dropAnimation={null}>
-          {dragging ? <BeadCard bead={dragging} presentational className="w-64 shadow-lg" /> : null}
+          {dragging ? <BeadCard bead={dragging} presentational className="w-full shadow-lg" /> : null}
         </DragOverlay>
       </DndContext>
     </div>

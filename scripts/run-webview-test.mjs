@@ -587,6 +587,58 @@ async function main() {
       (await inner.locator('text=/Open|In Progress|Done|On Hold/').count()) > 0,
     );
 
+    // beads-ui-vscode-ext-19r.10: the `DragOverlay` ghost used to carry a
+    // hardcoded `w-64`, fighting dnd-kit's own `PositionedOverlay` wrapper
+    // (which already sizes itself from the *real* dragged card's measured
+    // rect at drag-start) from the inside. jsdom returns 0x0 for every
+    // `getBoundingClientRect()` call, so no unit test can measure this — only
+    // a real, rendered pointer drag in this real editor window can. `article
+    // [role="button"]` matches every real card; the ghost is the one `article`
+    // dnd-kit renders with no `role` at all, marked `aria-hidden` instead (see
+    // `bead-card.tsx`'s `presentational` prop), so it never collides with the
+    // selector above.
+    {
+      const dragSourceCard = inner.locator('article[role="button"]:visible').first();
+      await dragSourceCard.waitFor();
+      const sourceBox = await dragSourceCard.boundingBox();
+      if (!sourceBox) {
+        failures.push('drag ghost width check: could not measure the source card before dragging');
+      } else {
+        const startX = sourceBox.x + sourceBox.width / 2;
+        const startY = sourceBox.y + sourceBox.height / 2;
+
+        await window.mouse.move(startX, startY);
+        await window.mouse.down();
+        // `PointerSensor`'s `activationConstraint: { distance: 4 }` (BoardView.tsx)
+        // only starts the drag — and mounts `DragOverlay` — once the pointer has
+        // moved more than 4px from where it went down. Two small moves rather
+        // than one big jump, so this crosses that threshold the same way a real
+        // drag's pointermove stream would rather than skipping straight past it.
+        await window.mouse.move(startX + 3, startY + 3);
+        await window.mouse.move(startX + 10, startY + 12);
+
+        const ghostCard = inner.locator('article[aria-hidden="true"]').first();
+        await ghostCard.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+        const ghostBox = await ghostCard.boundingBox();
+
+        // Release back over the same card/column the drag started from: its
+        // status category is unchanged, so `onDragEnd` (BoardView.tsx) takes its
+        // early "already in this column" return and calls no `bd` mutation —
+        // this check only ever reads the board, the same rule every other
+        // assertion in this file follows.
+        await window.mouse.move(startX, startY);
+        await window.mouse.up();
+        await ghostCard.waitFor({ state: 'detached', timeout: 5_000 }).catch(() => {});
+        await window.waitForTimeout(300);
+
+        check(
+          'drag ghost width matches the source card it was picked up from',
+          !!ghostBox && Math.abs(ghostBox.width - sourceBox.width) <= 2,
+          `ghost width ${ghostBox?.width ?? '(unmeasured)'}, source card width ${sourceBox.width}`,
+        );
+      }
+    }
+
     // Finished work starts folded away: the done column's header is a toggle
     // offering to *expand* it. Read the aria-label, which is also the promise
     // made to a screen reader.

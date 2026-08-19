@@ -119,7 +119,13 @@ export function BeadCard({
       onKeyDown={presentational ? undefined : onKeyDown}
       style={{ '--type-color': style.color } as CSSProperties}
       className={cn(
-        'surface-interactive card-raise type-spine group cursor-pointer rounded-md border py-2 pr-2.5 pl-3',
+        'surface-interactive card-raise type-spine group rounded-md border py-2 pr-2.5 pl-3',
+        // The pointer-cursor affordance belongs to the real, clickable card only.
+        // The presentational ghost has no click/keyboard handlers and is under
+        // the pointer for the whole drag, so a hover-pointer cursor on it is
+        // dead weight at best and a stray, misleading cue over a "grabbing"
+        // drag cursor at worst.
+        !presentational && 'cursor-pointer',
         // Hover changes background, border and shadow only — never transform. A
         // card that jumps under the cursor is unusable in a dense column.
         'bg-surface hover:bg-surface-hover border-border hover:border-border-strong',
