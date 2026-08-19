@@ -93,6 +93,10 @@ Done 列默认是折叠的：
   `beadsDashboard.bdPath`）。
 - 一个包含 `.beads` 目录的工作区文件夹。只有找到该目录时本扩展才会激活。
 
+有东西不对劲？[docs/TROUBLESHOOTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/docs/TROUBLESHOOTING.md) 讲了本扩展刻意处理的四种降级状态 ——
+没有工作区文件夹、没有 `.beads` 目录、`PATH` 里没有 `bd`，以及 `bd` 跑得起来却拒绝执行 ——
+每一种分别显示什么、为什么，以及怎么解决。
+
 ## 安装
 
 在 Extensions 视图里搜索 **Beads Dashboard**，或者：
@@ -166,8 +170,6 @@ npm run install:local     # 构建 → 打包 → 安装；然后 reload window
   `bd` 可执行文件。（[#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9)）
 - **Windows，由 Windows 用户亲自确认** —— `.cmd` shim 的回退路径和 Git-Bash 下的路径都已写好，
   但从未在真实 Windows 机器上验证过。（[#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12)）
-- **Troubleshooting 文档** —— 代码认真处理过的四种降级状态，一处文档都没有。
-  （[#8](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/8) —— good first issue）
 
 **Exploring** —— 一个方向，不是承诺。尚未设计，也还没有对应的 issue。
 

@@ -93,6 +93,10 @@ chưa có comment nào:
 - [`bd` CLI](https://github.com/steveyegge/beads) có trong `PATH` (hoặc set `beadsDashboard.bdPath`).
 - Một workspace folder chứa thư mục `.beads`. Extension chỉ activate khi tìm thấy thư mục này.
 
+Có gì đó không chạy? [docs/TROUBLESHOOTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/docs/TROUBLESHOOTING.md) mô tả bốn trạng thái degraded mà
+extension chủ động xử lý — không có workspace folder, không có thư mục `.beads`, không có `bd`
+trong `PATH`, và một `bd` chạy được nhưng từ chối — kèm thứ bạn nhìn thấy, vì sao, và cách xử lý.
+
 ## Cài đặt
 
 Tìm **Beads Dashboard** trong tab Extensions, hoặc:
@@ -166,8 +170,6 @@ Không có deadline, và không có gạch đầu dòng nào dưới đây là l
   thật. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 - **Windows, do người dùng Windows xác nhận** — nhánh fallback cho `.cmd` shim và đường dẫn Git-Bash
   đã viết nhưng chưa ai chạy thử trên máy Windows thật. ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
-- **Tài liệu Troubleshooting** — bốn trạng thái lỗi mà code đã xử lý tử tế lại chưa được ghi ở đâu
-  cả. ([#8](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/8) — good first issue)
 
 **Exploring** — là một hướng đi, không phải cam kết. Chưa thiết kế, chưa mở issue.
 

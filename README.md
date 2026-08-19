@@ -94,6 +94,10 @@ your own assigned issues, since it blocks real work until someone clears it:
 - The [`bd` CLI](https://github.com/steveyegge/beads) on your `PATH` (or set `beadsDashboard.bdPath`).
 - A workspace folder containing a `.beads` directory. The extension activates only when it finds one.
 
+Something not behaving? [docs/TROUBLESHOOTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/docs/TROUBLESHOOTING.md) covers the four degraded states the
+extension handles on purpose — no workspace folder, no `.beads` directory, no `bd` on your `PATH`,
+and a `bd` that runs but refuses — what each one shows, why it happens, and how to clear it.
+
 ## Install
 
 Search **Beads Dashboard** in the Extensions view, or:
@@ -167,8 +171,6 @@ issue, so "where would I even start?" has an answer.
   a real `bd` binary. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 - **Windows, confirmed by someone on Windows** — the `.cmd` shim fallback and the Git-Bash paths are
   written but never verified on a real box. ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
-- **Troubleshooting docs** — the four degraded states the code deliberately handles are
-  undocumented. ([#8](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/8) — good first issue)
 
 **Exploring** — a direction, not a commitment. Nothing is designed and no issue is open yet.
 
