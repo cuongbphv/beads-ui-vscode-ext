@@ -17,17 +17,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { FleetSnapshot, TranscriptBackfill } from '../shared/fleet';
 import type { FleetStatusFilter } from '../shared/fleet-filter';
 import type { HostEvent } from '../shared/protocol';
+import { installPointerCapture, installResizeObserver, pointerEvent, TestResizeObserver } from './support/dom-harness';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
-}
-
-/** A no-op ResizeObserver — `FleetView` only needs the ref not to throw; the
- * detail pane's width maths are `lib/drag-resize.test.ts`'s own subject. */
-class NoopResizeObserver implements ResizeObserver {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
 }
 
 const rpc = vi.hoisted(() => ({
@@ -78,10 +71,8 @@ let container: HTMLElement | undefined;
 
 beforeAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  Object.defineProperty(globalThis, 'ResizeObserver', {
-    configurable: true,
-    value: NoopResizeObserver,
-  });
+  installResizeObserver();
+  installPointerCapture();
 });
 
 beforeEach(() => {
@@ -100,7 +91,12 @@ afterEach(async () => {
 });
 
 async function mount(
-  options: { statusFilter?: FleetStatusFilter; onStatusFilterChange?: (filter: FleetStatusFilter) => void } = {},
+  options: {
+    statusFilter?: FleetStatusFilter;
+    onStatusFilterChange?: (filter: FleetStatusFilter) => void;
+    detailWidth?: number;
+    onDetailWidthChange?: (px: number) => void;
+  } = {},
 ): Promise<HTMLElement> {
   container = document.createElement('div');
   document.body.append(container);
@@ -108,8 +104,8 @@ async function mount(
   await act(async () =>
     mounted?.render(
       createElement(FleetView, {
-        detailWidth: 384,
-        onDetailWidthChange: () => {},
+        detailWidth: options.detailWidth ?? 384,
+        onDetailWidthChange: options.onDetailWidthChange ?? (() => {}),
         statusFilter: options.statusFilter ?? 'all',
         onStatusFilterChange: options.onStatusFilterChange ?? (() => {}),
       }),
@@ -257,6 +253,50 @@ describe('FleetView transcript pane (beads-ui-vscode-ext-37b)', () => {
     expect(rowContainer).not.toBeNull();
     expect(rowContainer.className).not.toMatch(/flex-col/);
     expect(rowContainer.contains(row)).toBe(true);
+  });
+
+  it('resizes the transcript pane when its splitter is dragged, once the container has been measured', async () => {
+    const onDetailWidthChange = vi.fn();
+    const el = await mount({ detailWidth: 384, onDetailWidthChange });
+    await act(async () =>
+      fire(
+        snapshot({
+          orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+          workers: [
+            {
+              agentId: 'agent-a',
+              sessionId: 'session-1',
+              beadId: null,
+              worktreePath: null,
+              briefSummary: '',
+              lastActivityAt: null,
+              status: 'unknown',
+            },
+          ],
+        }),
+      ),
+    );
+
+    const row = el.querySelector('li[role="button"]') as HTMLElement;
+    await act(async () => row.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    // Real layout, not jsdom's default 0×0: without this the detail range
+    // collapses to [320, 320] and no drag could ever move the pane, which
+    // would look identical to a broken splitter without this test telling
+    // the two apart.
+    const observation = TestResizeObserver.observationOf((target) => target.classList.contains('@container'));
+    expect(observation).toBeDefined();
+    await act(async () => observation?.observer.emit(observation.target, 1200));
+
+    const handle = el.querySelector('[role="separator"]') as HTMLElement;
+    expect(handle).not.toBeNull();
+
+    // The pane is right of the handle (`sign={-1}`): dragging the handle
+    // left (negative deltaX) widens it.
+    await act(async () => handle.dispatchEvent(pointerEvent('pointerdown', { clientX: 500 })));
+    await act(async () => handle.dispatchEvent(pointerEvent('pointermove', { clientX: 450 })));
+
+    expect(onDetailWidthChange).toHaveBeenCalledWith(434);
   });
 });
 
