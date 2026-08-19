@@ -385,8 +385,19 @@ describe('dashboard snapshot', () => {
   });
 
   it('flags truncation when the limit bites', async () => {
-    const snapshot = await queries.snapshot(2);
-    expect(snapshot.beads.length).toBe(2);
+    // A hardcoded small limit (e.g. 2) only proves truncation while the live
+    // board happens to hold more issues than that at the moment the test
+    // runs — a board that coincidentally shrank to 2 or fewer real issues
+    // would flip this red with zero code being wrong. Measuring the board's
+    // own current size first and deriving the limit from it removes that
+    // coincidence entirely: `total - 1` is by construction smaller than
+    // whatever `bd` is about to hand back, so `beads.length >= limit` (the
+    // condition `queries.snapshot` uses to set `truncated`) holds regardless
+    // of how large or small the live board is right now.
+    const total = (await queries.list({ all: true })).length;
+    const limit = Math.max(1, total - 1);
+    const snapshot = await queries.snapshot(limit);
+    expect(snapshot.beads.length).toBe(limit);
     expect(snapshot.truncated).toBe(true);
   });
 
