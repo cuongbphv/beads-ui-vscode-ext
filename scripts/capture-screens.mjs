@@ -176,12 +176,20 @@ try {
     }
   }
 
-  // ── Graph: the dependency DAG ───────────────────────────────────────────────
-  await inner.locator('[role="tab"]:has-text("Graph")').first().click();
+  // ── Graph: the dependency DAG, folded into Roadmap as a third shape ─────────
+  // (Graph used to be its own top-level tab; it is now a `ShapeButton` inside
+  // Roadmap alongside Timeline/List — see RoadmapView.tsx.)
+  await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
+  await window.waitForTimeout(300);
+  await inner.getByRole('button', { name: 'Graph', exact: true }).click();
   await shot(window, 'graph');
 
-  // A selected issue opens the detail pane, which is its own layout branch.
-  await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
+  // A selected issue opens the detail pane, which is its own layout branch —
+  // switch back to the Timeline shape first, since the task-row selector
+  // below only matches Timeline's rendering. `exact: true` on both: the
+  // Graph shape's own SVG nodes carry aria-labels like "…on the deploy
+  // timeline", which a substring match on "Timeline" would also catch.
+  await inner.getByRole('button', { name: 'Timeline', exact: true }).click();
   await window.waitForTimeout(600);
   // Task rows title their button "<id>: <title>"; epic rows carry only a title,
   // so the prefix is what separates a task row from its epic.
