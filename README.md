@@ -81,6 +81,19 @@ issues are flagged red wherever they sit in the layout:
 
 ![Graph tab: a layered dependency DAG with several blocked issues outlined in red, zoom and reset-layout controls in the toolbar, and the sidebar's Gates(1) entry alongside it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
 
+**Fleet** — one orchestrator, one worker running against a real `wt-*` git
+worktree, streamed straight from the same JSONL transcript Claude Code itself
+writes. See [Fleet monitor](#fleet-monitor) below:
+
+![Fleet tab: orchestrator demo-orc with one running worker on harbor-201, its spawn brief naming the bead and the wt-201 worktree path](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
+
+**Fleet, a worker's transcript** — text and thinking blocks rendered through
+the hand-rolled markdown renderer: headings, bold, inline code, a fenced code
+block, and a `✓ PASSED` result, drawn as React elements, never
+`dangerouslySetInnerHTML`:
+
+![Fleet worker transcript: a Thinking chip, a Read tool call and its result, then an assistant summary with bold text, two inline-code file paths, a fenced ts code block, and a bold PASSED result line](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+
 **Detail pane** — the full issue without leaving the board. Status, priority and
 assignee apply as you set them, and comments plus an append-only notes composer sit
 below the fields, present even with zero comments so far:
@@ -168,6 +181,8 @@ render through a small hand-rolled markdown renderer — headings, lists, code f
 bold/italic, no third-party dependency — parsed to a plain-data AST and drawn as React elements
 directly, never `dangerouslySetInnerHTML`; a transcript is an agent/tool-controlled channel, so
 that renderer is the security boundary, not an afterthought.
+
+![Fleet worker transcript: a Thinking chip, a Read tool call and its result, then an assistant summary with bold text, two inline-code file paths, a fenced ts code block, and a bold PASSED result line](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
 
 Where the data comes from:
 

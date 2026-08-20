@@ -80,6 +80,19 @@ cột dài duy nhất: `auto-ok`, `auto-partial` và `needs-human`, mỗi lane b
 
 ![Tab Graph: đồ thị phụ thuộc phân lớp với vài issue bị chặn viền đỏ, nút zoom và reset-layout trên thanh công cụ, cùng mục Gates(1) ở sidebar bên cạnh](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
 
+**Fleet** — một orchestrator, một worker đang chạy trên một git worktree `wt-*`
+thật, stream trực tiếp từ đúng file JSONL mà Claude Code tự ghi ra. Xem
+[Fleet monitor](#fleet-monitor) bên dưới:
+
+![Tab Fleet: orchestrator demo-orc với một worker đang chạy trên harbor-201, spawn brief của nó ghi rõ bead và đường dẫn worktree wt-201](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
+
+**Fleet, transcript của một worker** — block text và thinking render qua
+markdown renderer tự viết tay: heading, bold, inline code, một code block, và
+kết quả `✓ PASSED`, vẽ trực tiếp thành React element, không bao giờ dùng
+`dangerouslySetInnerHTML`:
+
+![Transcript worker trên Fleet: chip Thinking, một lệnh gọi tool Read và kết quả, rồi phần tóm tắt của assistant với chữ đậm, hai đường dẫn file inline-code, một code block ts, và dòng kết quả PASSED in đậm](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+
 **Detail pane** — toàn bộ issue mà không cần rời khỏi board. Status, priority và assignee áp dụng
 ngay khi bạn chỉnh, comment và composer ghi chú append-only nằm ngay bên dưới, hiện sẵn kể cả khi
 chưa có comment nào:
@@ -167,6 +180,8 @@ một markdown renderer tự viết tay — heading, list, code fence, table, bo
 thư viện ngoài — parse ra plain-data AST rồi vẽ trực tiếp thành React element, không bao giờ dùng
 `dangerouslySetInnerHTML`; transcript là kênh do agent/tool kiểm soát, nên renderer này chính là
 lớp bảo vệ, không phải chuyện tiện thể thêm sau.
+
+![Transcript worker trên Fleet: chip Thinking, một lệnh gọi tool Read và kết quả, rồi phần tóm tắt của assistant với chữ đậm, hai đường dẫn file inline-code, một code block ts, và dòng kết quả PASSED in đậm](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
 
 Dữ liệu lấy từ đâu:
 

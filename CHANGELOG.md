@@ -42,6 +42,20 @@ project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
   of the true total.
 - The board's drag ghost sized itself from a hardcoded width instead of the column it was dragged
   out of.
+- `.vscodeignore` never listed `.velox/**` alongside the other agent-tooling directories it already
+  excluded, so the shipped `.vsix` leaked ~454KB of workspace-local agent-orchestration state
+  (roadmaps, `STATUS.md`, run journals) that nothing at runtime reads and that was never meant for
+  a Marketplace/Open VSX download.
+
+### Documentation
+
+- The README "See it in action" gallery was missing the Fleet tab entirely — it went straight from
+  Graph to the detail pane. Added a real, generated Fleet screenshot and a Fleet worker-transcript
+  screenshot (showing the markdown renderer's headings, bold, inline code, a fenced code block, and
+  a `✓ PASSED` result), in all three languages, plus a matching image inline in the "Fleet monitor"
+  section itself.
+- `docs/screenshots/demo.gif` re-recorded against the current UI (30 UI-affecting commits had
+  landed since it was last captured).
 
 ## [0.1.4] — 2026-08-18
 

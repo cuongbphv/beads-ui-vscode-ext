@@ -78,6 +78,18 @@ Done 列默认是折叠的：
 
 ![Graph 标签页：一张分层的依赖关系图，几个被阻塞的 issue 用红色描边标出，工具栏上有缩放和重置布局按钮，旁边还有侧边栏的 Gates(1) 条目](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
 
+**Fleet** —— 一个 orchestrator，一个 worker 正在一个真实的 `wt-*` git worktree 上运行，
+transcript 直接从 Claude Code 自己写入的那份 JSONL 文件流式读取。详见下方
+[Fleet monitor](#fleet-monitor)：
+
+![Fleet 标签页：orchestrator demo-orc 下有一个正在运行的 worker，负责 harbor-201，它的 spawn brief 里写明了 bead 和 wt-201 worktree 路径](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
+
+**Fleet，某个 worker 的 transcript** —— text 和 thinking block 经过手写的 markdown
+渲染器渲染：标题、粗体、行内代码、一段代码块，以及一行 `✓ PASSED` 结果，直接画成
+React element，绝不使用 `dangerouslySetInnerHTML`：
+
+![Fleet worker transcript：一个 Thinking 折叠块，一次 Read 工具调用及其结果，然后是 assistant 的总结，里面有粗体文字、两处行内代码文件路径、一段 ts 代码块，以及一行加粗的 PASSED 结果](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+
 **Detail pane（详情面板）** —— 无需离开看板即可查看完整 issue。状态、优先级和指派人在你
 设置的同时就会生效，评论以及一个仅追加内容的备注编辑器就在这些字段下方，即使目前还没有任何
 评论也会显示出来：
@@ -165,6 +177,8 @@ worktree，以及哪个 worktree 已经过期（没有任何 worker 还在认领
 第三方库的 markdown 渲染器 —— 支持标题、列表、代码块、表格、粗体/斜体 —— 先解析成纯数据 AST，
 再直接画成 React element，绝不使用 `dangerouslySetInnerHTML`；transcript 是 agent/tool 可控的
 通道，所以这个渲染器本身就是安全边界，不是事后补上的。
+
+![Fleet worker transcript：一个 Thinking 折叠块，一次 Read 工具调用及其结果，然后是 assistant 的总结，里面有粗体文字、两处行内代码文件路径、一段 ts 代码块，以及一行加粗的 PASSED 结果](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
 
 数据来源：
 

@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildDemoJsonl, demoSummary, DEMO_ACTOR, DEMO_PREFIX } from './lib/demo-project.mjs';
 import { defaultDemoDir } from './lib/demo-workspace.mjs';
+import { seedFleetDemo } from './lib/fleet-demo-seed.mjs';
 
 const repoRoot = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
 
@@ -170,6 +171,12 @@ bd([
   '--reason',
   'Confirm final tax-inclusive pricing copy with legal before this ships.',
 ]);
+
+// A Fleet scenario: a worker actively "on" harbor-201 in a real wt-* git
+// worktree, with a transcript rich enough to show off the markdown renderer.
+console.log(`› seeding a Fleet worker + worktree`);
+const fleetWorktreePath = seedFleetDemo(outDir);
+console.log(`  worktree   ${fleetWorktreePath}`);
 
 const stats = JSON.parse(bd(['stats', '--json']));
 console.log('\n✔ demo workspace ready');
