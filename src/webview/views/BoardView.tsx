@@ -8,10 +8,16 @@
  * Responsiveness is container-based (the panel can be dragged narrow
  * independently of the window): one column plus a switcher when cramped,
  * scroll-snap when medium, every column at once when wide.
+ *
+ * Both layouts are mounted at the same time and a container query hides one, so
+ * every column exists twice in the DOM. Each copy therefore needs its own
+ * droppable id — see `narrowDropId` in `lib/board-swimlanes` for why sharing
+ * one is not merely redundant but breaks dropping outright.
  */
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useDraggable,
   useDroppable,
@@ -47,7 +53,24 @@ import {
   collapsedSet,
   toggleCollapsed as nextCollapsed,
 } from '../lib/board-columns';
-import { buildSwimlanes, laneDropId, parseLaneDropId, type Swimlane } from '../lib/board-swimlanes';
+import {
+  BOARD_ANNOUNCEMENTS,
+  BOARD_KEYBOARD_CODES,
+  BOARD_SCREEN_READER_INSTRUCTIONS,
+  boardKeyboardCoordinates,
+  isArrowCode,
+  isNarrowLayout,
+  measuredDropTargets,
+  nextNarrowCategory,
+  type DroppableRegistry,
+} from '../lib/board-keyboard';
+import {
+  buildSwimlanes,
+  laneDropId,
+  narrowDropId,
+  parseDropId,
+  type Swimlane,
+} from '../lib/board-swimlanes';
 import { labelChipStyle } from '../lib/label-color';
 import { cn } from '../lib/utils';
 
@@ -147,10 +170,6 @@ export function BoardView({
     [swimlanesEnabled, visible, index],
   );
 
-  // A pointer must travel a few pixels before a drag starts, otherwise clicking
-  // a card to open its details would be swallowed by the drag sensor.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
   const collapsed = useMemo(() => collapsedSet(collapsedColumns), [collapsedColumns]);
 
   const [activeCategory, setActiveCategory] = useState<string>();
@@ -161,18 +180,14 @@ export function BoardView({
     setDragging(beads.find((bead) => bead.id === event.active.id));
   }
 
-  async function onDragEnd(event: DragEndEvent): Promise<void> {
-    setDragging(undefined);
-    const id = String(event.active.id);
-    const overId = event.over?.id ? String(event.over.id) : undefined;
-    if (!overId) return;
-
-    // Swimlane droppables are `lane::category`; the flat board's are a bare
-    // category. Either way only the category decides the next status — a
-    // card dropped in a different lane never mutates its label, because the
-    // lane is discarded right here.
-    const targetCategory = parseLaneDropId(overId)?.category ?? overId;
-
+  /**
+   * The actual mutation behind every card move, wide drag-and-drop and the
+   * narrow keyboard fallback alike: resolve the category's first status,
+   * apply it optimistically, call `bd`, and roll back with a toast if it
+   * fails. Kept in one place so the fallback below is a second *caller*, not a
+   * second copy of this.
+   */
+  async function moveCardToCategory(id: string, targetCategory: string): Promise<void> {
     const bead = beads.find((candidate) => candidate.id === id);
     const column = columns.find((candidate) => candidate.category === targetCategory);
     if (!bead || !column) return;
@@ -200,6 +215,76 @@ export function BoardView({
       notify(asRpcError(error).message, 'error');
     }
   }
+
+  async function onDragEnd(event: DragEndEvent): Promise<void> {
+    setDragging(undefined);
+    const id = String(event.active.id);
+    const overId = event.over?.id ? String(event.over.id) : undefined;
+    if (!overId) return;
+
+    // A droppable id carries up to three things: which layout half rendered it,
+    // which swimlane it sits in, and which status category it stands for. Only
+    // the category decides the next status — a card dropped in a different lane
+    // never mutates its label, because the lane is discarded right here, and
+    // the layout half is plumbing that never leaves `board-swimlanes`.
+    const targetCategory = parseDropId(overId).category;
+    await moveCardToCategory(id, targetCategory);
+  }
+
+  /**
+   * The keyboard sensor's coordinate getter, wrapping the pure
+   * `boardKeyboardCoordinates` with the one thing it cannot do itself: at
+   * narrow width there is no second real column for it to find, and moving a
+   * card there means a real mutation plus `setActiveCategory` following along
+   * — both of which need component state a pure geometry function has no
+   * access to.
+   *
+   * `boardKeyboardCoordinates` runs first and unconditionally, so every wide-
+   * layout move is exactly as it was: unchanged geometry, unchanged return
+   * value. The fallback only ever runs on top of an `undefined` from that call
+   * — never instead of it — and only engages once `isNarrowLayout` confirms
+   * the *reason* it was undefined is "no second column is real right now", not
+   * "wide, genuinely at the board's edge". That is what keeps this additive:
+   * a real geometric target, at any width, always wins.
+   */
+  function boardViewKeyboardCoordinates(
+    event: { code: string; preventDefault(): void },
+    args: {
+      active: string | number;
+      currentCoordinates: { x: number; y: number };
+      context: DroppableRegistry;
+    },
+  ): { x: number; y: number } | undefined {
+    const target = boardKeyboardCoordinates(event, args);
+    if (target) return target;
+
+    if (!isArrowCode(event.code)) return undefined;
+    if (!isNarrowLayout(measuredDropTargets(args.context))) return undefined;
+
+    const nextCategory = nextNarrowCategory(event.code, columns, narrowColumn?.category);
+    if (!nextCategory) return undefined;
+
+    setActiveCategory(nextCategory);
+    void moveCardToCategory(String(args.active), nextCategory);
+
+    return undefined;
+  }
+
+  // A pointer must travel a few pixels before a drag starts, otherwise clicking
+  // a card to open its details would be swallowed by the drag sensor.
+  //
+  // The keyboard sensor is the same board without a mouse: space picks a card
+  // up, the arrow keys move it one *column* at a time (see `board-keyboard`) —
+  // or, below the narrow breakpoint where only one column is ever real, one
+  // *category* at a time via the fallback above — space drops it and escape
+  // puts it back.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: boardViewKeyboardCoordinates,
+      keyboardCodes: BOARD_KEYBOARD_CODES,
+    }),
+  );
 
   if (columns.length === 0) {
     return (
@@ -262,7 +347,19 @@ export function BoardView({
         </div>
       </div>
 
-      <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={(e) => void onDragEnd(e)}>
+      <DndContext
+        sensors={sensors}
+        accessibility={{
+          announcements: BOARD_ANNOUNCEMENTS,
+          screenReaderInstructions: BOARD_SCREEN_READER_INSTRUCTIONS,
+        }}
+        onDragStart={onDragStart}
+        onDragEnd={(e) => void onDragEnd(e)}
+        // Escape only reaches the board through the keyboard sensor, and it
+        // ends the drag without an `onDragEnd` — without this the overlay card
+        // would hang around after the move was called off.
+        onDragCancel={() => setDragging(undefined)}
+      >
         {swimlanes ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
             {swimlanes.map((swimlane) => (
@@ -288,7 +385,14 @@ export function BoardView({
             <div className="min-h-0 flex-1 @2xl:hidden">
               {narrowColumn ? (
                 <Column
+                  // A category switch is a different column, not the same one
+                  // re-labelled: keying on the category remounts it, so its
+                  // "Load more" window starts at the first page instead of
+                  // inheriting whatever the previously shown category was
+                  // paged out to.
+                  key={narrowColumn.category}
                   column={narrowColumn}
+                  dropId={narrowDropId(narrowColumn.category)}
                   onSelect={onSelect}
                   selectedId={selectedId}
                   blockedIds={blockedIds}
@@ -319,8 +423,22 @@ export function BoardView({
           </>
         )}
 
+        {/*
+          The ghost that follows the pointer. `presentational` is what keeps it
+          a picture: the real card is still mounted in its column, still holds
+          focus and still owns the accessible name, and dnd-kit's overlay
+          wrapper adds no `aria-hidden`, `inert` or `tabindex` of its own.
+
+          `w-full` rather than a hardcoded width: dnd-kit's own `PositionedOverlay`
+          wrapper around this component already sets its `style.width` from the
+          *real* dragged card's measured rect at drag-start, so the wrapper is
+          already the right width for whichever column (collapsed `w-52`, expanded
+          `w-72 @5xl:flex-1`, or the narrow single-column layout) the drag started
+          in. A fixed width here (previously `w-64`, matching none of those) fought
+          that correct outer sizing from the inside instead of filling it.
+        */}
         <DragOverlay dropAnimation={null}>
-          {dragging ? <BeadCard bead={dragging} className="w-64 shadow-lg" /> : null}
+          {dragging ? <BeadCard bead={dragging} presentational className="w-full shadow-lg" /> : null}
         </DragOverlay>
       </DndContext>
     </div>
@@ -378,8 +496,12 @@ function SwimlaneSection({
       <div className="pb-3 @2xl:hidden">
         {narrowColumn ? (
           <Column
+            // Same reason as the flat board's narrow column: remount per
+            // category so the paging window does not carry across the switch.
+            // The lane is already this section's own key.
+            key={narrowColumn.category}
             column={narrowColumn}
-            dropId={laneDropId(swimlane.lane, narrowColumn.category)}
+            dropId={narrowDropId(laneDropId(swimlane.lane, narrowColumn.category))}
             onSelect={onSelect}
             selectedId={selectedId}
             blockedIds={blockedIds}
@@ -421,7 +543,14 @@ function Column({
   onToggleCollapsed,
 }: {
   column: BoardColumn;
-  /** Droppable id. Defaults to the bare category — the flat board's id, unchanged. */
+  /**
+   * Droppable id, built by `board-swimlanes`. Defaults to the bare category,
+   * which is the wide flat board's id.
+   *
+   * It must be unique across every column the board has *mounted*, not just
+   * every column on screen: the narrow and the wide layout are both in the DOM
+   * at once, and dnd-kit keys its droppable registry by this id.
+   */
   dropId?: string;
   onSelect: (id: string) => void;
   selectedId?: string;
@@ -434,8 +563,10 @@ function Column({
   const [limit, setLimit] = useState(PAGE);
   const accent = CATEGORY_ACCENT[column.category] ?? 'var(--color-fg-muted)';
 
-  // A filter change can shrink a column below the current window; reset so the
-  // "Load more" count never claims more than is there.
+  // A filter change can shrink a column below the current window. There is no
+  // reset on `column.beads` changing — `limit` just stays as-is and this slice
+  // clamps `shown` to whatever is actually there, so `hidden` naturally falls
+  // to 0 instead of claiming more than exists.
   const shown = column.beads.slice(0, limit);
   const hidden = column.beads.length - shown.length;
 
@@ -619,16 +750,26 @@ function DraggableCard({
   selected: boolean;
   onSelect: (id: string) => void;
 }): ReactNode {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: bead.id });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } = useDraggable({
+    id: bead.id,
+  });
 
+  // The wrapper is the thing that moves; the card inside it is the thing you
+  // focus and press space on. They have to be split: the keyboard sensor only
+  // fires when the key event's target *is* the activator node, so the activator
+  // belongs on the element focus lands on. Spreading the attributes out here as
+  // well would wrap one button role around another and cost a second tab stop
+  // on every card. The pointer sensor is unaffected — it has no such check, so
+  // a press anywhere inside the card still bubbles up and starts a drag.
   return (
-    <div ref={setNodeRef} {...listeners} {...attributes}>
+    <div ref={setNodeRef}>
       <BeadCard
         bead={bead}
         blocked={blocked}
         selected={selected}
         dragging={isDragging}
         onSelect={onSelect}
+        drag={{ attributes, listeners, setActivatorRef: setActivatorNodeRef }}
       />
     </div>
   );

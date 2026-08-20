@@ -7,6 +7,7 @@
  */
 import * as vscode from 'vscode';
 
+import type { TranscriptBackfill } from '../../shared/fleet';
 import {
   MUTATING_METHODS,
   type RpcMethodName,
@@ -16,11 +17,24 @@ import {
 import { toPriority } from '../../shared/types';
 import type { BeadsStore } from '../store';
 import { toRpcError } from '../store';
-import { requireDueDate } from './param-validation';
+import { requireDueDate, requireTargetId } from './param-validation';
 
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
   revealBead(id: string): void;
+  /** Start forwarding `fleetChanged` to this webview session (`subscribeFleet`). */
+  fleetSubscribe(): void;
+  /** Stop forwarding `fleetChanged` to this webview session (`unsubscribeFleet`). */
+  fleetUnsubscribe(): void;
+  /**
+   * Start following one transcript target (`subscribeTranscript`). Resolves
+   * with the initial backfill; rejects (e.g. an unknown target, or the
+   * containment guard refusing a resolved path) surface as a normal
+   * `RpcError` to the webview.
+   */
+  transcriptSubscribe(targetId: string): Promise<TranscriptBackfill>;
+  /** Stop following a transcript target (`unsubscribeTranscript`). */
+  transcriptUnsubscribe(targetId: string): void;
 }
 
 export async function handleRequest(
@@ -110,6 +124,21 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
 
     case 'appendNotes':
       await mutations.appendNotes(id(), requireString(params.text, 'text'));
+      return { ok: true };
+
+    case 'subscribeFleet':
+      host.fleetSubscribe();
+      return { ok: true };
+
+    case 'unsubscribeFleet':
+      host.fleetUnsubscribe();
+      return { ok: true };
+
+    case 'subscribeTranscript':
+      return host.transcriptSubscribe(requireTargetId(params.targetId, 'targetId'));
+
+    case 'unsubscribeTranscript':
+      host.transcriptUnsubscribe(requireTargetId(params.targetId, 'targetId'));
       return { ok: true };
 
     default:

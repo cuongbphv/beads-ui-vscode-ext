@@ -26,7 +26,7 @@
 
 ## 它能做什么
 
-Beads Dashboard 通过 `bd` CLI 读取你本地的 beads 数据库，并以四种方式呈现：
+Beads Dashboard 通过 `bd` CLI 读取你本地的 beads 数据库，并以五种方式呈现：
 
 - **Overview（概览）** —— 总数、状态分布、epic 进度，以及打开时最关心的两个列表：
   哪些可以立即开始，哪些被阻塞。
@@ -36,6 +36,8 @@ Beads Dashboard 通过 `bd` CLI 读取你本地的 beads 数据库，并以四�
   `needs-human`）对列进行分组。
 - **Graph（依赖图）** —— 将一个 issue 的 blocked-by 依赖关系画成有向无环图（DAG），自动布局，
   并且每个节点都可以拖动。
+- **Fleet（舰队）** —— 显示当前工作区里正在运行的 Claude Code 编排/工作会话、它们留下的 git
+  worktree，点击某个 worker 还能查看其实时 transcript。详见下方 [Fleet monitor](#fleet-monitor)。
 
 此外还有一个 **Epics & Tasks** 侧边栏，带 "Needs You" 区块 —— 打开中的 gate 会和分配给你的
 issue 一起显示，每个 gate 都自带一个内联的 Resolve 操作 —— 以及可在树视图、看板和详情面板中
@@ -76,6 +78,18 @@ Done 列默认是折叠的：
 
 ![Graph 标签页：一张分层的依赖关系图，几个被阻塞的 issue 用红色描边标出，工具栏上有缩放和重置布局按钮，旁边还有侧边栏的 Gates(1) 条目](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
 
+**Fleet** —— 一个 orchestrator，一个 worker 正在一个真实的 `wt-*` git worktree 上运行，
+transcript 直接从 Claude Code 自己写入的那份 JSONL 文件流式读取。详见下方
+[Fleet monitor](#fleet-monitor)：
+
+![Fleet 标签页：orchestrator demo-orc 下有一个正在运行的 worker，负责 harbor-201，它的 spawn brief 里写明了 bead 和 wt-201 worktree 路径](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
+
+**Fleet，某个 worker 的 transcript** —— text 和 thinking block 经过手写的 markdown
+渲染器渲染：标题、粗体、行内代码、一段代码块，以及一行 `✓ PASSED` 结果，直接画成
+React element，绝不使用 `dangerouslySetInnerHTML`：
+
+![Fleet worker transcript：一个 Thinking 折叠块，一次 Read 工具调用及其结果，然后是 assistant 的总结，里面有粗体文字、两处行内代码文件路径、一段 ts 代码块，以及一行加粗的 PASSED 结果](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+
 **Detail pane（详情面板）** —— 无需离开看板即可查看完整 issue。状态、优先级和指派人在你
 设置的同时就会生效，评论以及一个仅追加内容的备注编辑器就在这些字段下方，即使目前还没有任何
 评论也会显示出来：
@@ -92,6 +106,10 @@ Done 列默认是折叠的：
 - 你的 `PATH` 中要有 [`bd` CLI](https://github.com/steveyegge/beads)（或设置
   `beadsDashboard.bdPath`）。
 - 一个包含 `.beads` 目录的工作区文件夹。只有找到该目录时本扩展才会激活。
+
+有东西不对劲？[docs/TROUBLESHOOTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/docs/TROUBLESHOOTING.md) 讲了本扩展刻意处理的四种降级状态 ——
+没有工作区文件夹、没有 `.beads` 目录、`PATH` 里没有 `bd`，以及 `bd` 跑得起来却拒绝执行 ——
+每一种分别显示什么、为什么，以及怎么解决。
 
 ## 安装
 
@@ -149,25 +167,66 @@ npm run install:local     # 构建 → 打包 → 安装；然后 reload window
 | `Beads: Show bd Output Log` | Palette —— 每一次调用参数和每一次失败都记录在这里 |
 | 修改状态 / 优先级 / 指派人，Claim，Close，Copy ID | 树视图右键菜单、详情面板 |
 
+## Fleet monitor
+
+**Fleet** 标签页回答的问题是"我的 agent 编队现在正在对这个工作区做什么？"—— 哪些 Claude Code
+会话正作为 orchestrator 运行，它们各自派生了哪些 worker，这些 worker 在磁盘上留下了哪些 git
+worktree，以及哪个 worktree 已经过期（没有任何 worker 还在认领它，所以要么是被遗忘了，要么在
+等待review）。点击某个 worker 或 orchestrator 即可实时查看其 transcript，直接从 Claude Code
+自己写入的那份 JSONL 文件里流式读取。`text`、`thinking` 这两类 block 会经过一个自己手写、不依赖
+第三方库的 markdown 渲染器 —— 支持标题、列表、代码块、表格、粗体/斜体 —— 先解析成纯数据 AST，
+再直接画成 React element，绝不使用 `dangerouslySetInnerHTML`；transcript 是 agent/tool 可控的
+通道，所以这个渲染器本身就是安全边界，不是事后补上的。
+
+![Fleet worker transcript：一个 Thinking 折叠块，一次 Read 工具调用及其结果，然后是 assistant 的总结，里面有粗体文字、两处行内代码文件路径、一段 ts 代码块，以及一行加粗的 PASSED 结果](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+
+数据来源：
+
+- **会话与 worker** —— 读取自 `~/.claude/projects/<mangled-cwd>`，这是 Claude Code 自己的
+  transcript 存储，按 Claude Code 自身的方式与本工作区对应。一个会话只有在派生过至少一个
+  worker（存在 `subagents/agent-*.jsonl` 文件）时才算作 orchestrator；普通聊天会话不属于 fleet。
+- **Worktree 及其 git 状态** —— 先 `git worktree list --porcelain`，再对每个 worktree 执行
+  `git status` / `git diff --numstat`，并按 worker 自己的 spawn brief 对应到某个 bead id。没有
+  worker 认领的 worktree 会出现在"Stale worktrees"里 —— 这正是
+  [#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11) 最初提出的"什么算过期
+  worktree"的答案。
+- **扫描频率** —— 每 5 秒一次的轮询是始终开启的基线；在 `~/.claude/projects` 上叠加了一个
+  `FileSystemWatcher` 作为快速通道，当操作系统更早报告变化时生效。轮询永远不会被去掉：watcher
+  本质上是尽力而为（一个刚开始监听的 watcher 有可能错过紧随其后发生的事件 —— 这是在真实的
+  Extension Development Host 上实测得出的结论，不是假设），所以最坏情况也就是和只用轮询一样快，
+  不会更慢，也不会卡住。
+- **降级而不崩溃** —— 这台机器上没有 `~/.claude/projects`、目录为空、`git` 执行失败，或者某个
+  worktree 出错，都会渲染出清晰的空状态或内联错误提示，而不是崩溃或一片空白。
+
+这里的数据都不是 `bd` 数据，因此都不经过 `BdService` —— `src/extension/fleet/` 是继 `actor.ts`
+的只读 `git config user.name` 探测之后，第三个刻意设置在 `BdService` 之外、会 spawn 进程的地方：
+这里的每一次 spawn 都是只读的、有超时限制的，单个 worktree 出错也绝不会让整个快照变空白。之所以
+单独成一个模块而不是并入 `actor.ts` 或 `BdService`，是因为它回答的是另一个问题（磁盘上有什么、
+Claude Code 自己的 transcript 存储里有什么）—— 具体理由见
+`src/extension/fleet/FleetService.ts` 和 `src/extension/fleet/worktree-git.ts` 文件开头的注释。
+
 ## 路线图
 
 没有时间表，下面也没有任何一条是承诺。这份清单的用途是让"我该从哪里下手"有答案：Planned 里的每一项
 都对应一个已经开着的 issue。
 
+**Shipped** —— 已完成，现在就在扩展里：
+
+- **用键盘移动卡片** —— 空格键把卡片拿起来，方向键让它一列一列、一条泳道一条泳道地移动，再按空格
+  放下，按 Escape 放回原处。屏幕阅读器读到的是列名，而不是 droppable 的 id。
+  （[#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7)）
+- **Fleet monitor** —— 把磁盘上的 worktree 和 `work/bead-*` 分支与它们各自承载的 bead 对齐排列，
+  让被遗忘的 worktree 显形，并支持按 worker 实时查看 transcript。详见上方
+  [Fleet monitor](#fleet-monitor)。（[#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11)）
+
 **Planned** —— 完全贴合现有架构的设计：
 
 - **Molecule 进度** —— `bd mol` 目前在界面上毫无体现。为正在运行的 molecule 和即将自动消失的 wisp
   加一条进度条。（[#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10)）
-- **Fleet monitor** —— 把磁盘上的 worktree 和 `work/bead-*` 分支与它们各自承载的 bead 对齐排列，
-  让被遗忘的 worktree 显形。（[#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11)）
-- **用键盘移动卡片** —— Board 上的拖拽目前只认指针，而卡片已经向屏幕阅读器自称"可拖拽"。
-  （[#7](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/7) —— good first issue）
 - **在 pull request 上运行的 workflow** —— 目前一个都没有，因为测试套件里有一部分直接驱动真实的
   `bd` 可执行文件。（[#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9)）
 - **Windows，由 Windows 用户亲自确认** —— `.cmd` shim 的回退路径和 Git-Bash 下的路径都已写好，
   但从未在真实 Windows 机器上验证过。（[#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12)）
-- **Troubleshooting 文档** —— 代码认真处理过的四种降级状态，一处文档都没有。
-  （[#8](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/8) —— good first issue）
 
 **Exploring** —— 一个方向，不是承诺。尚未设计，也还没有对应的 issue。
 

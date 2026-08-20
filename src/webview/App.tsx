@@ -4,14 +4,7 @@
  * The detail pane docks beside the content when the container is wide and takes
  * the whole panel when it is not — same component, no duplicate markup.
  */
-import {
-  AlertCircle,
-  LayoutDashboard,
-  Map as MapIcon,
-  RefreshCw,
-  Columns3,
-  Waypoints,
-} from 'lucide-react';
+import { AlertCircle, Bot, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -22,6 +15,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import type { FleetStatusFilter } from '../shared/fleet-filter';
 import type { BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
 import type { RoadmapSort } from '../shared/roadmap-sort';
@@ -33,6 +27,11 @@ import { Splitter } from './components/splitter';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import {
+  persistedFleetPreferences,
+  restoreFleetPreferences,
+  type PersistedFleetPreferences,
+} from './lib/fleet-preferences';
 import { clamp, DETAIL_DEFAULT_PX, DETAIL_MIN_PX, detailMaxWidth, type Range } from './lib/drag-resize';
 import {
   persistedRoadmapPreferences,
@@ -42,11 +41,11 @@ import {
 import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
-import { GraphView } from './views/GraphView';
+import { FleetView } from './views/FleetView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
-interface PersistedState extends PersistedRoadmapPreferences {
+interface PersistedState extends PersistedRoadmapPreferences, PersistedFleetPreferences {
   tab: DashboardTab;
   query: BeadQuery;
   /** Absent until the user first folds or unfolds a board column. */
@@ -59,18 +58,21 @@ interface PersistedState extends PersistedRoadmapPreferences {
   roadmapShape?: RoadmapShape;
   /** Detail-pane width in px. Absent until the user first drags it. */
   detailWidth?: number;
+  /** Fleet tab's own detail-pane width in px. Absent until the user first drags it. */
+  fleetDetailWidth?: number;
 }
 
 const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
   overview: { label: 'Overview', icon: <LayoutDashboard aria-hidden="true" className="size-4" /> },
   roadmap: { label: 'Roadmap', icon: <MapIcon aria-hidden="true" className="size-4" /> },
   board: { label: 'Board', icon: <Columns3 aria-hidden="true" className="size-4" /> },
-  graph: { label: 'Graph', icon: <Waypoints aria-hidden="true" className="size-4" /> },
+  fleet: { label: 'Fleet', icon: <Bot aria-hidden="true" className="size-4" /> },
 };
 
 export function App(): ReactNode {
   const saved = restore<PersistedState>();
   const restoredRoadmap = restoreRoadmapPreferences(saved);
+  const restoredFleet = restoreFleetPreferences(saved);
   const { snapshot, index, error, loading, focusedId, setFocusedId, refresh } = useBeads();
 
   const [tab, setTab] = useState<DashboardTab>(saved?.tab ?? 'overview');
@@ -85,6 +87,11 @@ export function App(): ReactNode {
   const [roadmapZoom, setRoadmapZoom] = useState<RoadmapZoom>(restoredRoadmap.zoom);
   const [roadmapGutter, setRoadmapGutter] = useState(restoredRoadmap.gutter);
   const [detailWidth, setDetailWidth] = useState(saved?.detailWidth ?? DETAIL_DEFAULT_PX);
+  // Fleet's own detail pane (the transcript view, beads-ui-vscode-ext-37b) —
+  // measured against `FleetView`'s own container, not `mainWidth` below,
+  // since it is the only tab with its own list+detail split.
+  const [fleetDetailWidth, setFleetDetailWidth] = useState(saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX);
+  const [fleetStatusFilter, setFleetStatusFilter] = useState<FleetStatusFilter>(restoredFleet.statusFilter);
   const mainRef = useRef<HTMLElement>(null);
   const [mainWidth, setMainWidth] = useState(0);
 
@@ -125,6 +132,8 @@ export function App(): ReactNode {
           gutter: roadmapGutter,
         }),
         detailWidth,
+        fleetDetailWidth,
+        ...persistedFleetPreferences({ statusFilter: fleetStatusFilter }),
       }),
     [
       tab,
@@ -137,6 +146,8 @@ export function App(): ReactNode {
       roadmapZoom,
       roadmapGutter,
       detailWidth,
+      fleetDetailWidth,
+      fleetStatusFilter,
     ],
   );
 
@@ -289,11 +300,11 @@ export function App(): ReactNode {
                 onSwimlanesChange={setBoardSwimlanes}
               />
             ) : (
-              <GraphView
-                beads={beads}
-                onSelect={onSelect}
-                selectedId={focusedId}
-                blockedIds={blockedIds}
+              <FleetView
+                detailWidth={fleetDetailWidth}
+                onDetailWidthChange={setFleetDetailWidth}
+                statusFilter={fleetStatusFilter}
+                onStatusFilterChange={setFleetStatusFilter}
               />
             )}
           </div>

@@ -5,13 +5,14 @@
  * it — every bar starts and ends in the same pixel column. The tab therefore
  * *opens* as a list in that case, but it never switches shape underneath
  * someone who is already looking at it: the toggle stays, and an explicit
- * choice always wins.
+ * choice always wins. Graph is a third shape, but never an inferred one — it
+ * is reached only by an explicit pick, never by `defaultShape`.
  */
 import { filterBeads, type BeadQuery, type StatusIndex } from '../../shared/model';
 import { DAY } from '../../shared/schedule';
 import type { Bead } from '../../shared/types';
 
-export type RoadmapShape = 'timeline' | 'list';
+export type RoadmapShape = 'timeline' | 'list' | 'graph';
 
 /** Below this many days, a Gantt is a stack of identical stubs. */
 export const MIN_TIMELINE_DAYS = 7;

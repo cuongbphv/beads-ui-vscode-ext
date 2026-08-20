@@ -25,3 +25,21 @@ export function requireDueDate(value: unknown, field: string): string {
   }
   throw new Error(`Invalid parameter "${field}": expected a YYYY-MM-DD date or an empty string.`);
 }
+
+/**
+ * A transcript target id is used to build a path under `~/.claude/projects`
+ * (real wiring lands in a later Fleet bead); it must never carry path
+ * separators, spaces, or `..` segments, so this is checked against an
+ * allowlist rather than merely requiring a non-blank string.
+ */
+const TARGET_ID_PATTERN = /^[A-Za-z0-9:._-]+$/;
+
+export function requireTargetId(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Missing required parameter "${field}".`);
+  }
+  if (!TARGET_ID_PATTERN.test(value)) {
+    throw new Error(`Invalid parameter "${field}": expected only letters, digits, ':', '.', '_', '-'.`);
+  }
+  return value;
+}

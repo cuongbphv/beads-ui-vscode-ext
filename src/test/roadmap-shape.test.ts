@@ -57,6 +57,11 @@ describe('resolveShape', () => {
     expect(resolveShape('timeline', window(1))).toBe('timeline');
     expect(resolveShape('list', window(365))).toBe('list');
   });
+
+  it('keeps an explicit graph choice regardless of the window — it is never inferred', () => {
+    expect(resolveShape('graph', window(1))).toBe('graph');
+    expect(resolveShape('graph', window(365))).toBe('graph');
+  });
 });
 
 describe('hiddenClosedCount', () => {

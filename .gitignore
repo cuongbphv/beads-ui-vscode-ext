@@ -45,7 +45,6 @@ next-env.d.ts
 # beads orchestration (user-specific)
 .beads/
 AGENTS.md
-CLAUDE.md
 
 # spec and test files
 SPEC.md

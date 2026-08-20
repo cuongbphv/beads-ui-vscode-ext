@@ -9,6 +9,7 @@
  * See CLAUDE.md cardinal sin #4.
  */
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -84,6 +85,35 @@ async function gateIssueCounts(): Promise<{ total: number; closed: number }> {
   return { total: gates.length, closed: gates.filter((g) => g.status === 'closed').length };
 }
 
+/**
+ * The checkout whose `.beads/` directory bd is expected to resolve to.
+ *
+ * Usually that is `CWD`. Inside a *linked git worktree* it is not: the worktree
+ * has no `.beads/` of its own, and bd deliberately resolves the workspace of
+ * the main checkout that owns the shared git directory, so `bd context` reports
+ * a path that has nothing to do with `path.basename(CWD)`. Asserting on the
+ * worktree's own name therefore failed for a workspace bd had resolved
+ * *correctly* — the bug this helper exists to remove.
+ *
+ * `git rev-parse --git-common-dir` names that shared git directory, so its
+ * parent is the owning checkout. Same rule, and the same fallbacks, as
+ * `findBeadsWorkspaceRoot()` in `scripts/run-webview-test.mjs`.
+ */
+async function beadsWorkspaceRoot(): Promise<string> {
+  if (existsSync(path.join(CWD, '.beads'))) return CWD;
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: CWD,
+      encoding: 'utf8',
+    });
+    // `--git-common-dir` answers relatively from a plain checkout and
+    // absolutely from a worktree; `path.resolve` accepts both.
+    return path.dirname(path.resolve(CWD, stdout.trim()));
+  } catch {
+    return CWD; // Not a git checkout at all; nothing further to resolve against.
+  }
+}
+
 const service = new BdService({ cwd: CWD });
 const queries = new BdQueries(service);
 
@@ -98,7 +128,11 @@ describe('bd CLI is reachable', () => {
     expect(context.beads_dir).toBeTruthy();
     // Compare case- and separator-insensitively: Windows hands back either.
     const normalise = (p: string) => p.replace(/\\/g, '/').toLowerCase();
-    expect(normalise(context.beads_dir)).toContain(normalise(path.basename(CWD)));
+    // The whole parent path, not just a directory name: a bare name also
+    // matches a sibling checkout ("…-ext-2/.beads") or any stale redirect that
+    // happens to mention it, and those are precisely the wrong workspaces this
+    // test exists to catch.
+    expect(normalise(path.dirname(context.beads_dir))).toBe(normalise(await beadsWorkspaceRoot()));
   });
 });
 
@@ -351,8 +385,19 @@ describe('dashboard snapshot', () => {
   });
 
   it('flags truncation when the limit bites', async () => {
-    const snapshot = await queries.snapshot(2);
-    expect(snapshot.beads.length).toBe(2);
+    // A hardcoded small limit (e.g. 2) only proves truncation while the live
+    // board happens to hold more issues than that at the moment the test
+    // runs — a board that coincidentally shrank to 2 or fewer real issues
+    // would flip this red with zero code being wrong. Measuring the board's
+    // own current size first and deriving the limit from it removes that
+    // coincidence entirely: `total - 1` is by construction smaller than
+    // whatever `bd` is about to hand back, so `beads.length >= limit` (the
+    // condition `queries.snapshot` uses to set `truncated`) holds regardless
+    // of how large or small the live board is right now.
+    const total = (await queries.list({ all: true })).length;
+    const limit = Math.max(1, total - 1);
+    const snapshot = await queries.snapshot(limit);
+    expect(snapshot.beads.length).toBe(limit);
     expect(snapshot.truncated).toBe(true);
   });
 

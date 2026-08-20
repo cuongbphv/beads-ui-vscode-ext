@@ -5,9 +5,15 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
 
+import type { TranscriptBackfill } from '../../shared/fleet';
 import { isRpcRequest, type DashboardTab, type HostEvent } from '../../shared/protocol';
+import type { FleetService } from '../fleet/FleetService';
+import { TranscriptTailer, type TranscriptResolution } from '../fleet/TranscriptTailer';
 import { bindVisibility, type BeadsStore } from '../store';
 import { handleRequest, isMutation, type RouterHost } from './router';
+
+/** What `extension.ts` supplies; this panel adds `fleetSubscribe`/`fleetUnsubscribe` itself. */
+type ExtensionHost = Pick<RouterHost, 'revealBead'>;
 
 export class DashboardPanel implements vscode.Disposable {
   private static current: DashboardPanel | undefined;
@@ -15,7 +21,8 @@ export class DashboardPanel implements vscode.Disposable {
   static show(
     context: vscode.ExtensionContext,
     store: BeadsStore,
-    host: RouterHost,
+    fleet: FleetService,
+    host: ExtensionHost,
     tab?: DashboardTab,
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn ?? vscode.ViewColumn.One;
@@ -35,7 +42,7 @@ export class DashboardPanel implements vscode.Disposable {
         vscode.Uri.joinPath(context.extensionUri, 'media')],
     });
 
-    DashboardPanel.current = new DashboardPanel(context, panel, store, host, tab);
+    DashboardPanel.current = new DashboardPanel(context, panel, store, fleet, host, tab);
     return DashboardPanel.current;
   }
 
@@ -45,15 +52,31 @@ export class DashboardPanel implements vscode.Disposable {
 
   private readonly disposables: vscode.Disposable[] = [];
 
+  /** Whether this webview session has called `subscribeFleet` and not yet `unsubscribeFleet`. */
+  private fleetSubscribed = false;
+  /** Non-`undefined` exactly while `fleet.observe()` is held for this panel; see `syncFleetObservation`. */
+  private fleetHold: vscode.Disposable | undefined;
+  /**
+   * One tailer per panel — the Fleet tab only ever shows one transcript at a
+   * time, and `TranscriptTailer` itself already enforces "a new subscribe
+   * replaces the old one" (see its own class doc). Path resolution reuses
+   * `fleet.filePathFor`/`fleet.transcriptsBaseDir` rather than re-deriving
+   * `~/.claude/projects` layout here.
+   */
+  private readonly transcriptTailer: TranscriptTailer;
+
   private constructor(
     context: vscode.ExtensionContext,
     private readonly panel: vscode.WebviewPanel,
     private readonly store: BeadsStore,
-    private readonly host: RouterHost,
+    private readonly fleet: FleetService,
+    private readonly host: ExtensionHost,
     private readonly initialTab?: DashboardTab,
   ) {
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'activity-bar.svg');
     panel.webview.html = this.render(context, panel.webview);
+
+    this.transcriptTailer = new TranscriptTailer((targetId) => this.resolveTranscriptTarget(targetId));
 
     this.disposables.push(
       panel.webview.onDidReceiveMessage((message: unknown) => void this.onMessage(message)),
@@ -66,6 +89,11 @@ export class DashboardPanel implements vscode.Disposable {
         },
         onDidChange: (listener) => panel.onDidChangeViewState(() => listener()),
       }),
+      // A panel that drops out of view (another editor tab takes focus) is not
+      // being watched either, even if the webview stayed subscribed to Fleet
+      // from a previous frame — same discipline as the bd store's poll gate,
+      // just keyed on "subscribed AND visible" instead of "visible" alone.
+      panel.onDidChangeViewState(() => this.syncFleetObservation()),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('beadsDashboard.showClosed')) this.postSettings();
       }),
@@ -75,7 +103,80 @@ export class DashboardPanel implements vscode.Disposable {
         if (state.snapshot) this.post({ kind: 'event', name: 'issuesChanged', snapshot: state.snapshot });
         else if (state.error) this.post({ kind: 'event', name: 'error', error: state.error });
       }),
+      fleet.onDidChange((snapshot) => {
+        if (this.fleetSubscribed) this.post({ kind: 'event', name: 'fleetChanged', fleet: snapshot });
+      }),
     );
+  }
+
+  /** `RouterHost.fleetSubscribe`: start forwarding `fleetChanged` to this webview session. */
+  fleetSubscribe(): void {
+    this.fleetSubscribed = true;
+    this.syncFleetObservation();
+    // Catch the new subscriber up on whatever is already known, exactly like
+    // the `ready` handler below does for `getSnapshot` — otherwise a fresh
+    // subscriber waits out a full discovery tick for its first frame.
+    if (this.fleet.snapshot) this.post({ kind: 'event', name: 'fleetChanged', fleet: this.fleet.snapshot });
+  }
+
+  /** `RouterHost.fleetUnsubscribe`: stop forwarding `fleetChanged` to this webview session. */
+  fleetUnsubscribe(): void {
+    this.fleetSubscribed = false;
+    this.syncFleetObservation();
+  }
+
+  /** `RouterHost.revealBead`: delegates to the extension-level host supplied at construction. */
+  revealBead(id: string): void {
+    this.host.revealBead(id);
+  }
+
+  /**
+   * `RouterHost.transcriptSubscribe`: start (or switch) this panel's single
+   * transcript tail. `TranscriptTailer.subscribe` itself cancels whatever was
+   * previously tailed, so there is nothing extra to release here first.
+   */
+  transcriptSubscribe(targetId: string): Promise<TranscriptBackfill> {
+    return this.transcriptTailer.subscribe(targetId, (payload) => {
+      this.post({
+        kind: 'event',
+        name: 'transcriptAppend',
+        targetId,
+        events: payload.events,
+        totalBytes: payload.totalBytes,
+        ...(payload.degraded ? { degraded: true } : {}),
+      });
+    });
+  }
+
+  /** `RouterHost.transcriptUnsubscribe`: stop tailing, if `targetId` is still the active one. */
+  transcriptUnsubscribe(targetId: string): void {
+    this.transcriptTailer.unsubscribe(targetId);
+  }
+
+  /**
+   * Resolve a transcript `targetId` to the file/base-directory pair
+   * `TranscriptTailer` needs, reusing `FleetService`'s already-discovered
+   * session/worker associations (Fleet P3) rather than re-deriving them.
+   */
+  private resolveTranscriptTarget(targetId: string): TranscriptResolution | null {
+    const filePath = this.fleet.filePathFor(targetId);
+    const baseDir = this.fleet.transcriptsBaseDir;
+    return filePath && baseDir ? { filePath, baseDir } : null;
+  }
+
+  /**
+   * `fleet.observe()` is held exactly while a webview session has subscribed
+   * *and* this panel is on screen — holding it while merely subscribed would
+   * keep discovery running for a panel sitting in a background tab, which is
+   * exactly the cost `bindVisibility` exists to avoid for the bd store.
+   */
+  private syncFleetObservation(): void {
+    const shouldObserve = this.fleetSubscribed && this.panel.visible;
+    if (shouldObserve && !this.fleetHold) this.fleetHold = this.fleet.observe();
+    else if (!shouldObserve && this.fleetHold) {
+      this.fleetHold.dispose();
+      this.fleetHold = undefined;
+    }
   }
 
   /** Focus an issue in the open dashboard (used by the tree's click handler). */
@@ -123,7 +224,7 @@ export class DashboardPanel implements vscode.Disposable {
 
     if (!isRpcRequest(message)) return;
 
-    const response = await handleRequest(this.store, this.host, message);
+    const response = await handleRequest(this.store, this, message);
     void this.panel.webview.postMessage(response);
 
     // A mutation already fired the store's change event via BdMutations, which
@@ -172,6 +273,9 @@ export class DashboardPanel implements vscode.Disposable {
 
   dispose(): void {
     DashboardPanel.current = undefined;
+    this.fleetHold?.dispose();
+    this.fleetHold = undefined;
+    this.transcriptTailer.dispose();
     for (const disposable of this.disposables) disposable.dispose();
     this.panel.dispose();
   }

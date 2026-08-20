@@ -117,8 +117,8 @@ async function bdBoardIssues() {
 
 /**
  * Count of `blocks` / `parent-child` edges across the whole board — the same
- * two kinds `graph-layout.ts` renders. The Graph tab's assertion branches on
- * this instead of assuming the board either has or lacks dependencies: a
+ * two kinds `graph-layout.ts` renders. The Roadmap tab's graph-shape assertion
+ * branches on this instead of assuming the board either has or lacks dependencies: a
  * board with none should show the EmptyState, a board with some should show
  * nodes, and guessing wrong either way would make the check meaningless.
  */
@@ -259,7 +259,7 @@ async function main() {
   console.log(`› bd list shows ${visibleIssueCount} issues (what the dashboard itself renders)`);
 
   const graphEdgeCount = countGraphEdges(boardIssues);
-  console.log(`› bd reports ${graphEdgeCount} blocks/parent-child edge(s) for the Graph tab`);
+  console.log(`› bd reports ${graphEdgeCount} blocks/parent-child edge(s) for the Roadmap graph shape`);
 
   const workspaceRoot = await findBeadsWorkspaceRoot();
   if (workspaceRoot !== repoRoot) {
@@ -351,7 +351,7 @@ async function main() {
       `webview header read "${headerText}"`,
     );
 
-    for (const tab of ['Overview', 'Roadmap', 'Board', 'Graph']) {
+    for (const tab of ['Overview', 'Roadmap', 'Board']) {
       check(
         `"${tab}" tab is rendered`,
         await inner
@@ -587,6 +587,58 @@ async function main() {
       (await inner.locator('text=/Open|In Progress|Done|On Hold/').count()) > 0,
     );
 
+    // beads-ui-vscode-ext-19r.10: the `DragOverlay` ghost used to carry a
+    // hardcoded `w-64`, fighting dnd-kit's own `PositionedOverlay` wrapper
+    // (which already sizes itself from the *real* dragged card's measured
+    // rect at drag-start) from the inside. jsdom returns 0x0 for every
+    // `getBoundingClientRect()` call, so no unit test can measure this — only
+    // a real, rendered pointer drag in this real editor window can. `article
+    // [role="button"]` matches every real card; the ghost is the one `article`
+    // dnd-kit renders with no `role` at all, marked `aria-hidden` instead (see
+    // `bead-card.tsx`'s `presentational` prop), so it never collides with the
+    // selector above.
+    {
+      const dragSourceCard = inner.locator('article[role="button"]:visible').first();
+      await dragSourceCard.waitFor();
+      const sourceBox = await dragSourceCard.boundingBox();
+      if (!sourceBox) {
+        failures.push('drag ghost width check: could not measure the source card before dragging');
+      } else {
+        const startX = sourceBox.x + sourceBox.width / 2;
+        const startY = sourceBox.y + sourceBox.height / 2;
+
+        await window.mouse.move(startX, startY);
+        await window.mouse.down();
+        // `PointerSensor`'s `activationConstraint: { distance: 4 }` (BoardView.tsx)
+        // only starts the drag — and mounts `DragOverlay` — once the pointer has
+        // moved more than 4px from where it went down. Two small moves rather
+        // than one big jump, so this crosses that threshold the same way a real
+        // drag's pointermove stream would rather than skipping straight past it.
+        await window.mouse.move(startX + 3, startY + 3);
+        await window.mouse.move(startX + 10, startY + 12);
+
+        const ghostCard = inner.locator('article[aria-hidden="true"]').first();
+        await ghostCard.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {});
+        const ghostBox = await ghostCard.boundingBox();
+
+        // Release back over the same card/column the drag started from: its
+        // status category is unchanged, so `onDragEnd` (BoardView.tsx) takes its
+        // early "already in this column" return and calls no `bd` mutation —
+        // this check only ever reads the board, the same rule every other
+        // assertion in this file follows.
+        await window.mouse.move(startX, startY);
+        await window.mouse.up();
+        await ghostCard.waitFor({ state: 'detached', timeout: 5_000 }).catch(() => {});
+        await window.waitForTimeout(300);
+
+        check(
+          'drag ghost width matches the source card it was picked up from',
+          !!ghostBox && Math.abs(ghostBox.width - sourceBox.width) <= 2,
+          `ghost width ${ghostBox?.width ?? '(unmeasured)'}, source card width ${sourceBox.width}`,
+        );
+      }
+    }
+
     // Finished work starts folded away: the done column's header is a toggle
     // offering to *expand* it. Read the aria-label, which is also the promise
     // made to a screen reader.
@@ -688,30 +740,98 @@ async function main() {
       await window.waitForTimeout(300);
     }
 
-    // Graph: only beads carrying a `blocks` / `parent-child` edge are drawn
-    // at all (graph-layout.ts), so which branch is correct — nodes or the
+    // Graph used to be its own tab; beads-ui-vscode-ext-615 folded it into the
+    // Roadmap tab as a third shape (`RoadmapView.tsx`'s `role="group"
+    // aria-label="Roadmap shape"` segmented control) alongside Timeline and
+    // List. Only beads carrying a `blocks` / `parent-child` edge are drawn at
+    // all (graph-layout.ts), so which branch is correct — nodes or the
     // EmptyState — depends on whether the real board has any such edge right
     // now, hence branching on `graphEdgeCount` measured up front rather than
     // assuming either shape.
-    await inner.locator('[role="tab"]:has-text("Graph")').first().click();
+    await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
+    await window.waitForTimeout(1000);
+
+    const roadmapShapeGroup = inner.locator('[role="group"][aria-label="Roadmap shape"]');
+    await roadmapShapeGroup.first().waitFor();
+    await roadmapShapeGroup.locator('button:has-text("Graph")').first().click();
     await window.waitForTimeout(1000);
     if (graphEdgeCount > 0) {
-      check('Graph tab renders an svg', (await inner.locator('svg').count()) > 0);
+      check('Roadmap graph shape renders an svg', (await inner.locator('svg').count()) > 0);
       check(
-        'Graph tab renders at least one dependency node',
+        'Roadmap graph shape renders at least one dependency node',
         (await inner.locator('svg [role="button"]').count()) > 0,
       );
       await window.screenshot({ path: join(artifactsDir, 'graph.png') });
     } else {
       check(
-        'Graph tab shows the EmptyState when the board has no dependency edges',
+        'Roadmap graph shape shows the EmptyState when the board has no dependency edges',
         (await inner.locator('text=/No dependencies to show/').count()) > 0,
       );
     }
 
-    await inner.locator('[role="tab"]:has-text("Roadmap")').first().click();
+    // Back to the default Timeline shape for the roadmap screenshot below.
+    await roadmapShapeGroup.locator('button:has-text("Timeline")').first().click();
     await window.waitForTimeout(1500);
     await window.screenshot({ path: join(artifactsDir, 'roadmap.png') });
+
+    // Fleet (beads-ui-vscode-ext-37b): reads `~/.claude/projects`, so whether
+    // this real editor session shows actual orchestrator/worker rows depends
+    // on whether *this* run happens to match the opened workspace's own
+    // mangled-cwd directory — not something to assume either way. Assert on
+    // whichever real, recognized state actually rendered instead: worker
+    // rows, or one of `FleetView`/`WorkerList`'s own empty/degraded states.
+    await inner.locator('[role="tab"]:has-text("Fleet")').first().click();
+    await window.waitForTimeout(1500);
+
+    const fleetLoading = inner.locator('[aria-busy="true"][aria-label="Loading fleet"]');
+    if ((await fleetLoading.count()) > 0) {
+      await fleetLoading
+        .first()
+        .waitFor({ state: 'detached', timeout: 15_000 })
+        .catch(() => {});
+    }
+
+    const fleetWorkerRows = inner.locator('li[role="button"][aria-label^="Worker "]');
+    const fleetEmptyStates = inner.locator(
+      'text=/No fleet data yet|No fleet activity|No Claude Code session data/',
+    );
+    const fleetWorkerCount = await fleetWorkerRows.count();
+    const fleetEmptyCount = await fleetEmptyStates.count();
+
+    check(
+      'Fleet tab renders a real state (worker rows or a recognized empty/degraded state)',
+      fleetWorkerCount > 0 || fleetEmptyCount > 0,
+    );
+    await window.screenshot({ path: join(artifactsDir, 'fleet.png') });
+
+    if (fleetWorkerCount > 0) {
+      // Real fleet data: exercise the click-to-select transcript wiring for real.
+      const firstWorker = fleetWorkerRows.first();
+      await firstWorker.click();
+      await window.waitForTimeout(800);
+
+      const transcriptPane = inner.locator('aside[aria-label^="Transcript for"]');
+      check('clicking a Fleet worker row opens its transcript pane', (await transcriptPane.count()) > 0);
+      check(
+        'the selected worker row exposes aria-current="true"',
+        (await firstWorker.getAttribute('aria-current')) === 'true',
+      );
+
+      const closeButton = inner.locator('button[aria-label="Close transcript"]');
+      if ((await closeButton.count()) > 0) {
+        await closeButton.first().click();
+        await window.waitForTimeout(400);
+        check(
+          'closing the transcript pane removes it from the DOM',
+          (await transcriptPane.count()) === 0,
+        );
+      }
+    } else {
+      check(
+        'Fleet tab shows a recognized empty/degraded state when there is no worker data',
+        fleetEmptyCount > 0,
+      );
+    }
 
     console.log(`› screenshots written to ${artifactsDir}`);
   } catch (error) {

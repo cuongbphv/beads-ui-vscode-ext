@@ -4,6 +4,7 @@
  * The webview never builds a `bd` argv; it calls one of the typed methods
  * below and the host translates. Framework-free: no `vscode`, no `react`.
  */
+import type { FleetSnapshot, TranscriptBackfill, TranscriptEvent } from './fleet';
 import type {
   Bead,
   BeadComment,
@@ -78,6 +79,30 @@ export interface RpcMethods {
   /** Append to notes (`bd update id --append-notes text`), newline-joined by bd. */
   appendNotes: {
     params: { id: string; text: string };
+    result: { ok: true };
+  };
+  /** Start receiving `fleetChanged` events. Non-mutating: it observes the fleet, it does not run one. */
+  subscribeFleet: {
+    params: undefined;
+    result: { ok: true };
+  };
+  /** Stop receiving `fleetChanged` events for this webview session. */
+  unsubscribeFleet: {
+    params: undefined;
+    result: { ok: true };
+  };
+  /**
+   * Start following one agent or session transcript. Returns the backfill —
+   * everything already on disk — and the host follows up with
+   * `transcriptAppend` events for anything written after.
+   */
+  subscribeTranscript: {
+    params: { targetId: string };
+    result: TranscriptBackfill;
+  };
+  /** Stop receiving `transcriptAppend` events for this target. */
+  unsubscribeTranscript: {
+    params: { targetId: string };
     result: { ok: true };
   };
 }
@@ -166,11 +191,32 @@ export type HostEvent =
   | { kind: 'event'; name: 'focusBead'; id: string }
   | { kind: 'event'; name: 'setTab'; tab: DashboardTab }
   | { kind: 'event'; name: 'settings'; settings: DashboardSettings }
-  | { kind: 'event'; name: 'error'; error: RpcError };
+  | { kind: 'event'; name: 'error'; error: RpcError }
+  | { kind: 'event'; name: 'fleetChanged'; fleet: FleetSnapshot }
+  | {
+      kind: 'event';
+      name: 'transcriptAppend';
+      targetId: string;
+      events: TranscriptEvent[];
+      totalBytes: number;
+      /** See `TranscriptBackfill.degraded` — the same schema-drift signal, for a later batch. */
+      degraded?: boolean;
+    };
 
-export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'graph';
+export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'fleet';
 
-export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board', 'graph'];
+export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board', 'fleet'];
+
+/**
+ * `beadsDashboard.defaultTab` is user-authored config that outlives the
+ * extension version that wrote it. Graph was folded into Roadmap as a shape
+ * rather than a tab, so a saved `'graph'` — or any other value this build no
+ * longer recognises — must resolve to something renderable instead of
+ * reaching the webview unchecked, where it would match no tab at all.
+ */
+export function resolveDashboardTab(value: string): DashboardTab {
+  return (DASHBOARD_TABS as string[]).includes(value) ? (value as DashboardTab) : 'roadmap';
+}
 
 /** Anything the webview may post to the host. */
 export type WebviewMessage = RpcRequest | { kind: 'ready' };

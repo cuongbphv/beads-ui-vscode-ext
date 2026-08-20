@@ -6,6 +6,7 @@
 .codex/**
 .cursor/**
 .superpowers/**
+.velox/**
 .github/**
 .vscode/**
 design-system/**
@@ -36,6 +37,10 @@ dist/test/**
 dist/test-artifacts/**
 # The review harness writes its host pages next to the bundles.
 dist/preview-*.html
+
+# Ad-hoc bd export/backup files (e.g. from a bootstrap/recovery) can land at the
+# repo root; they are workspace data, never runtime code, and must not ship.
+*.jsonl
 
 # Screenshots and the demo GIF are 5.6 MB and every one of them is dead weight
 # inside the package: vsce rewrites the README's relative image paths to

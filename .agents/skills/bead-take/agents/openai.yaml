@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bead Take"
+  short_description: "Claim and implement one Beads issue"
+  default_prompt: "Use $bead-take with a bead id and optional notes."
+
+policy:
+  allow_implicit_invocation: false

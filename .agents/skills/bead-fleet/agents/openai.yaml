@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bead Fleet"
+  short_description: "Coordinate independent Beads work in parallel"
+  default_prompt: "Use $bead-fleet to process independent ready beads in parallel."
+
+policy:
+  allow_implicit_invocation: false

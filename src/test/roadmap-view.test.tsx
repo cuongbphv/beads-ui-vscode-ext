@@ -10,6 +10,7 @@ import { ROADMAP_SORTS } from '../shared/roadmap-sort';
 import type { Bead } from '../shared/types';
 import { Splitter } from '../webview/components/splitter';
 import { ROADMAP_ZOOMS } from '../webview/lib/gantt-zoom';
+import type { RoadmapShape } from '../webview/lib/roadmap-shape';
 import { RoadmapView } from '../webview/views/RoadmapView';
 
 declare global {
@@ -134,7 +135,7 @@ const beads: Bead[] = [
 ];
 
 function renderRoadmap(overrides: {
-  shape: 'list' | 'timeline';
+  shape: RoadmapShape;
   sort: 'timeline' | 'priority' | 'type';
 }): string {
   return renderToStaticMarkup(
@@ -143,7 +144,7 @@ function renderRoadmap(overrides: {
 }
 
 function roadmapProps(overrides: {
-  shape: 'list' | 'timeline';
+  shape: RoadmapShape;
   sort?: 'timeline' | 'priority' | 'type';
   zoom?: 'fit' | 'day' | 'week' | 'month';
   gutter?: number;
@@ -218,6 +219,48 @@ describe('RoadmapView wiring', () => {
     expect(values(zoomSelect.slice(0, zoomSelect.indexOf('</select>')))).toEqual([
       ...ROADMAP_ZOOMS,
     ]);
+  });
+
+  it('offers a Graph option alongside Timeline and List in the shape control', () => {
+    // Catches the segmented control staying a two-way toggle after the shape
+    // union grew a third member.
+    const html = renderRoadmap({ shape: 'timeline', sort: 'timeline' });
+    const group = html.slice(html.indexOf('aria-label="Roadmap shape"'));
+
+    expect(group).toContain('Timeline');
+    expect(group).toContain('List');
+    expect(group).toContain('Graph');
+  });
+
+  it('switches to the graph shape when the Graph button is clicked', async () => {
+    const onShapeChange = vi.fn();
+    const container = document.createElement('div');
+    document.body.append(container);
+    mountedRoot = createRoot(container);
+
+    await act(async () =>
+      mountedRoot?.render(
+        createElement(RoadmapView, { ...roadmapProps({ shape: 'timeline' }), onShapeChange }),
+      ),
+    );
+
+    const graphButton = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Graph'),
+    );
+    expect(graphButton).toBeDefined();
+
+    await act(async () => graphButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onShapeChange).toHaveBeenCalledWith('graph');
+  });
+
+  it('mounts GraphView in place of the timeline/list panes when shape is graph', () => {
+    // GraphView itself is untouched — this only proves Roadmap mounts it, with
+    // none of the beads in this fixture carrying a dependency edge, its own
+    // empty state is what should appear.
+    const html = renderRoadmap({ shape: 'graph', sort: 'timeline' });
+
+    expect(html).toContain('No dependencies to show');
   });
 
   it('applies the selected priority sort to timeline epic rows', () => {

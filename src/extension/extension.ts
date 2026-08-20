@@ -8,9 +8,10 @@
  */
 import * as vscode from 'vscode';
 
-import type { DashboardTab } from '../shared/protocol';
+import { resolveDashboardTab } from '../shared/protocol';
 import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
+import { FleetService } from './fleet/FleetService';
 import { DashboardPanel } from './panel/DashboardPanel';
 import { createBeadsStatusBar } from './status-bar';
 import { BeadsStore, bindVisibility } from './store';
@@ -27,7 +28,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   if (!folder) {
     // The tree's viewsWelcome explains what to do; the command still opens so
     // the user gets a real message rather than "command not found".
-    await vscode.commands.executeCommand('setContext', 'beadsDashboard.hasWorkspace', false);
     context.subscriptions.push(
       vscode.commands.registerCommand('beadsDashboard.openDashboard', () =>
         vscode.window.showWarningMessage(
@@ -41,10 +41,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   output.appendLine(`Beads workspace: ${folder.uri.fsPath}`);
-  await vscode.commands.executeCommand('setContext', 'beadsDashboard.hasWorkspace', true);
 
   store = new BeadsStore(folder, output);
   context.subscriptions.push(store);
+
+  // Fleet is a parallel data source, never a `bd` operation, so it gets its
+  // own service rather than folding into BeadsStore — see FleetService's own
+  // header doc for why it is allowed to spawn processes at all.
+  const fleetService = new FleetService(folder.uri.fsPath, (message) => output.appendLine(message));
+  context.subscriptions.push(fleetService);
 
   const actor = new ActorResolver(folder.uri.fsPath);
   const tree = new BeadsTreeProvider(store, actor, 'plan');
@@ -86,11 +91,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   const openDashboard = (id?: string): void => {
-    const defaultTab = vscode.workspace
+    // `.get<string>` rather than `.get<DashboardTab>`: the value on disk is
+    // whatever a past version of this extension (or a hand-edited settings
+    // file) put there, not something the current build's type can vouch for.
+    // `resolveDashboardTab` is what turns that into a tab this build can
+    // actually render — e.g. a leftover `'graph'` from before Graph merged
+    // into Roadmap falls back to `'roadmap'` instead of reaching the webview.
+    const rawTab = vscode.workspace
       .getConfiguration('beadsDashboard')
-      .get<DashboardTab>('defaultTab', 'overview');
+      .get<string>('defaultTab', 'overview');
+    const defaultTab = resolveDashboardTab(rawTab);
 
-    const panel = DashboardPanel.show(context, store!, { revealBead }, defaultTab);
+    const panel = DashboardPanel.show(context, store!, fleetService, { revealBead }, defaultTab);
     if (id) panel.focus(id);
   };
 

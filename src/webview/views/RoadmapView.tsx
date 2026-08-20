@@ -1,11 +1,13 @@
 /**
- * Roadmap: the drill-down tab, in two shapes.
+ * Roadmap: the drill-down tab, in three shapes.
  *
  * Timeline is the default — beads stores start, due, estimate and PIC, so the
  * parent→child hierarchy is a Gantt without inventing any data. List keeps the
- * older card view for when the dates are not the question being asked.
+ * older card view for when the dates are not the question being asked. Graph
+ * mounts the same dependency DAG that used to be its own tab, filtered by the
+ * shared filter bar like the other two shapes.
  */
-import { GanttChartSquare, List as ListIcon, Map as MapIcon } from 'lucide-react';
+import { GanttChartSquare, List as ListIcon, Map as MapIcon, Waypoints } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { StatusIndex, filterBeads, groupByEpic, progressOf, type BeadQuery } from '../../shared/model';
@@ -33,6 +35,7 @@ import { useScheduleEdit } from '../hooks/use-schedule-edit';
 import { clamp, roadmapGutterRange } from '../lib/drag-resize';
 import { hiddenClosedCount, resolveShape, type RoadmapShape } from '../lib/roadmap-shape';
 import { cn } from '../lib/utils';
+import { GraphView } from './GraphView';
 
 const GUTTER_DEFAULT_PX = 224;
 
@@ -115,6 +118,15 @@ export function RoadmapView({
     [beads, roadmapQuery, index],
   );
 
+  // What the filter bar actually matches — shared by the epic grouping below
+  // and, in the graph shape, fed straight to GraphView, so a filtered Roadmap
+  // shows the same subset in every shape rather than the graph silently
+  // ignoring the filter bar sitting right above it.
+  const visibleBeads = useMemo(
+    () => filterBeads(beads, roadmapQuery, index),
+    [beads, roadmapQuery, index],
+  );
+
   // Epics themselves are never filtered out by the status filter — an epic
   // whose children all match must still be reachable.
   //
@@ -127,8 +139,7 @@ export function RoadmapView({
       rollups.set(group.epic.id, { done: group.doneCount, total: group.totalCount });
     }
 
-    const visible = filterBeads(beads, roadmapQuery, index);
-    const keep = new Set(visible.map((bead) => bead.id));
+    const keep = new Set(visibleBeads.map((bead) => bead.id));
     const withEpics = beads.filter((bead) => keep.has(bead.id) || bead.issue_type === 'epic');
 
     return groupByEpic(withEpics, index)
@@ -137,7 +148,7 @@ export function RoadmapView({
         const rollup = rollups.get(group.epic.id);
         return rollup ? { ...group, doneCount: rollup.done, totalCount: rollup.total } : group;
       });
-  }, [beads, roadmapQuery, index]);
+  }, [beads, index, visibleBeads]);
 
   // Measured by the chart, fed back so the tick density matches what is drawn.
   const [trackPx, setTrackPx] = useState(0);
@@ -238,6 +249,12 @@ export function RoadmapView({
                   icon={<ListIcon aria-hidden="true" className="size-3.5" />}
                   label="List"
                 />
+                <ShapeButton
+                  active={shape === 'graph'}
+                  onClick={() => onShapeChange('graph')}
+                  icon={<Waypoints aria-hidden="true" className="size-3.5" />}
+                  label="Graph"
+                />
               </div>
             </>
           }
@@ -292,6 +309,15 @@ export function RoadmapView({
           <div className="border-border border-t px-3 py-1.5">
             <GanttLegend />
           </div>
+        </div>
+      ) : shape === 'graph' ? (
+        <div className="min-h-0 flex-1">
+          <GraphView
+            beads={visibleBeads}
+            onSelect={onSelect}
+            selectedId={selectedId}
+            blockedIds={blockedIds}
+          />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto px-3 py-2">

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Bead Audit"
+  short_description: "Verify Beads board completion with evidence"
+  default_prompt: "Use $bead-audit to audit the requested Beads scope."
+
+policy:
+  allow_implicit_invocation: false
