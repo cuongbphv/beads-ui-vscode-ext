@@ -519,7 +519,9 @@ def render_forecast(m, only_epic=None):
         L.append(f"What it takes: size the {len(m['unsized'])} unsized open bead(s) with "
                  f"bead-estimate --backfill, then close 5 sized beads.")
         return '\n'.join(L)
-    rows = [r for r in m['epic_rows'] if not only_epic or r['id'] == only_epic]
+    candidates = [r for r in m['epic_rows'] if not only_epic or r['id'] == only_epic]
+    rows = [r for r in candidates if r['open_kids'] or r['total_pts']]
+    quiet = [r for r in candidates if r not in rows]
     L.append('')
     L.append(f"   {'epic':26} | remaining | {'opt':10} | {'likely':10} | {'pes':10} | unsized")
     for r in rows:
@@ -527,11 +529,19 @@ def render_forecast(m, only_epic=None):
             L.append(f"   {r['id'][:26]:26} | {'unsized':>9} | {'—':10} | {'—':10} | {'—':10} | "
                      f"{r['unsized']}")
             continue
+        if r['remaining_pts'] <= 0:
+            L.append(f"   {r['id'][:26]:26} | {'complete':>9} | {'—':10} | {'—':10} | {'—':10} | 0")
+            continue
         o = eta(r['remaining_pts'], v['opt_factor'], v, now) or 'n/a'
         l = eta(r['remaining_pts'], 1.0, v, now) or 'n/a'
         p = eta(r['remaining_pts'], v['pes_factor'], v, now) or 'n/a'
         L.append(f"   {r['id'][:26]:26} | {r['remaining_pts']:9g} | {o:10} | {l:10} | {p:10} | "
                  f"{r['unsized']}")
+    if not rows:
+        L.append('   — no epic has open work or a points total')
+    if quiet:
+        L.append(f"   {len(quiet)} epic(s) complete with nothing sized: "
+                 + ', '.join(r['id'] for r in quiet[:6]) + ('…' if len(quiet) > 6 else ''))
     L.append('')
     L.append('## WHY THE BANDS ARE THIS WIDE')
     if v['regime'] == 'provisional':
@@ -600,8 +610,9 @@ def render_forecast(m, only_epic=None):
                  'there is nothing to calibrate against yet')
     L.append('')
     L.append('## SNAPSHOT COMMANDS (run these to record the forecast)')
+    wrote = 0
     for r in rows:
-        if not r['total_pts']:
+        if not r['total_pts'] or r['remaining_pts'] <= 0:
             continue
         snap = {'date': now.date().isoformat(), 'remaining_pts': r['remaining_pts'],
                 'velocity_ppd': round(v['pts_per_day'], 3),
@@ -609,10 +620,15 @@ def render_forecast(m, only_epic=None):
                 'eta_likely': eta(r['remaining_pts'], 1.0, v, now),
                 'eta_pes': eta(r['remaining_pts'], v['pes_factor'], v, now),
                 'basis': v['regime']}
+        if not snap['eta_likely']:
+            continue          # no date to record; the regime withheld it
+        wrote += 1
         L.append(f"   bd update {r['id']} --set-metadata pm.forecast='{json.dumps(snap)}' \\")
         L.append(f"     --append-notes \"FORECAST {now.date()}: remaining {r['remaining_pts']:g} pt, "
                  f"v={v['pts_per_day']:.2f} pt/d, ETA likely {snap['eta_likely']} "
                  f"(opt {snap['eta_opt']} / pes {snap['eta_pes']}, {v['regime']})\"")
+    if not wrote:
+        L.append('   — nothing to record: no epic has both remaining points and a date')
     return '\n'.join(L)
 
 
