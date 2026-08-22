@@ -26,9 +26,9 @@ about the bars — and to refuse to draw them when the history cannot carry them
 ## 1. Compute
 
 ```bash
-python3 .beads/pm/board.py forecast                 # every epic
-python3 .beads/pm/board.py forecast --epic <id>     # one epic
-python3 .beads/pm/board.py report --json            # the same numbers, for your own reasoning
+python3 scripts/pm/board.py forecast                 # every epic
+python3 scripts/pm/board.py forecast --epic <id>     # one epic
+python3 scripts/pm/board.py report --json            # the same numbers, for your own reasoning
 ```
 
 Run it from the repository root or with `BEADS_DIR` set. Missing file → the kit is not

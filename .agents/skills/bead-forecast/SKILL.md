@@ -23,8 +23,8 @@ two-day burst by fourteen invents velocity out of calendar time.
 ## Compute
 
 ```bash
-python3 .beads/pm/board.py forecast              # every epic
-python3 .beads/pm/board.py forecast --epic <id>  # one epic
+python3 scripts/pm/board.py forecast              # every epic
+python3 scripts/pm/board.py forecast --epic <id>  # one epic
 ```
 
 Run from the repository root or set `BEADS_DIR`. If the module is missing the kit is not

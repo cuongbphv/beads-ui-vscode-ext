@@ -15,7 +15,7 @@ contract rather than restating it. One round ends the turn.
 ## Health gates before every round
 
 ```bash
-python3 .beads/pm/board.py report
+python3 scripts/pm/board.py report
 ```
 
 1. **WIP limit** (report and decide): at most one `in_progress` bead per assignee and no more

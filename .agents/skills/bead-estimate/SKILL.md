@@ -26,10 +26,10 @@ corrupt every child's rollup.
 Do these in order; the order is what prevents anchoring.
 
 1. Read only the title, labels and type. Do not open the description or notes yet.
-2. Run the scoring rather than eyeballing it: `python3 .beads/pm/board.py refclass` for every
-   unsized bead, or `--id <bead>` for one. It weighs shared labels double, then title-token
-   overlap, then same type, and keeps matches above a similarity floor of 1.5 — same type alone
-   scores 1.0 and means nothing, since most beads are tasks.
+2. Run the scoring rather than eyeballing it: `python3 scripts/pm/board.py refclass` for
+   every unsized bead, or `--id <bead>` for one. It weighs shared labels double, then
+   title-token overlap, then same type, and keeps matches above a similarity floor of
+   1.5 — same type alone scores 1.0 and means nothing, since most beads are tasks.
 3. Read the basis column, not the number. `refclass` means three or more real comparables and
    the proposal stands. `pert` means too few. `unusable` means the comparables were closed
    minutes after being filed, so their duration measures bookkeeping rather than work. Only

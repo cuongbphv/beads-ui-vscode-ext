@@ -42,8 +42,11 @@ next-env.d.ts
 # mcp config (user-specific)
 .mcp.json
 
-# beads orchestration (user-specific)
-.beads/
+# beads orchestration (user-specific): the Dolt database, its backups and the
+# per-machine lockfile. The kit-owned config below is project configuration, not state,
+# so it is tracked — the committed skills read it.
+.beads/*
+!.beads/PRIME.md
 AGENTS.md
 
 # spec and test files

@@ -31,8 +31,8 @@ The arithmetic lives in one installed module so the report and the forecast cann
 about what a point or a percentage means:
 
 ```bash
-python3 .beads/pm/board.py report          # the full text report
-python3 .beads/pm/board.py report --json   # the same numbers, machine-readable
+python3 scripts/pm/board.py report          # the full text report
+python3 scripts/pm/board.py report --json   # the same numbers, machine-readable
 ```
 
 Run it from the repository root, or with `BEADS_DIR` pointing at `.beads` — it shells out to

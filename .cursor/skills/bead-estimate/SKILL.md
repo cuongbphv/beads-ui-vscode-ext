@@ -126,8 +126,8 @@ estimate goes wrong.
    on the same board agree:
 
    ```bash
-   python3 .beads/pm/board.py refclass                # every unsized open bead
-   python3 .beads/pm/board.py refclass --id <bead-id> # just this one
+   python3 scripts/pm/board.py refclass                # every unsized open bead
+   python3 scripts/pm/board.py refclass --id <bead-id> # just this one
    ```
 
    It scores each closed bead

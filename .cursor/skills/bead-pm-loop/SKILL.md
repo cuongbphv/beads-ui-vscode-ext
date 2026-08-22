@@ -27,7 +27,7 @@ tries to be clever across rounds is a loop with a stale picture of the board.
 | implementing one bead | the `bead-take` skill |
 | several beads in parallel | the `bead-fleet` skill |
 | the size scale and note markers | the `bead-estimate` skill §0 |
-| the numbers | `.beads/pm/board.py`, via the `bead-report` skill and the `bead-forecast` skill |
+| the numbers | `scripts/pm/board.py`, via the `bead-report` skill and the `bead-forecast` skill |
 
 If any of those say something different from this file, they win on their own subject.
 
@@ -36,7 +36,7 @@ If any of those say something different from this file, they win on their own su
 Run all five. Two of them stop the round; three of them get reported and the round continues.
 
 ```bash
-python3 .beads/pm/board.py report --json > /dev/null && python3 .beads/pm/board.py report
+python3 scripts/pm/board.py report --json > /dev/null && python3 scripts/pm/board.py report
 ```
 
 1. **WIP limit** *(report and decide)* — at most one `in_progress` bead per assignee, and no

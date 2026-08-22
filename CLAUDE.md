@@ -116,7 +116,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
 
-<!-- BEGIN BEADS-PM-KIT v:0.1.0 sha256:efadfb4a1053 -->
+<!-- BEGIN BEADS-PM-KIT v:0.1.0 sha256:869ef8eccb1d -->
 This project's beads workflow is installed from **beads-pm-kit**. The skills below are
 generated files: change them in the kit and re-run `bd-kit install`, never by hand — a
 hand-edited copy is detected by `bd-kit diff` and blocks the next update.
@@ -143,5 +143,5 @@ Two conventions every one of them relies on:
   children. `size:XL` is not claimable — it means a split is owed.
 
 Full detail, injected into every session on every harness, lives in `.beads/PRIME.md`.
-The numbers for reporting and forecasting come from `.beads/pm/board.py`.
+The numbers for reporting and forecasting come from `scripts/pm/board.py`.
 <!-- END BEADS-PM-KIT -->

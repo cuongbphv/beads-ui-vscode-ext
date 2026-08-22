@@ -12,8 +12,8 @@ whole board. This skill reads and prints; it never claims, closes, labels, commi
 ## Measure with the installed module
 
 ```bash
-python3 .beads/pm/board.py report          # full text report
-python3 .beads/pm/board.py report --json   # same numbers, machine-readable
+python3 scripts/pm/board.py report          # full text report
+python3 scripts/pm/board.py report --json   # same numbers, machine-readable
 ```
 
 Run it from the repository root, or set `BEADS_DIR`, because `bd` resolves its workspace from
