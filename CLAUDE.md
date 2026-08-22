@@ -115,3 +115,33 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 - Do not commit or push without clear authority from the active profile or the current user request.
 - If a required sync or push is blocked, stop and report the exact command and error.
 <!-- END BEADS INTEGRATION -->
+
+<!-- BEGIN BEADS-PM-KIT v:0.1.0 sha256:efadfb4a1053 -->
+This project's beads workflow is installed from **beads-pm-kit**. The skills below are
+generated files: change them in the kit and re-run `bd-kit install`, never by hand — a
+hand-edited copy is detected by `bd-kit diff` and blocks the next update.
+
+| Skill | Use it when |
+|---|---|
+| `bead-split` | a spec or roadmap in markdown needs to become an epic plus sized children |
+| `bead-estimate` | a bead has no `size:*` label, or a whole board needs backfilling |
+| `bead-take` | take exactly one bead and close it with evidence |
+| `bead-loop` | work the board one ready bead per round |
+| `bead-fleet` | run several independent `auto-ok` beads in parallel |
+| `bead-pm-loop` | run the board with WIP limits, gates, calibration and reporting cadence |
+| `bead-report` | board status, completion rate, flow health, risks |
+| `bead-forecast` | when the work will finish, with honest bands |
+| `bead-audit` | you suspect "already done" is not true |
+
+Two conventions every one of them relies on:
+
+- **Exactly one classification label** per non-epic bead — `auto-ok`, `auto-partial` or
+  `needs-human` — with the measurable reason in that bead's own notes. `bead-loop` §0 is the
+  single source of truth for what they mean.
+- **Exactly one `size:*` label** per active non-epic bead (`size:XS` 0.5 pt … `size:XL` 13 pt),
+  mirrored into `estimated_minutes`. Epics are never sized; their size is the sum of their
+  children. `size:XL` is not claimable — it means a split is owed.
+
+Full detail, injected into every session on every harness, lives in `.beads/PRIME.md`.
+The numbers for reporting and forecasting come from `.beads/pm/board.py`.
+<!-- END BEADS-PM-KIT -->

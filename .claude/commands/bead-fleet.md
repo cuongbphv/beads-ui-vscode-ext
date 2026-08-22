@@ -2,7 +2,7 @@
 description: Run a fleet of auto-ok beads in parallel until the queue is empty — one worktree per bead, rebase + ff-only onto the integration branch, then clean up
 argument-hint: "[--batch N] [--include-partial] [--unattended]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-fleet surface:claude sha256:bb2f8a805ad4 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-fleet surface:claude -->
 
 You are running the **fleet**, `/bead-fleet`. Parameters: **$ARGUMENTS**
 
@@ -58,14 +58,14 @@ Print the chosen batch **and the reason each deferred bead was deferred**. No si
 **Claim every bead in the batch first, in the main tree** — one call per bead, before
 touching worktrees:
 
-```
+```bash
 bd update <id> --claim
 ```
 
 This is the only thing that makes `bd list --status=in_progress` (and `bd ready` for any
-other `/bead-loop` or `/bead-fleet` running concurrently) reflect reality while the agents
-work. Skip it and a bead sits `open` with an agent silently on it — indistinguishable from
-untouched work, and re-pickable by another loop.
+other `/bead-loop` or `/bead-fleet` running concurrently) reflect reality while the
+agents work. Skip it and a bead sits `open` with an agent silently on it —
+indistinguishable from untouched work, and re-pickable by another loop.
 
 ```
 git worktree add -b work/bead-<id> ../wt-<id> <BASE>

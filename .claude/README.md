@@ -1,4 +1,4 @@
-<!-- beads-pm-kit v0.1.0 skill:readme-claude surface:doc sha256:14c46652317e -->
+<!-- beads-pm-kit v0.1.0 skill:readme-claude surface:doc -->
 
 # `.claude/` — the beads workflow for Claude Code
 
@@ -46,6 +46,12 @@ python3 .beads/pm/board.py report --json
 
 It refuses to print a delivery date when the sized history cannot support one. That refusal is
 a feature: a confident wrong date is the most expensive thing a report can emit.
+
+## The full loop, written out
+
+`.beads/pm/guide.md` walks the nine commands as one cycle: spec to board, board to sized work,
+work to report, report to forecast, forecast to audit, and back. Also in
+`.beads/pm/guide.vi.md` (Tiếng Việt) and `.beads/pm/guide.zh-cn.md` (简体中文).
 
 ## Anti-patterns measured on `bd 1.2.2`
 

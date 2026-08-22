@@ -2,7 +2,7 @@
 name: bead-fleet
 description: Use when coordinating several independent auto-ok Beads issues in parallel, one isolated worktree per issue, until the ready queue is empty.
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-fleet surface:codex sha256:336cf4dcfda5 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-fleet surface:codex -->
 
 # Bead Fleet
 

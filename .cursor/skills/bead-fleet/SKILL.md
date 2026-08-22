@@ -3,7 +3,7 @@ name: bead-fleet
 description: Orchestrates parallel work on auto-ok beads in batches until the queue is empty — one git worktree per bead, then rebase + ff-only merge onto the integration branch and clean up. Use when the user runs /bead-fleet or asks to work several independent beads in parallel.
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-fleet surface:cursor sha256:3fa06cdbba27 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-fleet surface:cursor -->
 
 # bead-fleet
 
@@ -62,14 +62,14 @@ Print the chosen batch **and the reason each deferred bead was deferred**. No si
 **Claim every bead in the batch first, in the main tree** — one call per bead, before
 touching worktrees:
 
-```
+```bash
 bd update <id> --claim
 ```
 
 This is the only thing that makes `bd list --status=in_progress` (and `bd ready` for any
-other `/bead-loop` or `/bead-fleet` running concurrently) reflect reality while the agents
-work. Skip it and a bead sits `open` with an agent silently on it — indistinguishable from
-untouched work, and re-pickable by another loop.
+other `/bead-loop` or `/bead-fleet` running concurrently) reflect reality while the
+agents work. Skip it and a bead sits `open` with an agent silently on it —
+indistinguishable from untouched work, and re-pickable by another loop.
 
 ```
 git worktree add -b work/bead-<id> ../wt-<id> <BASE>
