@@ -1,0 +1,8 @@
+# beads-pm-kit v0.1.0 skill:bead-estimate surface:codex-yaml sha256:17be6be95861
+interface:
+  display_name: "Bead Estimate"
+  short_description: "Size Beads issues from measured history"
+  default_prompt: "Use $bead-estimate with a bead id, --epic <id>, or --backfill."
+
+policy:
+  allow_implicit_invocation: false

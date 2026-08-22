@@ -3,6 +3,7 @@ name: bead-take
 description: Claims one beads issue, implements it in a dedicated git worktree, and closes it with measured evidence. Use when the user runs /bead-take or asks to take, claim, or work on one specific bead from the beads board (bd).
 disable-model-invocation: true
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-take surface:cursor sha256:45521aa6604b -->
 
 # bead-take
 
@@ -19,6 +20,8 @@ No id given → run `bd ready --json`, propose the highest-priority bead, and as
 - Bug → follow a systematic debugging process (the `systematic-debugging` skill if your
   environment has one) before changing anything. Feature or refactor → TDD (the
   `test-driven-development` skill if available).
+- No `size:*` label on the bead → size it first with the `bead-estimate` skill; an
+  unsized bead that gets claimed is a hole in every later report and forecast.
 
 ## 1. Claim, then a dedicated worktree
 
@@ -32,8 +35,8 @@ git worktree add -b work/bead-<bead-id> ../wt-<bead-id> <BASE>
   `origin/main` when the project integrates somewhere else.
 - The harness's automatic worktree tool is only safe when you are certain it branches
   from the right `<BASE>` — many harnesses default to branching from `origin/main` and
-  so miss the integration branch's commits. When unsure, run `git worktree add`
-  yourself as above.
+  so miss the integration branch's commits. When unsure, run `git worktree add` yourself
+  as above.
 - A fresh worktree has **none of the gitignored artefacts** (venv, `node_modules`, build
   caches). Install for real inside the worktree before trusting any build or test result.
 - The main tree may have another session live in it: do not touch files outside this
@@ -46,13 +49,13 @@ git worktree add -b work/bead-<bead-id> ../wt-<bead-id> <BASE>
   first, then carry on.
 - Follow the repo's existing patterns (read the architecture docs if present) — reuse
   first, invention second; a new abstraction needs ≥2 real callers today.
-- Work you discover outside the scope → `bd create` immediately. Do NOT widen the current
-  bead's scope, and do NOT use a todo tool or markdown checkboxes in place of the board.
+- Work you discover outside the scope → `bd create` immediately. Do NOT widen the
+  current bead's scope, and do NOT use a todo tool or markdown checkboxes.
 
 ## 3. Hand back — evidence first, claims second
 
-Before claiming anything is done, verify for real (the
-`verification-before-completion` skill if your environment has it), then:
+Before claiming anything is done, verify for real (the `verification-before-completion`
+skill if your environment has it), then:
 
 - Run the tests for real and read the **exit code** (never `echo OK`; `rc=0` with no
   output is a failure signal, not a pass). Record the command and its result. Read the

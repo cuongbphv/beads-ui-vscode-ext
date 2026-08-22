@@ -1,0 +1,8 @@
+# beads-pm-kit v0.1.0 skill:bead-pm-loop surface:codex-yaml sha256:307596794bfa
+interface:
+  display_name: "Bead PM Loop"
+  short_description: "Run the Beads board with PM controls"
+  default_prompt: "Use $bead-pm-loop to run one managed round of the board."
+
+policy:
+  allow_implicit_invocation: false

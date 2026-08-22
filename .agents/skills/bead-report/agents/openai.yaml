@@ -1,0 +1,8 @@
+# beads-pm-kit v0.1.0 skill:bead-report surface:codex-yaml sha256:32320a511ff0
+interface:
+  display_name: "Bead Report"
+  short_description: "PM progress report from the Beads board"
+  default_prompt: "Use $bead-report for a board progress report, optionally scoped to one epic."
+
+policy:
+  allow_implicit_invocation: false

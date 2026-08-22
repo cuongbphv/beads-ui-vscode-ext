@@ -1,3 +1,4 @@
+# beads-pm-kit v0.1.0 skill:bead-take surface:codex-yaml sha256:c95ceaf6c2d7
 interface:
   display_name: "Bead Take"
   short_description: "Claim and implement one Beads issue"

@@ -3,6 +3,7 @@ name: bead-audit
 description: Audits the beads board as PM — fans out read-only subagents to measure evidence, then closes or re-notes each bead centrally. Use when the user runs /bead-audit or asks to audit, review, or verify the beads board, check which epics are genuinely finished, or reconcile beads against the repo.
 disable-model-invocation: true
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-audit surface:cursor sha256:491ec25d2e84 -->
 
 # bead-audit
 
@@ -26,9 +27,9 @@ every "already done" claim has to be re-measurable.
 
 ## 2. Fan out agents to measure (in parallel, read-only)
 
-Group the beads by front (code / UI / infrastructure / docs) — one read-only subagent per
-group (the kind allowed to run commands when it has to touch an external environment),
-all running in parallel. Every agent's prompt MUST carry:
+Group the beads by front (code / UI / infrastructure / docs) — one read-only subagent
+per group (the kind allowed to run commands when it has to touch an external
+environment), all running in parallel. Every agent's prompt MUST carry:
 
 - The list of bead-ids plus the `bd show` command, so the agent reads the closing
   conditions itself.

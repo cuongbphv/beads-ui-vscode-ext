@@ -2,6 +2,7 @@
 name: bead-split
 description: Use when splitting a markdown specification, plan, roadmap, or directory of markdown files into Beads epics and classified child tasks.
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-split surface:codex sha256:437ad3a542d7 -->
 
 # Bead Split
 

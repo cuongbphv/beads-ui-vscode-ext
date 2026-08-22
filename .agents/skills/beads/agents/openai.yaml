@@ -1,3 +1,4 @@
+# beads-pm-kit v0.1.0 skill:beads surface:codex-yaml sha256:cd9da0b7ea39
 interface:
   display_name: "Beads"
   short_description: "Project task tracking with bd"

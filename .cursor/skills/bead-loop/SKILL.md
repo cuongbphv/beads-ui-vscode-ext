@@ -3,6 +3,7 @@ name: bead-loop
 description: Loops the beads board one ready auto-workable issue at a time, claiming it and delivering it with measured evidence. Use when the user runs /bead-loop or asks to work through the beads board one self-workable task at a time.
 disable-model-invocation: true
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-loop surface:cursor sha256:7648990db273 -->
 
 # bead-loop
 
@@ -110,11 +111,12 @@ The `BLOCKED` line is not decoration: it is the only way to tell "no work left" 
 
 ## 2. Work the bead
 
-Follow the `bead-take` skill (see `.cursor/skills/bead-take/SKILL.md`) with the id you picked. It already carries
-the whole procedure: read `bd show` closely (the closing conditions are in the NOTES, and
-the latest RE-MEASURE note beats the description), a dedicated worktree branched from
-`<BASE>` (the project's integration branch), TDD or systematic-debugging depending on the
-bead type, measure before changing, `git commit --only <path>`, close with evidence.
+Invoke the `bead-take` skill with the id you picked. It already carries the whole
+procedure: read `bd show` closely (the closing conditions are in the NOTES, and the
+latest RE-MEASURE note beats the description), a dedicated worktree branched from
+`<BASE>` (the project's integration branch — defined in `bead-take`), TDD or
+systematic-debugging depending on the bead type, measure before changing, `git commit
+--only <path>`, close with evidence.
 
 Four things `/bead-loop` adds on top, for loop mode only:
 
@@ -141,8 +143,8 @@ Four things `/bead-loop` adds on top, for loop mode only:
 ## 3. Work discovered along the way
 
 `bd create` immediately, with `--parent <epic>` **and** a classification label plus its
-measurable reason. No todo tool, no markdown checkboxes, and no widening the scope of the
-bead you are on.
+measurable reason. No todo tool, no markdown checkboxes, and no widening the scope of
+the bead you are on.
 
 The board has an invariant: **every active bead traces up to an epic**. If no existing
 epic fits a new bead, create one — do not park it in an unrelated "general debt" epic.

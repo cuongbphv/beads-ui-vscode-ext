@@ -2,6 +2,7 @@
 name: bead-audit
 description: Use when auditing, reviewing, or verifying the Beads board, checking whether epics are genuinely finished, cleaning stale beads, or reconciling beads against the repository.
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-audit surface:codex sha256:419c849a6641 -->
 
 # Bead Audit
 

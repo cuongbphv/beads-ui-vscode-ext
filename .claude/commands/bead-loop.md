@@ -2,6 +2,7 @@
 description: Loop the beads board, taking exactly ONE self-workable bead per round and delivering it with evidence
 argument-hint: "[--include-partial] [--dry-run]"
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-loop surface:claude sha256:488125fcb1bc -->
 
 You are running one round of `/bead-loop`. Parameters: **$ARGUMENTS**
 
@@ -106,11 +107,11 @@ The `BLOCKED` line is not decoration: it is the only way to tell "no work left" 
 ## 2. Work the bead
 
 Invoke the `bead-take` skill with the id you picked. It already carries the whole
-procedure: read `bd show` closely (the closing conditions are in the NOTES, and the latest
-RE-MEASURE note beats the description), a dedicated worktree branched from `<BASE>` (the
-project's integration branch — defined in `bead-take`), TDD or systematic-debugging
-depending on the bead type, measure before changing, `git commit --only <path>`, close with
-evidence.
+procedure: read `bd show` closely (the closing conditions are in the NOTES, and the
+latest RE-MEASURE note beats the description), a dedicated worktree branched from
+`<BASE>` (the project's integration branch — defined in `bead-take`), TDD or
+systematic-debugging depending on the bead type, measure before changing, `git commit
+--only <path>`, close with evidence.
 
 Four things `/bead-loop` adds on top, for loop mode only:
 
@@ -137,8 +138,8 @@ Four things `/bead-loop` adds on top, for loop mode only:
 ## 3. Work discovered along the way
 
 `bd create` immediately, with `--parent <epic>` **and** a classification label plus its
-measurable reason. No TodoWrite, no markdown checkboxes, and no widening the scope of the
-bead you are on.
+measurable reason. No TodoWrite, no markdown checkboxes, and no widening the scope of
+the bead you are on.
 
 The board has an invariant: **every active bead traces up to an epic**. If no existing
 epic fits a new bead, create one — do not park it in an unrelated "general debt" epic.

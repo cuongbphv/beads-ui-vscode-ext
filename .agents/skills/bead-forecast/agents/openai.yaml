@@ -1,0 +1,8 @@
+# beads-pm-kit v0.1.0 skill:bead-forecast surface:codex-yaml sha256:c21b4c9f7cd3
+interface:
+  display_name: "Bead Forecast"
+  short_description: "Velocity and ETA bands from Beads history"
+  default_prompt: "Use $bead-forecast to forecast delivery, optionally scoped with --epic."
+
+policy:
+  allow_implicit_invocation: false

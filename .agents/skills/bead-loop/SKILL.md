@@ -2,6 +2,7 @@
 name: bead-loop
 description: Use when working through a Beads board one ready, self-workable issue at a time, optionally including partial work or performing a dry run.
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-loop surface:codex sha256:bd69cb6a3fe4 -->
 
 # Bead Loop
 

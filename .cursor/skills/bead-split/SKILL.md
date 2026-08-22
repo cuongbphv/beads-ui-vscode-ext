@@ -3,6 +3,7 @@ name: bead-split
 description: Splits tasks out of a markdown file (or a directory of them) onto the beads board — one file becomes an epic with child tasks, each child labelled into the right swimlane (auto-ok / auto-partial / needs-human) with measured evidence. Dry-run by default. Use when the user runs /bead-split or asks to break a spec, plan, or roadmap document into beads.
 disable-model-invocation: true
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-split surface:cursor sha256:f91c4d45767d -->
 
 # bead-split
 
@@ -15,8 +16,9 @@ one line to fix during the preview, but becomes silent debt once it is on the bo
 
 ## 0. The label rules — not duplicated here
 
-Read **§0 of the `bead-loop` skill** (`.cursor/skills/bead-loop/SKILL.md`) — it declares itself the single
-source of truth for the `auto-ok` / `auto-partial` / `needs-human` rules. Two copies will drift.
+Read **§0 of the `bead-loop` skill** (`.cursor/skills/bead-loop/SKILL.md`) — it declares
+itself the single source of truth for the `auto-ok` / `auto-partial` / `needs-human`
+rules. Two copies will drift.
 
 Three consequences that apply directly to this command:
 
@@ -108,6 +110,11 @@ Then assign: `auto-ok` (closable entirely inside the repo) · `auto-partial` (th
 the closing bar needs an external resource) · `needs-human` (needs a person).
 **Not sure → `needs-human`.**
 
+Assign each child a `size:*` label in the same pass, per the scale in the
+`bead-estimate` skill §0 — children are leaves, so nothing inherits the label, and an
+epic whose children are all sized is the difference between an epic that can be forecast
+and one that reports as `unsized`.
+
 ## 4. Emit a graph plan; do NOT loop `bd create`
 
 Write the plan to `.beads/bead-split-plan.json` — **not to `/tmp`**: Git Bash maps `/tmp` onto
@@ -170,8 +177,8 @@ With `--apply`:
 
 ## 6. Handoff
 
-Before claiming anything is done, verify for real (the
-`verification-before-completion` skill if your environment has it), then report:
+Before claiming anything is done, verify for real (the `verification-before-completion`
+skill if your environment has it), then report:
 
 - A table of the new beads: `id | type | lane | title`, plus the parent epic and the source file.
 - How many nodes were skipped as duplicates, with the existing ids.

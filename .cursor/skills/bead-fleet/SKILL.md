@@ -3,6 +3,7 @@ name: bead-fleet
 description: Orchestrates parallel work on auto-ok beads in batches until the queue is empty — one git worktree per bead, then rebase + ff-only merge onto the integration branch and clean up. Use when the user runs /bead-fleet or asks to work several independent beads in parallel.
 disable-model-invocation: true
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-fleet surface:cursor sha256:3fa06cdbba27 -->
 
 # bead-fleet
 
@@ -20,10 +21,10 @@ the session.
 
 ## 0. Invariants — break one and you lose the whole night
 
-- **Every write to beads** (`--claim`, `close`, `create`, `dep`, `--append-notes`) is run by
-  **YOU**, in the main tree. Agents only READ. `bd list` / `bd show` from a worktree is
-  measured to work (`.beads/metadata.json` is tracked). Whether two concurrent `bd` writes
-  are safe has not been measured → do not try it.
+- **Every write to beads** (`--claim`, `close`, `create`, `dep`, `--append-notes`) is
+  run by **YOU**, in the main tree. Agents only READ. `bd list` / `bd show` from a
+  worktree is measured to work (`.beads/metadata.json` is tracked). Whether two
+  concurrent `bd` writes are safe has not been measured → do not try it.
 - **No `git push`, no `bd sync`** unless the user allows it in this turn. As long as history
   stays linear (ff-only) and unpushed, `git reset --hard <the first sha>` in the morning
   undoes the entire night. That is the only safety net — do not destroy it with one push.
@@ -38,8 +39,8 @@ the session.
 
 ## 1. Pick the batch
 
-Extract the §1 bash block from `.cursor/skills/bead-loop/SKILL.md` with `awk` and run it — do
-not retype it (it is the single source of truth for the label rules and the blocker
+Extract the §1 bash block from `.cursor/skills/bead-loop/SKILL.md` with `awk` and run it
+— do not retype it (it is the single source of truth for the label rules and the blocker
 filter). From the ready `auto-ok` queue, filter further:
 
 a. **No dependency edges inside one batch** — `bd ready` already filters blockers, but check
@@ -73,8 +74,8 @@ untouched work, and re-pickable by another loop.
 ```
 git worktree add -b work/bead-<id> ../wt-<id> <BASE>
 ```
-The harness's automatic worktree tool is only safe when you are certain it branches from the
-right `<BASE>` — many harnesses default to branching from `origin/main` and miss the
+The harness's automatic worktree tool is only safe when you are certain it branches from
+the right `<BASE>` — many harnesses default to branching from `origin/main` and miss the
 integration branch's commits.
 
 **A fresh worktree has NONE of the gitignored artefacts** (venv, `node_modules`, build
@@ -120,9 +121,9 @@ until gc).
 
 ## 4. Composite gate — ONCE after every batch
 
-- Run the **repo's full gate**: lint + typecheck + the full test suite — take the commands
-  from the repo's convention docs / the CI config / the scripts in `package.json` /
-  `pyproject` / `Makefile`. Do not invent them.
+- Run the **repo's full gate**: lint + typecheck + the full test suite — take the
+  commands from the repo's convention docs / the CI config / the scripts in
+  `package.json` / `pyproject` / `Makefile`. Do not invent them.
 - **Pin the tool versions CI uses before reading any lint or format result.** Changing the
   version changes the rule set: measured on one unchanged tree, the old version said "All
   checks passed!" while the new version reported thousands of errors. A number like that
@@ -193,7 +194,7 @@ A worktree has none of the gitignored artefacts (venv, node_modules, …).
 ## Step 1 — Read, then MEASURE, before changing anything
 - `bd show <ID>`: the closing conditions are in the NOTES; the latest RE-MEASURE note is
   more trustworthy than the description. The bead beats the docs until someone re-measures.
-- Read the repo's convention docs (CLAUDE.md / AGENTS.md / … if present).
+- Read the repo's convention docs (`CLAUDE.md` / `AGENTS.md` / … if present).
 - Grep at the exact file:line the bead cites. If your measurement differs from the note,
   tell the orchestrator to append the correction BEFORE you change anything (line numbers
   in beads have been wrong before).
@@ -218,9 +219,9 @@ DEBT YOUR OWN CHANGE CREATED → fix it cleanly in this worktree, in the same co
   now (a stale doc IS a bug) · a new field or API → update EVERY consumer in the repo in the
   same commit, or state explicitly WHY a given consumer does not need it · every new path
   needs a test · the repo's own conventions (registry, audit log, migration checklist, … —
-  read the convention docs) satisfied in full.
+ read the convention docs) satisfied in full.
 PRE-EXISTING, UNRELATED DEBT → tell the orchestrator to `bd create` it. Do NOT widen the
-  scope, do NOT use a todo tool, do NOT use markdown checkboxes.
+ scope, do NOT use a todo tool, do NOT use markdown checkboxes.
 EXCEPTION: if you make a branch that has NEVER RUN start running, you own it — the
   pre-existing bugs in it are yours too.
 

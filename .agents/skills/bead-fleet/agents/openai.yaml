@@ -1,3 +1,4 @@
+# beads-pm-kit v0.1.0 skill:bead-fleet surface:codex-yaml sha256:af7520e6e2cc
 interface:
   display_name: "Bead Fleet"
   short_description: "Coordinate independent Beads work in parallel"

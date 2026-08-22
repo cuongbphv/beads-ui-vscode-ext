@@ -2,6 +2,7 @@
 description: Split tasks out of a markdown file onto the beads board — one file = one epic + child tasks, each labelled into the right swimlane with evidence
 argument-hint: "<file.md | directory> [--apply] [--epic <id>] [--section \"<heading>\"]"
 ---
+<!-- beads-pm-kit v0.1.0 skill:bead-split surface:claude sha256:403b365ed68a -->
 
 You are splitting tasks out of markdown onto the beads board. Parameters: **$ARGUMENTS**
 
@@ -11,8 +12,9 @@ one line to fix during the preview, but becomes silent debt once it is on the bo
 
 ## 0. The label rules — not duplicated here
 
-Read **§0 of `bead-loop`** (`.claude/commands/bead-loop.md`) — it declares itself the single
-source of truth for the `auto-ok` / `auto-partial` / `needs-human` rules. Two copies will drift.
+Read **§0 of the `bead-loop` skill** (`.claude/commands/bead-loop.md`) — it declares
+itself the single source of truth for the `auto-ok` / `auto-partial` / `needs-human`
+rules. Two copies will drift.
 
 Three consequences that apply directly to this command:
 
@@ -103,6 +105,11 @@ result to put into the notes:
 Then assign: `auto-ok` (closable entirely inside the repo) · `auto-partial` (the code is doable,
 the closing bar needs an external resource) · `needs-human` (needs a person).
 **Not sure → `needs-human`.**
+
+Assign each child a `size:*` label in the same pass, per the scale in the
+`bead-estimate` skill §0 — children are leaves, so nothing inherits the label, and an
+epic whose children are all sized is the difference between an epic that can be forecast
+and one that reports as `unsized`.
 
 ## 4. Emit a graph plan; do NOT loop `bd create`
 
