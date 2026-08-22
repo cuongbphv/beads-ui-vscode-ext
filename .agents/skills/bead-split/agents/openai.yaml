@@ -1,4 +1,4 @@
-# beads-pm-kit v0.1.0 skill:bead-split surface:codex-yaml sha256:ac25ce7f6c3c
+# beads-pm-kit v0.1.0 skill:bead-split surface:codex-yaml
 interface:
   display_name: "Bead Split"
   short_description: "Split markdown plans into classified Beads"

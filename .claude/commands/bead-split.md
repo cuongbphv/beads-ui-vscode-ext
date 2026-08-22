@@ -2,7 +2,7 @@
 description: Split tasks out of a markdown file onto the beads board — one file = one epic + child tasks, each labelled into the right swimlane with evidence
 argument-hint: "<file.md | directory> [--apply] [--epic <id>] [--section \"<heading>\"]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-split surface:claude sha256:403b365ed68a -->
+<!-- beads-pm-kit v0.1.0 skill:bead-split surface:claude -->
 
 You are splitting tasks out of markdown onto the beads board. Parameters: **$ARGUMENTS**
 

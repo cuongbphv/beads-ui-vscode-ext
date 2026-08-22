@@ -1,4 +1,4 @@
-# beads-pm-kit v0.1.0 skill:bead-report surface:codex-yaml sha256:32320a511ff0
+# beads-pm-kit v0.1.0 skill:bead-report surface:codex-yaml
 interface:
   display_name: "Bead Report"
   short_description: "PM progress report from the Beads board"

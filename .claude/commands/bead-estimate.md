@@ -2,7 +2,7 @@
 description: Size beads in points by reference class over closed work, dual-writing the size label and estimated_minutes with the evidence
 argument-hint: "<bead-id> | --epic <id> | --backfill [--apply]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-estimate surface:claude sha256:d85afe27800e -->
+<!-- beads-pm-kit v0.1.0 skill:bead-estimate surface:claude -->
 
 You are sizing beads. Parameters: **$ARGUMENTS**
 

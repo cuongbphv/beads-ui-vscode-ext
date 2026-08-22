@@ -2,7 +2,7 @@
 description: Loop the beads board, taking exactly ONE self-workable bead per round and delivering it with evidence
 argument-hint: "[--include-partial] [--dry-run]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-loop surface:claude sha256:488125fcb1bc -->
+<!-- beads-pm-kit v0.1.0 skill:bead-loop surface:claude -->
 
 You are running one round of `/bead-loop`. Parameters: **$ARGUMENTS**
 

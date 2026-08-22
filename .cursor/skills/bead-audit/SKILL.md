@@ -3,7 +3,7 @@ name: bead-audit
 description: Audits the beads board as PM — fans out read-only subagents to measure evidence, then closes or re-notes each bead centrally. Use when the user runs /bead-audit or asks to audit, review, or verify the beads board, check which epics are genuinely finished, or reconcile beads against the repo.
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-audit surface:cursor sha256:491ec25d2e84 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-audit surface:cursor -->
 
 # bead-audit
 

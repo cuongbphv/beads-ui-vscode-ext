@@ -2,7 +2,7 @@
 name: bead-forecast
 description: Use when the user asks when work will finish, for an ETA, velocity, or a delivery forecast from a Beads board.
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-forecast surface:codex sha256:08514d83a0e9 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-forecast surface:codex -->
 
 # Bead Forecast
 

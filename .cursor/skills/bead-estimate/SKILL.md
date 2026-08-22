@@ -3,7 +3,7 @@ name: bead-estimate
 description: Sizes one bead, an epic's children, or a whole board in size points, estimating from the measured duration of similar closed beads rather than by feel, and writing the size label plus estimated_minutes together with the reference class it used. Use when the user runs /bead-estimate or asks to estimate, size, re-estimate or backfill estimates on the beads board (bd).
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-estimate surface:cursor sha256:ca6574071fcf -->
+<!-- beads-pm-kit v0.1.0 skill:bead-estimate surface:cursor -->
 
 # bead-estimate
 

@@ -1,4 +1,4 @@
-# beads-pm-kit v0.1.0 skill:bead-estimate surface:codex-yaml sha256:17be6be95861
+# beads-pm-kit v0.1.0 skill:bead-estimate surface:codex-yaml
 interface:
   display_name: "Bead Estimate"
   short_description: "Size Beads issues from measured history"

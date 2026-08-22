@@ -2,7 +2,7 @@
 name: bead-report
 description: Use when the user asks for board status, progress, completion rate, or a PM report on a Beads board.
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-report surface:codex sha256:abf477aac660 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-report surface:codex -->
 
 # Bead Report
 

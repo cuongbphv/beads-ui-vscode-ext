@@ -2,7 +2,7 @@
 description: Take one bead, implement it in a dedicated worktree, close it with evidence
 argument-hint: "<bead-id> [extra notes]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-take surface:claude sha256:dc56038b79d1 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-take surface:claude -->
 
 You are taking this bead: **$ARGUMENTS**
 

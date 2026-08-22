@@ -2,7 +2,7 @@
 description: Audit the beads board as PM — fan out agents to measure evidence, settle the debt centrally, emit parallel prompts
 argument-hint: "[epic-id | label | list of bead-ids] (empty = the whole board)"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-audit surface:claude sha256:c1aa5a845619 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-audit surface:claude -->
 
 You are the PM auditing the beads board for this scope: **$ARGUMENTS**
 

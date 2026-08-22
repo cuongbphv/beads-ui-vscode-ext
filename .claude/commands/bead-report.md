@@ -2,7 +2,7 @@
 description: Report board progress as a PM would — completion by count and by points, flow health, velocity with its confidence regime, risks and next actions
 argument-hint: "[epic-id] [--json]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-report surface:claude sha256:0f5a0303a014 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-report surface:claude -->
 
 You are the PM reporting on the board. Scope: **$ARGUMENTS**
 

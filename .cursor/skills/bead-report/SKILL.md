@@ -3,7 +3,7 @@ name: bead-report
 description: "Produces a fixed-section PM progress report from the beads board: completion percentage by count and by points, per-epic progress, blocked chains grouped by their root, staleness and scope growth, velocity with the confidence regime that decides whether a date may be shown at all. Read-only. Use when the user runs /bead-report or asks for board status, progress, completion rate, a PM report, or how the project is tracking."
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-report surface:cursor sha256:d66ec8ce28b0 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-report surface:cursor -->
 
 # bead-report
 

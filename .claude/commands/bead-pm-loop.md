@@ -2,7 +2,7 @@
 description: "Run the board as its PM: health gates before every round, one unit of work, calibration on close, report and forecast on a cadence"
 argument-hint: "[--fleet N] [--report-every N] [--include-partial] [--dry-run]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-pm-loop surface:claude sha256:3f9649253c0f -->
+<!-- beads-pm-kit v0.1.0 skill:bead-pm-loop surface:claude -->
 
 You are running the board as its PM, one round at a time. Parameters: **$ARGUMENTS**
 

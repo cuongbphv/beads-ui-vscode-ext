@@ -2,7 +2,7 @@
 name: bead-pm-loop
 description: Use when the user asks to run or manage a Beads board continuously with PM controls such as WIP limits, estimate gates and progress reporting.
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-pm-loop surface:codex sha256:e5131d1bbe4a -->
+<!-- beads-pm-kit v0.1.0 skill:bead-pm-loop surface:codex -->
 
 # Bead PM Loop
 

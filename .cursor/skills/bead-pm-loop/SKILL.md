@@ -3,7 +3,7 @@ name: bead-pm-loop
 description: "Runs the beads board continuously as a project manager would: WIP limits, an estimate-before-claim gate, staleness and scope-creep alarms and board invariants checked before every round, then one round delegated to bead-loop or a batch to bead-fleet, estimate-versus-actual calibration on every close, and a report and forecast on a fixed cadence. Use when the user runs /bead-pm-loop or asks to manage, run, or drive the board continuously like a PM."
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-pm-loop surface:cursor sha256:81f3fc9bf104 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-pm-loop surface:cursor -->
 
 # bead-pm-loop
 

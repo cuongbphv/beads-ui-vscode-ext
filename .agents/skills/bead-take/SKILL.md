@@ -2,7 +2,7 @@
 name: bead-take
 description: Use when the user asks to take, claim, or implement one specific issue from a Beads board.
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-take surface:codex sha256:5e809d65aa1a -->
+<!-- beads-pm-kit v0.1.0 skill:bead-take surface:codex -->
 
 # Bead Take
 

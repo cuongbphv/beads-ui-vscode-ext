@@ -3,7 +3,7 @@ name: bead-take
 description: Claims one beads issue, implements it in a dedicated git worktree, and closes it with measured evidence. Use when the user runs /bead-take or asks to take, claim, or work on one specific bead from the beads board (bd).
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-take surface:cursor sha256:45521aa6604b -->
+<!-- beads-pm-kit v0.1.0 skill:bead-take surface:cursor -->
 
 # bead-take
 

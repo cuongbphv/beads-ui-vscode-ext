@@ -3,7 +3,7 @@ name: bead-forecast
 description: Computes velocity in points per day from closed beads, produces optimistic, likely and pessimistic completion dates per epic, names every factor that widens the bands, and withholds dates entirely when the sized history is too thin to support one. Records the snapshot so the next run can report how the last forecast did. Use when the user runs /bead-forecast or asks when work will finish, for an ETA, a delivery date, velocity, or a forecast from the beads board (bd).
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-forecast surface:cursor sha256:13601c06d29a -->
+<!-- beads-pm-kit v0.1.0 skill:bead-forecast surface:cursor -->
 
 # bead-forecast
 

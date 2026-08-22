@@ -1,4 +1,4 @@
-# beads-pm-kit v0.1.0 skill:bead-forecast surface:codex-yaml sha256:c21b4c9f7cd3
+# beads-pm-kit v0.1.0 skill:bead-forecast surface:codex-yaml
 interface:
   display_name: "Bead Forecast"
   short_description: "Velocity and ETA bands from Beads history"

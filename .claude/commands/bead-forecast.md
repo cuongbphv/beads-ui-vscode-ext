@@ -2,7 +2,7 @@
 description: Forecast delivery from measured velocity with honest bands, refusing to print a date the history cannot support
 argument-hint: "[--epic <id>] [--apply]"
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-forecast surface:claude sha256:eb0aa96d4ff5 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-forecast surface:claude -->
 
 You are forecasting delivery from measured history. Scope: **$ARGUMENTS**
 

@@ -2,7 +2,7 @@
 name: bead-estimate
 description: Use when the user asks to estimate, size, or backfill estimates for issues on a Beads board.
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-estimate surface:codex sha256:74aef53c1c45 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-estimate surface:codex -->
 
 # Bead Estimate
 

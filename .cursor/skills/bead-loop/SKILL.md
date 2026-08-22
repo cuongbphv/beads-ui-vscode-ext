@@ -3,7 +3,7 @@ name: bead-loop
 description: Loops the beads board one ready auto-workable issue at a time, claiming it and delivering it with measured evidence. Use when the user runs /bead-loop or asks to work through the beads board one self-workable task at a time.
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-loop surface:cursor sha256:7648990db273 -->
+<!-- beads-pm-kit v0.1.0 skill:bead-loop surface:cursor -->
 
 # bead-loop
 

@@ -3,7 +3,7 @@ name: bead-split
 description: Splits tasks out of a markdown file (or a directory of them) onto the beads board — one file becomes an epic with child tasks, each child labelled into the right swimlane (auto-ok / auto-partial / needs-human) with measured evidence. Dry-run by default. Use when the user runs /bead-split or asks to break a spec, plan, or roadmap document into beads.
 disable-model-invocation: true
 ---
-<!-- beads-pm-kit v0.1.0 skill:bead-split surface:cursor sha256:f91c4d45767d -->
+<!-- beads-pm-kit v0.1.0 skill:bead-split surface:cursor -->
 
 # bead-split
 
