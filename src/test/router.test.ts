@@ -37,8 +37,19 @@ class FakeMutations {
   }
 }
 
-function makeStore(mutations: FakeMutations): BeadsStore {
-  return { mutations, queries: {} } as unknown as BeadsStore;
+/** Records every call so a test can assert on the argv-shaped params. */
+class FakeQueries {
+  readonly calls: Array<{ method: string; args: unknown[] }> = [];
+  historyResult: unknown = [];
+
+  async history(id: string, limit?: number): Promise<unknown> {
+    this.calls.push({ method: 'history', args: [id, limit] });
+    return this.historyResult;
+  }
+}
+
+function makeStore(mutations: FakeMutations, queries: FakeQueries = new FakeQueries()): BeadsStore {
+  return { mutations, queries } as unknown as BeadsStore;
 }
 
 function makeHost(overrides: Partial<RouterHost> = {}): RouterHost {
@@ -219,6 +230,78 @@ describe('router createBead', () => {
 
     expect(response.ok).toBe(false);
     expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router getHistory', () => {
+  it('calls queries.history with the id and an omitted limit when none is given', async () => {
+    const queries = new FakeQueries();
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHistory', { id: 'bd-1' }),
+    );
+
+    expect(response.ok).toBe(true);
+    expect(queries.calls).toEqual([{ method: 'history', args: ['bd-1', undefined] }]);
+  });
+
+  it('passes a positive integer limit through to queries.history', async () => {
+    const queries = new FakeQueries();
+    await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHistory', { id: 'bd-1', limit: 10 }),
+    );
+
+    expect(queries.calls).toEqual([{ method: 'history', args: ['bd-1', 10] }]);
+  });
+
+  it('floors a fractional limit before it reaches the query', async () => {
+    const queries = new FakeQueries();
+    await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHistory', { id: 'bd-1', limit: 10.9 }),
+    );
+
+    expect(queries.calls).toEqual([{ method: 'history', args: ['bd-1', 10] }]);
+  });
+
+  it('ignores a non-positive limit, falling back to the default (undefined)', async () => {
+    const queries = new FakeQueries();
+    await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHistory', { id: 'bd-1', limit: -5 }),
+    );
+
+    expect(queries.calls).toEqual([{ method: 'history', args: ['bd-1', undefined] }]);
+  });
+
+  it('returns the events queries.history resolves with', async () => {
+    const queries = new FakeQueries();
+    queries.historyResult = [{ field: 'status', kind: 'value', from: 'open', to: 'closed', actor: 'ana', at: 't' }];
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHistory', { id: 'bd-1' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: queries.historyResult });
+  });
+
+  it('rejects a missing id before the query is ever called', async () => {
+    const queries = new FakeQueries();
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHistory', {}),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(queries.calls).toEqual([]);
   });
 });
 

@@ -78,6 +78,15 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'listChildren':
       return queries.children(requireString(params.parentId, 'parentId'));
 
+    case 'getHistory': {
+      const rawLimit = params.limit;
+      const limit =
+        typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.floor(rawLimit)
+          : undefined;
+      return limit === undefined ? queries.history(id()) : queries.history(id(), limit);
+    }
+
     case 'setStatus':
       await mutations.setStatus(id(), requireString(params.status, 'status'));
       return { ok: true };

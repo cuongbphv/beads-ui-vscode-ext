@@ -230,6 +230,76 @@ describe('BdQueries.show and children', () => {
   });
 });
 
+describe('BdQueries.history', () => {
+  it('sends the exact argv including --limit, and appends --json via bd.json', async () => {
+    const fake = new FakeBd();
+    fake.responses = { history: [] };
+
+    await queries(fake).history('bd-1', 50);
+
+    expect(fake.argv[0]).toEqual(['history', 'bd-1', '--limit', '50']);
+  });
+
+  it('omits --limit when none is given, defaulting to bd history --limit 50 in the argv', async () => {
+    const fake = new FakeBd();
+    fake.responses = { history: [] };
+
+    await queries(fake).history('bd-1');
+
+    // The default is applied by the query itself, so the argv always carries it.
+    expect(fake.argv[0]).toEqual(['history', 'bd-1', '--limit', '50']);
+  });
+
+  it('translates the real bd 1.2.2 shape (bare array, PascalCase, newest first) into diff events', async () => {
+    const fake = new FakeBd();
+    fake.responses = {
+      history: [
+        {
+          CommitHash: 'c2',
+          Committer: 'cuongbphv',
+          CommitDate: '2026-08-24T15:23:18Z',
+          Issue: { id: 'bd-1', status: 'in_progress', priority: 2, issue_type: 'task', title: 't' },
+        },
+        {
+          CommitHash: 'c1',
+          Committer: 'cuongbphv',
+          CommitDate: '2026-08-24T14:58:05Z',
+          Issue: { id: 'bd-1', status: 'open', priority: 2, issue_type: 'task', title: 't' },
+        },
+      ],
+    };
+
+    const events = await queries(fake).history('bd-1');
+
+    expect(events).toEqual([
+      {
+        field: 'status',
+        kind: 'value',
+        from: 'open',
+        to: 'in_progress',
+        actor: 'cuongbphv',
+        at: '2026-08-24T15:23:18Z',
+      },
+    ]);
+  });
+
+  it('returns zero events for a single-commit history without throwing', async () => {
+    const fake = new FakeBd();
+    fake.responses = {
+      history: [
+        {
+          CommitHash: 'c1',
+          Committer: 'cuongbphv',
+          CommitDate: '2026-08-24T14:58:05Z',
+          Issue: { id: 'bd-1', status: 'open' },
+        },
+      ],
+    };
+
+    expect(await queries(fake).history('bd-1')).toEqual([]);
+  });
+});
+
 describe('BdMutations', () => {
   it('builds the argv for each quick action', async () => {
     const fake = new FakeBd();

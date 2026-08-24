@@ -4,6 +4,7 @@
  * Each function owns exactly one `bd` argv. Callers pass domain values
  * (a filter object, an id) and never assemble CLI flags themselves.
  */
+import { diffHistory, type HistoryEvent, type HistorySnapshot } from '../../shared/history-diff';
 import type {
   Bead,
   BeadComment,
@@ -21,6 +22,17 @@ import type { BdService } from './BdService';
 
 /** `bd list` defaults to 50 rows; the dashboard wants the whole project. */
 export const DEFAULT_ISSUE_LIMIT = 2000;
+
+/** `bd history` defaults to 50 commits when no `--limit` is given. */
+export const DEFAULT_HISTORY_LIMIT = 50;
+
+/** One row of `bd history <id> --json`'s bare array, before translation. */
+interface RawHistoryCommit {
+  CommitHash?: string;
+  Committer?: string;
+  CommitDate?: string;
+  Issue?: Partial<Bead>;
+}
 
 /** bd wraps several payloads in a keyed object rather than returning a bare array. */
 function pickArray<T>(payload: unknown, ...keys: string[]): T[] {
@@ -212,6 +224,41 @@ export class BdQueries {
     );
     const newest = rows[0];
     return newest ? `${newest.id}@${newest.updated_at ?? ''}` : '';
+  }
+
+  /**
+   * "What changed, by whom" for one issue, derived from `bd history --json`
+   * (verified against bd 1.2.2: a bare array of `{CommitHash, Committer,
+   * CommitDate, Issue}`, newest commit first — there is no `--events` flag).
+   *
+   * The diff runs here, not in the webview: `Issue` is the *entire* issue
+   * body at that commit, so a 50-commit history of a big issue is megabytes
+   * of design/acceptance/notes text repeated over and over. `diffHistory`
+   * turns that into a handful of field-change events before it ever reaches
+   * `postMessage`.
+   */
+  async history(id: string, limit = DEFAULT_HISTORY_LIMIT): Promise<HistoryEvent[]> {
+    const args = ['history', id];
+    if (limit) args.push('--limit', String(limit));
+
+    const rows = pickArray<RawHistoryCommit>(await this.bd.json<unknown>(args));
+    const snapshots: HistorySnapshot[] = rows.map((row) => ({
+      hash: row.CommitHash ?? '',
+      actor: row.Committer ?? '',
+      at: row.CommitDate ?? '',
+      issue: {
+        status: row.Issue?.status,
+        priority: row.Issue?.priority,
+        assignee: row.Issue?.assignee,
+        title: row.Issue?.title,
+        labels: row.Issue?.labels,
+        description: row.Issue?.description,
+        design: row.Issue?.design,
+        acceptance_criteria: row.Issue?.acceptance_criteria,
+      },
+    }));
+
+    return diffHistory(snapshots);
   }
 
   /**

@@ -5,6 +5,7 @@
  * below and the host translates. Framework-free: no `vscode`, no `react`.
  */
 import type { FleetSnapshot, TranscriptBackfill, TranscriptEvent } from './fleet';
+import type { HistoryEvent } from './history-diff';
 import type {
   Bead,
   BeadComment,
@@ -64,6 +65,16 @@ export interface RpcMethods {
   listChildren: {
     params: { parentId: string };
     result: Bead[];
+  };
+  /**
+   * Field-change events for one issue, derived host-side from `bd history`
+   * snapshots (see `shared/history-diff.ts`) — never the raw snapshots
+   * themselves. `limit` caps how many `bd history` commits are considered;
+   * bd itself defaults to 50.
+   */
+  getHistory: {
+    params: { id: string; limit?: number };
+    result: HistoryEvent[];
   };
   setStatus: {
     params: { id: string; status: string };

@@ -9,6 +9,10 @@ describe('MUTATING_METHODS', () => {
   it('includes createBead, so the host refetches and broadcasts after a create', () => {
     expect(MUTATING_METHODS.has('createBead')).toBe(true);
   });
+
+  it('excludes getHistory — it is a read, deriving events from bd history without writing anything', () => {
+    expect(MUTATING_METHODS.has('getHistory')).toBe(false);
+  });
 });
 
 describe('resolveDashboardTab', () => {

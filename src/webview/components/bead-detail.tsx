@@ -8,9 +8,13 @@
  */
 import {
   AlertTriangle,
+  ArrowRight,
   CalendarClock,
+  ChevronDown,
+  ChevronRight,
   Copy,
   ExternalLink,
+  History as HistoryIcon,
   Hourglass,
   Link2,
   Lock,
@@ -25,6 +29,7 @@ import {
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { buildBlockerChain, type BlockerNode } from '../../shared/blocker-chain';
+import type { HistoryEvent } from '../../shared/history-diff';
 import { StatusIndex, edgesOfKind, parentIdOf } from '../../shared/model';
 import { formatDuration, spanOf } from '../../shared/schedule';
 import {
@@ -37,6 +42,7 @@ import {
 } from '../../shared/types';
 import { asRpcError, call } from '../bridge/rpc';
 import { useBeadDetail } from '../hooks/use-bead-detail';
+import { useHistory } from '../hooks/use-history';
 import { labelChipStyle } from '../lib/label-color';
 import { absoluteTime, cn, relativeTime } from '../lib/utils';
 import { Button, PriorityDot, Skeleton, StatusPill, TypeIcon } from './primitives';
@@ -65,6 +71,12 @@ export function BeadDetail({
   const [commentDraft, setCommentDraft] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const {
+    events: historyEvents,
+    loading: historyLoading,
+    error: historyError,
+  } = useHistory(bead.id, historyOpen, refreshKey);
 
   useEffect(() => setAssignee(bead.assignee ?? ''), [bead.id, bead.assignee]);
 
@@ -74,6 +86,10 @@ export function BeadDetail({
     setCommentDraft('');
     setNoteDraft('');
     setNoteOpen(false);
+    // A different issue means a different history; collapsing it back means
+    // the next fetch only happens if the user actually asks for it again,
+    // rather than silently following the selection around.
+    setHistoryOpen(false);
   }, [bead.id]);
 
   useEffect(() => {
@@ -577,6 +593,41 @@ export function BeadDetail({
           </div>
         </Section>
 
+        <section className="mt-4">
+          <button
+            type="button"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((open) => !open)}
+            className="text-fg-muted hover:text-fg flex w-full items-center gap-1 text-xs tracking-wide uppercase"
+          >
+            {historyOpen ? (
+              <ChevronDown aria-hidden="true" className="size-3" />
+            ) : (
+              <ChevronRight aria-hidden="true" className="size-3" />
+            )}
+            <HistoryIcon aria-hidden="true" className="size-3" />
+            Change history
+          </button>
+          {historyOpen ? (
+            <div className="mt-1.5">
+              {historyLoading ? <Skeleton className="h-4 w-32" /> : null}
+              {historyError ? (
+                <p className="text-danger text-xs">{historyError.message}</p>
+              ) : null}
+              {!historyLoading && !historyError && historyEvents.length === 0 ? (
+                <p className="text-fg-muted text-xs">No changes recorded.</p>
+              ) : null}
+              {historyEvents.length > 0 ? (
+                <ul className="grid gap-1.5">
+                  {historyEvents.map((event, position) => (
+                    <HistoryRow key={`${event.at}-${position}`} event={event} index={index} />
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+
         {bead.metadata !== undefined && bead.metadata !== null ? (
           <Section title="Metadata">
             <pre className="bg-input-bg text-fg-muted overflow-x-auto rounded-md p-2 text-xs">
@@ -706,6 +757,129 @@ function EdgeList({
         ))}
       </ul>
     </Section>
+  );
+}
+
+const HISTORY_FIELD_LABELS: Record<string, string> = {
+  status: 'Status',
+  priority: 'Priority',
+  assignee: 'Assignee',
+  title: 'Title',
+  labels: 'Labels',
+  description: 'Description',
+  design: 'Design',
+  acceptance_criteria: 'Acceptance criteria',
+};
+
+function historyFieldLabel(field: string): string {
+  return HISTORY_FIELD_LABELS[field] ?? field;
+}
+
+/** Priority is stored as a numeric string on the event; show its label when it parses. */
+function historyPriorityLabel(value: string | undefined): string {
+  if (value === undefined) return '—';
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? PRIORITY_LABELS[parsed] ?? value : value;
+}
+
+function HistoryRow({ event, index }: { event: HistoryEvent; index: StatusIndex }): ReactNode {
+  return (
+    <li className="border-border rounded-md border px-2 py-1.5 text-xs">
+      <div className="text-fg-muted flex items-baseline gap-2">
+        <span className="text-fg">{event.actor || 'unknown'}</span>
+        <span title={absoluteTime(event.at)}>{relativeTime(event.at)}</span>
+      </div>
+      <div className="text-fg mt-0.5 flex flex-wrap items-center gap-1">
+        <HistoryChangeText event={event} index={index} />
+      </div>
+    </li>
+  );
+}
+
+function HistoryChangeText({
+  event,
+  index,
+}: {
+  event: HistoryEvent;
+  index: StatusIndex;
+}): ReactNode {
+  if (event.kind === 'text-changed') {
+    return <>{historyFieldLabel(event.field)} changed</>;
+  }
+
+  if (event.kind === 'label-added') {
+    return (
+      <>
+        <span>label added:</span>
+        <span
+          className="label-chip rounded-sm px-1.5 py-0.5"
+          style={labelChipStyle(event.to ?? '')}
+        >
+          {event.to}
+        </span>
+      </>
+    );
+  }
+
+  if (event.kind === 'label-removed') {
+    return (
+      <>
+        <span>label removed:</span>
+        <span
+          className="label-chip rounded-sm px-1.5 py-0.5 opacity-70 line-through"
+          style={labelChipStyle(event.from ?? '')}
+        >
+          {event.from}
+        </span>
+      </>
+    );
+  }
+
+  if (event.field === 'status') {
+    return (
+      <>
+        <span>{historyFieldLabel(event.field)}:</span>
+        {event.from ? (
+          <StatusPill
+            status={event.from}
+            category={index.category(event.from)}
+            icon={index.def(event.from)?.icon}
+          />
+        ) : (
+          <span className="text-fg-muted">—</span>
+        )}
+        <ArrowRight aria-hidden="true" className="size-3" />
+        {event.to ? (
+          <StatusPill
+            status={event.to}
+            category={index.category(event.to)}
+            icon={index.def(event.to)?.icon}
+          />
+        ) : (
+          <span className="text-fg-muted">—</span>
+        )}
+      </>
+    );
+  }
+
+  if (event.field === 'priority') {
+    return (
+      <>
+        <span>{historyFieldLabel(event.field)}:</span>
+        <span>{historyPriorityLabel(event.from)}</span>
+        <ArrowRight aria-hidden="true" className="size-3" />
+        <span>{historyPriorityLabel(event.to)}</span>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <span>{historyFieldLabel(event.field)}:</span>
+      <span className="truncate">{event.from ?? '—'}</span>
+      <ArrowRight aria-hidden="true" className="size-3" />
+      <span className="truncate">{event.to ?? '—'}</span>
+    </>
   );
 }
 
