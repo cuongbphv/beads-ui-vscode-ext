@@ -29,19 +29,22 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 
 import { buildBlockerChain, type BlockerNode } from '../../shared/blocker-chain';
 import type { HistoryEvent } from '../../shared/history-diff';
 import { StatusIndex, edgesOfKind, parentIdOf } from '../../shared/model';
-import type { TextField } from '../../shared/protocol';
+import { DEP_TYPES, type DepType, type TextField } from '../../shared/protocol';
 import { formatDuration, spanOf } from '../../shared/schedule';
 import {
   PARENT_CHILD,
   PRIORITY_LABELS,
+  edgeKind,
+  edgeTargetId,
   typeStyle,
   type Bead,
   type BeadComment,
+  type BeadDependency,
   type Priority,
 } from '../../shared/types';
 import { asRpcError, call } from '../bridge/rpc';
@@ -49,9 +52,18 @@ import { useBeadDetail } from '../hooks/use-bead-detail';
 import { useHistory } from '../hooks/use-history';
 import { labelChipStyle } from '../lib/label-color';
 import { absoluteTime, cn, relativeTime } from '../lib/utils';
+import { IssuePicker } from './issue-picker';
 import { Markdown } from './markdown';
+import { Popover } from './popover';
 import { Button, PriorityDot, Skeleton, StatusPill, TypeIcon } from './primitives';
 import { useToast } from './toast';
+
+/**
+ * The dependency kinds shown directly in the Add-link kind select; the rest
+ * of {@link DEP_TYPES} sit behind a "More kinds…" toggle so the common case
+ * (blocks/related/discovered-from) does not compete with six rarer ones.
+ */
+const PROMINENT_DEP_TYPES: readonly DepType[] = ['blocks', 'related', 'discovered-from'];
 
 export function BeadDetail({
   bead: summary,
@@ -84,6 +96,22 @@ export function BeadDetail({
    * BoardView's optimistic status override.
    */
   const [labelOverrides, setLabelOverrides] = useState<Record<string, string[]>>({});
+  /**
+   * Optimistic dependency-edge override: id → the full `dependencies` array
+   * to show instead of `bead.dependencies`. Same shape and lifecycle as
+   * `labelOverrides` — applied immediately on add/remove, dropped on RPC
+   * failure, retired once `beads` agrees.
+   */
+  const [depOverrides, setDepOverrides] = useState<Record<string, BeadDependency[]>>({});
+  /**
+   * Optimistic override for the separate `blocked_by` id list ("Blocked by"
+   * section) — a different bd data source from `dependencies`, but the same
+   * relationship, so removing an edge updates both overrides together (see
+   * `removeDependencyEdge`).
+   */
+  const [blockedByOverride, setBlockedByOverride] = useState<Record<string, string[]>>({});
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkKind, setLinkKind] = useState<DepType>('blocks');
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   /**
@@ -114,6 +142,8 @@ export function BeadDetail({
     setDeferOpen(false);
     setDeferUntilDraft('');
     setDeferReasonDraft('');
+    setLinkOpen(false);
+    setLinkKind('blocks');
     // A different issue means a different history; collapsing it back means
     // the next fetch only happens if the user actually asks for it again,
     // rather than silently following the selection around.
@@ -136,7 +166,31 @@ export function BeadDetail({
     setLabelOverrides((current) => {
       const remaining = Object.entries(current).filter(([id, labels]) => {
         const match = beads.find((candidate) => candidate.id === id);
-        return match === undefined || !sameLabelSet(match.labels ?? [], labels);
+        return match === undefined || !sameStringSet(match.labels ?? [], labels);
+      });
+      return remaining.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(remaining);
+    });
+  }, [beads]);
+
+  // Same retirement rule as the label-override effect above, for both
+  // dependency-edge overrides: once the refreshed `beads` snapshot agrees,
+  // the override is dropped rather than left to mask a later external change.
+  useEffect(() => {
+    setDepOverrides((current) => {
+      const remaining = Object.entries(current).filter(([id, deps]) => {
+        const match = beads.find((candidate) => candidate.id === id);
+        return match === undefined || !sameEdgeSet(match.dependencies ?? [], deps);
+      });
+      return remaining.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(remaining);
+    });
+    setBlockedByOverride((current) => {
+      const remaining = Object.entries(current).filter(([id, ids]) => {
+        const match = beads.find((candidate) => candidate.id === id);
+        return match === undefined || !sameStringSet(match.blocked_by ?? [], ids);
       });
       return remaining.length === Object.keys(current).length
         ? current
@@ -148,6 +202,16 @@ export function BeadDetail({
   const labelOptions = useMemo(
     () => Array.from(new Set(beads.flatMap((candidate) => candidate.labels ?? []))).sort(),
     [beads],
+  );
+  const currentDependencies = depOverrides[bead.id] ?? bead.dependencies ?? [];
+  const currentBlockedBy = blockedByOverride[bead.id] ?? bead.blocked_by ?? [];
+  // Ids already wired to this issue by any edge kind — bd enforces at most
+  // one edge per ordered (id, dependsOn) pair regardless of type, so a
+  // second `dep add` to an already-linked id is a guaranteed failure the
+  // picker should never offer in the first place.
+  const linkedIds = useMemo(
+    () => new Set(currentDependencies.map((edge) => edgeTargetId(edge)).filter((id): id is string => !!id)),
+    [currentDependencies],
   );
 
   /**
@@ -182,6 +246,74 @@ export function BeadDetail({
       notify(`${bead.id} label "${label}" removed`);
     } catch (error) {
       setLabelOverrides((current) => {
+        const next = { ...current };
+        delete next[bead.id];
+        return next;
+      });
+      notify(asRpcError(error).message, 'error');
+    }
+  }
+
+  /**
+   * Wires a new dependency edge (`addDependency`), applied optimistically to
+   * `depOverrides` before the RPC resolves and rolled back on failure — same
+   * shape as `addLabel`. The picker never offers `bead.id` itself (see
+   * `linkedIds`/`excludeIds` at the call site below), but this is checked
+   * again here regardless: rejecting a self-edge has to hold even if the
+   * picker's exclusion list is ever wrong, not only when it works.
+   */
+  async function addDependencyEdge(dependsOn: string, type: DepType): Promise<void> {
+    if (dependsOn === bead.id) {
+      notify('An issue cannot depend on itself.', 'error');
+      return;
+    }
+    const nextEdge: BeadDependency = { depends_on_id: dependsOn, type };
+    setDepOverrides((current) => ({ ...current, [bead.id]: [...currentDependencies, nextEdge] }));
+    setLinkOpen(false);
+    try {
+      await call('addDependency', { id: bead.id, dependsOn, type });
+      notify(`${bead.id} → ${type} → ${dependsOn}`);
+    } catch (error) {
+      setDepOverrides((current) => {
+        const next = { ...current };
+        delete next[bead.id];
+        return next;
+      });
+      // A cycle bd itself refuses to create arrives here as a normal
+      // RpcError — no special-casing, just the same toast every other
+      // rejected mutation gets.
+      notify(asRpcError(error).message, 'error');
+    }
+  }
+
+  /**
+   * Removes a dependency edge (`removeDependency`), which — measured live in
+   * `src/test/bd-live.test.ts` — removes every edge kind between the pair,
+   * not only the one shown in whichever section's × triggered this. Both
+   * optimistic overrides are updated together: `blocked_by` and
+   * `dependencies` are two different bd data sources describing the same
+   * relationship, so a removal has to disappear from both rather than only
+   * the row that was clicked.
+   */
+  async function removeDependencyEdge(dependsOn: string): Promise<void> {
+    setDepOverrides((current) => ({
+      ...current,
+      [bead.id]: currentDependencies.filter((edge) => edgeTargetId(edge) !== dependsOn),
+    }));
+    setBlockedByOverride((current) => ({
+      ...current,
+      [bead.id]: currentBlockedBy.filter((id) => id !== dependsOn),
+    }));
+    try {
+      await call('removeDependency', { id: bead.id, dependsOn });
+      notify(`${bead.id} no longer depends on ${dependsOn}`);
+    } catch (error) {
+      setDepOverrides((current) => {
+        const next = { ...current };
+        delete next[bead.id];
+        return next;
+      });
+      setBlockedByOverride((current) => {
         const next = { ...current };
         delete next[bead.id];
         return next;
@@ -315,12 +447,16 @@ export function BeadDetail({
   const parentId = parentIdOf(bead);
   const parent = parentId ? beads.find((candidate) => candidate.id === parentId) : undefined;
   const children = beads.filter((candidate) => parentIdOf(candidate) === bead.id);
-  const blocks = edgesOfKind(bead, 'blocks');
+  // `edgesOfKind` reads `bead.dependencies`; feeding it a bead shaped with the
+  // optimistic override in place of the fetched array is what makes an
+  // add/remove show up in these three lists immediately.
+  const beadWithCurrentEdges: Bead = { ...bead, dependencies: currentDependencies };
+  const blocks = edgesOfKind(beadWithCurrentEdges, 'blocks');
   // Why is this blocked, transitively? Only open blockers count — a done bead
   // still shows its (historic) edges below, but no longer blocks anything.
   const blockerChain = done ? undefined : buildBlockerChain(bead, beads, index);
-  const related = edgesOfKind(bead, 'related');
-  const discovered = edgesOfKind(bead, 'discovered-from');
+  const related = edgesOfKind(beadWithCurrentEdges, 'related');
+  const discovered = edgesOfKind(beadWithCurrentEdges, 'discovered-from');
   const statusDef = index.def(bead.status);
   const style = typeStyle(bead.issue_type);
 
@@ -823,17 +959,15 @@ export function BeadDetail({
           </Section>
         ) : null}
 
-        {bead.blocked_by?.length ? (
-          <Section title="Blocked by" icon={<Lock aria-hidden="true" className="size-3" />}>
-            <ul className="grid gap-1">
-              {bead.blocked_by.map((id) => (
-                <li key={id}>
-                  <LinkRow id={id} beads={beads} onSelect={onSelect} index={index} />
-                </li>
-              ))}
-            </ul>
-          </Section>
-        ) : null}
+        <EdgeList
+          title="Blocked by"
+          icon={<Lock aria-hidden="true" className="size-3" />}
+          edges={currentBlockedBy.map((id) => ({ id }))}
+          beads={beads}
+          onSelect={onSelect}
+          index={index}
+          onRemove={(id) => void removeDependencyEdge(id)}
+        />
 
         <EdgeList
           title="Depends on"
@@ -841,15 +975,51 @@ export function BeadDetail({
           beads={beads}
           onSelect={onSelect}
           index={index}
+          onRemove={(id) => void removeDependencyEdge(id)}
         />
-        <EdgeList title="Related" edges={related} beads={beads} onSelect={onSelect} index={index} />
+        <EdgeList
+          title="Related"
+          edges={related}
+          beads={beads}
+          onSelect={onSelect}
+          index={index}
+          onRemove={(id) => void removeDependencyEdge(id)}
+        />
         <EdgeList
           title="Discovered from"
           edges={discovered}
           beads={beads}
           onSelect={onSelect}
           index={index}
+          onRemove={(id) => void removeDependencyEdge(id)}
         />
+
+        <div className="mt-2">
+          <Popover
+            triggerLabel="Add link"
+            label="Add link"
+            className="w-72"
+            triggerClassName="surface-interactive text-fg-muted hover:text-fg inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
+            triggerContent={
+              <>
+                <Plus aria-hidden="true" className="size-3.5" />
+                Add link
+              </>
+            }
+            open={linkOpen}
+            onOpenChange={setLinkOpen}
+          >
+            <div className="grid gap-2">
+              <DepKindSelect value={linkKind} onChange={setLinkKind} />
+              <IssuePicker
+                beads={beads}
+                excludeIds={[bead.id, ...linkedIds]}
+                onPick={(picked) => void addDependencyEdge(picked.id, linkKind)}
+                autoFocus
+              />
+            </div>
+          </Popover>
+        </div>
 
         {/*
           Always rendered — including at zero comments — so the composer is
@@ -982,11 +1152,26 @@ export function BeadDetail({
   );
 }
 
-/** Unordered comparison — bd's own label order need not match the optimistic array's. */
-function sameLabelSet(a: string[], b: string[]): boolean {
+/**
+ * Unordered comparison — bd's own label/id order need not match the
+ * optimistic array's. Shared by the label-override and blocked-by-override
+ * retirement effects; despite the name this is generic over any string set.
+ */
+function sameStringSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   const setB = new Set(b);
-  return a.every((label) => setB.has(label));
+  return a.every((value) => setB.has(value));
+}
+
+/**
+ * Same unordered comparison as {@link sameStringSet}, but for dependency
+ * edges: two edge arrays are equal when they carry the same
+ * (target id, kind) pairs, regardless of order or which of bd's two edge
+ * shapes (`edgeTargetId`/`edgeKind` normalise that).
+ */
+function sameEdgeSet(a: BeadDependency[], b: BeadDependency[]): boolean {
+  const keyOf = (edge: BeadDependency): string => `${edgeTargetId(edge) ?? ''}:${edgeKind(edge) ?? ''}`;
+  return sameStringSet(a.map(keyOf), b.map(keyOf));
 }
 
 /**
@@ -1271,28 +1456,96 @@ function Meta({
 
 function EdgeList({
   title,
+  icon,
   edges,
   beads,
   onSelect,
   index,
+  onRemove,
 }: {
   title: string;
+  icon?: ReactNode;
   edges: Array<{ id: string }>;
   beads: Bead[];
   onSelect: (id: string) => void;
   index: StatusIndex;
+  /** When provided, each row gets an × button that calls this with the edge's id. */
+  onRemove?: (id: string) => void;
 }): ReactNode {
   if (edges.length === 0) return null;
   return (
-    <Section title={title}>
+    <Section title={title} icon={icon}>
       <ul className="grid gap-1">
         {edges.map((edge) => (
-          <li key={edge.id}>
-            <LinkRow id={edge.id} beads={beads} onSelect={onSelect} index={index} />
+          <li key={edge.id} className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <LinkRow id={edge.id} beads={beads} onSelect={onSelect} index={index} />
+            </div>
+            {onRemove ? (
+              <button
+                type="button"
+                aria-label={`Remove link to ${edge.id}`}
+                onClick={() => onRemove(edge.id)}
+                className="text-fg-muted hover:text-danger shrink-0 p-0.5"
+              >
+                <X aria-hidden="true" className="size-3" />
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
     </Section>
+  );
+}
+
+/**
+ * The Add-link control's kind select: `blocks`/`related`/`discovered-from`
+ * are the common case and always visible; the rest of {@link DEP_TYPES} sit
+ * behind "More kinds…" so the select does not open to ten options nobody
+ * usually needs. Reveals permanently for the session once toggled (there is
+ * no reason to hide them again after the user asked to see them).
+ */
+function DepKindSelect({
+  value,
+  onChange,
+}: {
+  value: DepType;
+  onChange: (next: DepType) => void;
+}): ReactNode {
+  const [showAll, setShowAll] = useState(false);
+  const id = useId();
+  // The current value always stays selectable, even if it is one of the
+  // "more" kinds and showAll is still false (e.g. restored from a draft).
+  const visibleOptions =
+    showAll || !PROMINENT_DEP_TYPES.includes(value) ? DEP_TYPES : PROMINENT_DEP_TYPES;
+
+  return (
+    <div className="grid gap-1">
+      <label htmlFor={id} className="text-fg-muted text-xs">
+        Kind
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value as DepType)}
+        className="bg-input-bg border-input-border text-fg rounded-md border px-2 py-1 text-sm"
+      >
+        {visibleOptions.map((type) => (
+          <option key={type} value={type}>
+            {type}
+          </option>
+        ))}
+      </select>
+      {!showAll ? (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="text-fg-muted hover:text-fg justify-self-start text-xs"
+        >
+          More kinds…
+        </button>
+      ) : null}
+    </div>
   );
 }
 

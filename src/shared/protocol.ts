@@ -30,10 +30,7 @@ export type TextField = 'title' | 'description' | 'design' | 'acceptance' | 'not
  * The dependency-edge kinds `bd dep add --type` accepts. Like `TextField`,
  * this is CLI shape, not beads' user-extensible vocabulary — the fixed enum
  * one dedicated flag exposes — so it is hardcoded here rather than loaded at
- * runtime. bd's own default when `--type` is omitted is `blocks`. The
- * allowlist constant that enforces this at the router boundary,
- * `DEP_TYPES`, lives in `src/extension/panel/param-validation.ts` alongside
- * `TEXT_FIELDS`.
+ * runtime. bd's own default when `--type` is omitted is `blocks`.
  */
 export type DepType =
   | 'blocks'
@@ -46,6 +43,30 @@ export type DepType =
   | 'validates'
   | 'relates-to'
   | 'supersedes';
+
+/**
+ * The runtime allowlist mirroring {@link DepType}, one value per member.
+ *
+ * Lives here rather than in `src/extension/panel/param-validation.ts` (which
+ * imports it) because the webview's dependency-kind selector
+ * (`bead-detail.tsx`'s Add-link control) needs the same list and must not
+ * import from `src/extension/**` — the two bundles stay separate, and this
+ * file is the one place both already draw shared, framework-free types
+ * from. `param-validation.ts`'s `requireDepType` is still the router-side
+ * enforcement point; this is the single array both it and the UI read.
+ */
+export const DEP_TYPES: readonly DepType[] = [
+  'blocks',
+  'tracks',
+  'related',
+  'parent-child',
+  'discovered-from',
+  'until',
+  'caused-by',
+  'validates',
+  'relates-to',
+  'supersedes',
+];
 
 /**
  * Params for `createBead`, shared by the router's narrowing helper and

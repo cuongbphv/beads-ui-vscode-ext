@@ -3,7 +3,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { DASHBOARD_TABS, MUTATING_METHODS, resolveDashboardTab } from '../shared/protocol';
+import { requireDepType } from '../extension/panel/param-validation';
+import { DASHBOARD_TABS, DEP_TYPES, MUTATING_METHODS, resolveDashboardTab } from '../shared/protocol';
 
 describe('MUTATING_METHODS', () => {
   it('includes createBead, so the host refetches and broadcasts after a create', () => {
@@ -41,6 +42,19 @@ describe('MUTATING_METHODS', () => {
 
   it('includes resolveGate, so the host refetches and broadcasts after a gate is resolved', () => {
     expect(MUTATING_METHODS.has('resolveGate')).toBe(true);
+  });
+});
+
+describe('DEP_TYPES (bead li0.10)', () => {
+  it('is the single allowlist both the router narrowing and the webview kind selector read', () => {
+    // `param-validation.ts`'s `requireDepType` used to hardcode its own copy
+    // of this list (li0.9); it now imports `DEP_TYPES` from here, so every
+    // value it accepts must be exactly this array — proving there is only
+    // ever one list, not two that could drift apart.
+    for (const type of DEP_TYPES) {
+      expect(requireDepType(type, 'type')).toBe(type);
+    }
+    expect(() => requireDepType('not-a-real-type', 'type')).toThrow();
   });
 });
 

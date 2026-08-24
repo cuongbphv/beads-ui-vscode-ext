@@ -7,7 +7,7 @@
  * file imports nothing at runtime — no `vscode`, no `react` — and never
  * will; the one `import type` below is erased at compile time.
  */
-import type { CreateBeadParams, DepType, TextField } from '../../shared/protocol';
+import { DEP_TYPES, type CreateBeadParams, type DepType, type TextField } from '../../shared/protocol';
 
 const DUE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -88,24 +88,6 @@ export function narrowUpdateTextParams(params: Record<string, unknown>): UpdateT
   }
   return { id, field, text: params.text };
 }
-
-/**
- * `dep add --type`'s allowlist — CLI shape, not beads' user-extensible
- * vocabulary, same rationale as `TEXT_FIELDS` above. bd's own default when
- * `--type` is omitted is `'blocks'`, which `requireDepType` mirrors.
- */
-const DEP_TYPES: readonly DepType[] = [
-  'blocks',
-  'tracks',
-  'related',
-  'parent-child',
-  'discovered-from',
-  'until',
-  'caused-by',
-  'validates',
-  'relates-to',
-  'supersedes',
-];
 
 /**
  * Narrows the optional `type` param for `addDependency`. `undefined` narrows

@@ -18,6 +18,8 @@ export function Popover({
   label,
   className,
   children,
+  open: openProp,
+  onOpenChange,
 }: {
   /** Accessible name of the trigger. Carries the state, e.g. `Filters, 2 active`. */
   triggerLabel: string;
@@ -27,8 +29,25 @@ export function Popover({
   label: string;
   className?: string;
   children: ReactNode;
+  /**
+   * Controlled open state, for a caller that needs to close the panel itself
+   * (e.g. right after a selection inside it succeeds) rather than only ever
+   * on Escape/outside-click. Omit both this and `onOpenChange` for the
+   * original uncontrolled behaviour — every existing caller does, and gets
+   * exactly the behaviour it always had.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
+  /** Funnels every internal transition through `onOpenChange` too, controlled or not. */
+  const setOpen = (next: boolean | ((current: boolean) => boolean)): void => {
+    const resolved = typeof next === 'function' ? next(open) : next;
+    if (!controlled) setOpenState(resolved);
+    onOpenChange?.(resolved);
+  };
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
