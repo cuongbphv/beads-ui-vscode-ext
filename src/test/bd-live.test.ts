@@ -32,6 +32,7 @@ import { BdMutations } from '../extension/bd/mutations';
 import { BdQueries } from '../extension/bd/queries';
 import { PARENT_CHILD, toCategory } from '../shared/types';
 import type { Bead } from '../shared/types';
+import { fetchWithConsistencyRetry } from './support/dashboard-consistency';
 import { removeScratchDirBestEffort } from './support/scratch-cleanup';
 
 /**
@@ -554,7 +555,37 @@ describe('ready / blocked', () => {
 
 describe('dashboard snapshot', () => {
   it('is internally consistent — this is exactly what the webview receives', async () => {
-    const [snapshot, gates] = await Promise.all([queries.snapshot(), gateIssueCounts()]);
+    // beads-ui-vscode-ext-l2o: `queries.snapshot()` is itself a seven-way
+    // fan-out of independent `bd` calls, and `gateIssueCounts()` is an eighth,
+    // still-separate one. All of them hit this repo's real, live board on
+    // purpose (see this describe block's own point — "this is exactly what
+    // the webview receives" from the real CLI), so a genuine concurrent write
+    // from anywhere else between any two of those calls can transiently skew
+    // the invariants below even though nothing is actually broken.
+    //
+    // Chose option (a) (bounded retry) over (b) (isolated scratch project):
+    // migrating to a scratch project would lose exactly the coverage this
+    // test exists for — organically-grown, real project data — to fix a race
+    // that a single re-fetch already resolves. `fetchWithConsistencyRetry`
+    // re-runs the *entire* fetch (not just one leg of it) up to once; a
+    // mismatch that survives the retry is a real bug and still fails below.
+    // See `dashboard-consistency.ts` for the retry itself and
+    // `dashboard-consistency.test.ts` for proof it doesn't loop or mask a
+    // persistent disagreement.
+    const { snapshot, gates } = await fetchWithConsistencyRetry(
+      async () => {
+        const [snapshot, gates] = await Promise.all([queries.snapshot(), gateIssueCounts()]);
+        return { snapshot, gates };
+      },
+      ({ snapshot, gates }) => ({
+        beadIds: new Set(snapshot.beads.map((b) => b.id)),
+        beadsLength: snapshot.beads.length,
+        gatesTotal: gates.total,
+        statsTotalIssues: snapshot.stats.total_issues,
+        readyIds: snapshot.readyIds,
+        blockedIds: snapshot.blockedIds,
+      }),
+    );
     const ids = new Set(snapshot.beads.map((b) => b.id));
 
     expect(snapshot.context.bd_version).toMatch(/\d+\.\d+/);
