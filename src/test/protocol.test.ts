@@ -17,6 +17,10 @@ describe('MUTATING_METHODS', () => {
   it('includes updateText, so the host refetches and broadcasts after a text field update', () => {
     expect(MUTATING_METHODS.has('updateText')).toBe(true);
   });
+
+  it('excludes getMolSnapshot — it only ever reads mol/gate state, never writes it', () => {
+    expect(MUTATING_METHODS.has('getMolSnapshot')).toBe(false);
+  });
 });
 
 describe('resolveDashboardTab', () => {

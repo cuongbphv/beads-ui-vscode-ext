@@ -6,6 +6,7 @@
  */
 import type { FleetSnapshot, TranscriptBackfill, TranscriptEvent } from './fleet';
 import type { HistoryEvent } from './history-diff';
+import type { MolSnapshot } from './mol';
 import type {
   Bead,
   BeadComment,
@@ -169,6 +170,14 @@ export interface RpcMethods {
   unsubscribeTranscript: {
     params: { targetId: string };
     result: { ok: true };
+  };
+  /**
+   * One round trip that fills the Molecules tab. Read-only, like
+   * `getHistory` — it never appears in `MUTATING_METHODS`.
+   */
+  getMolSnapshot: {
+    params: undefined;
+    result: MolSnapshot;
   };
 }
 

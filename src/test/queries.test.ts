@@ -583,3 +583,212 @@ describe('BdMutations.updateText', () => {
     expect(changed).toEqual([['bd-a1']]);
   });
 });
+
+/**
+ * `FakeBd` above keys canned responses by `args[0]` only, which is fine when
+ * every fixture in a describe block hits a distinct top-level command. Every
+ * `mol` read shares `args[0] === 'mol'` (`mol progress`, `mol show`, `mol
+ * wisp list`, `mol stale`), so the mol tests need a fake keyed by the full
+ * argv instead, or every one of those calls would answer with the same
+ * canned payload.
+ */
+class FakeArgvBd {
+  readonly argv: string[][] = [];
+  responses = new Map<string, unknown>();
+  failing = new Set<string>();
+
+  private key(args: string[]): string {
+    return args.join(' ');
+  }
+
+  async json<T>(args: string[]): Promise<T> {
+    this.argv.push(args);
+    const key = this.key(args);
+    if (this.failing.has(key)) throw new Error(`bd ${args.join(' ')} failed`);
+    return (this.responses.has(key) ? this.responses.get(key) : null) as T;
+  }
+
+  jsonShared<T>(args: string[]): Promise<T> {
+    return this.json<T>(args);
+  }
+
+  async exec(args: string[]): Promise<string> {
+    this.argv.push(args);
+    return '';
+  }
+}
+
+function molQueries(fake: FakeArgvBd): BdQueries {
+  return new BdQueries(fake as unknown as BdService);
+}
+
+describe('BdQueries molecule reads', () => {
+  it('molRoots: bd list --flat --type molecule, unwraps the issues array', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('list --flat --type molecule', [
+      { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+    ]);
+
+    const roots = await molQueries(fake).molRoots();
+
+    expect(fake.argv).toEqual([['list', '--flat', '--type', 'molecule']]);
+    expect(roots.map((r) => r.id)).toEqual(['mol-1']);
+  });
+
+  it('molProgress: bd mol progress <id>, translates the bare object', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('mol progress mol-1', {
+      molecule_id: 'mol-1',
+      molecule_title: 'fixdemo',
+      total: 4,
+      completed: 1,
+      in_progress: 1,
+      percent: 25,
+      current_step_id: 'mol-25d',
+      schema_version: 1,
+    });
+
+    const progress = await molQueries(fake).molProgress('mol-1');
+
+    expect(fake.argv).toEqual([['mol', 'progress', 'mol-1']]);
+    expect(progress).toEqual({
+      molecule_id: 'mol-1',
+      molecule_title: 'fixdemo',
+      total: 4,
+      completed: 1,
+      in_progress: 1,
+      percent: 25,
+      current_step_id: 'mol-25d',
+      schema_version: 1,
+    });
+  });
+
+  it('molShow: bd mol show <id> --parallel', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('mol show mol-1 --parallel', {
+      root: { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+      issues: [{ id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' }],
+      parallel: { parallel_groups: {}, steps: {} },
+    });
+
+    await molQueries(fake).molShow('mol-1');
+
+    expect(fake.argv).toEqual([['mol', 'show', 'mol-1', '--parallel']]);
+  });
+
+  it('wisps: bd mol wisp list, unwraps the wisps array and keeps the "type" field', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('mol wisp list', {
+      count: 1,
+      wisps: [{ id: 'w-1', title: 'Design healthcheck', status: 'open', priority: 2, type: 'task' }],
+    });
+
+    const wisps = await molQueries(fake).wisps();
+
+    expect(fake.argv).toEqual([['mol', 'wisp', 'list']]);
+    expect(wisps).toEqual([
+      {
+        id: 'w-1',
+        title: 'Design healthcheck',
+        status: 'open',
+        priority: 2,
+        type: 'task',
+        created_at: undefined,
+        updated_at: undefined,
+      },
+    ]);
+  });
+
+  it('molStaleIds: bd mol stale, extracts ids from stale_molecules', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('mol stale', {
+      stale_molecules: [
+        { id: 'epic-1', title: 'x', total_children: 1, closed_children: 1, blocking_count: 0 },
+      ],
+    });
+
+    const ids = await molQueries(fake).molStaleIds();
+
+    expect(fake.argv).toEqual([['mol', 'stale']]);
+    expect(ids).toEqual(['epic-1']);
+  });
+
+  it('molStaleIds: a null stale_molecules (bd\'s empty shape) settles to []', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('mol stale', { stale_molecules: null });
+
+    expect(await molQueries(fake).molStaleIds()).toEqual([]);
+  });
+});
+
+describe('BdQueries.molSnapshot', () => {
+  it('short-circuits at zero molecule roots: no progress/wisp/stale/gate reads happen', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('list --flat --type molecule', []);
+
+    const snapshot = await molQueries(fake).molSnapshot();
+
+    expect(snapshot.molecules).toEqual([]);
+    expect(snapshot.wisps).toEqual([]);
+    expect(snapshot.gates).toEqual([]);
+    expect(snapshot.degraded).toBe(false);
+    expect(typeof snapshot.fetchedAt).toBe('string');
+    // The one and only bd call was the roots list — no mol/gate fan-out at all.
+    expect(fake.argv).toEqual([['list', '--flat', '--type', 'molecule']]);
+  });
+
+  it('degrades only the molecule whose progress call throws; the rest of the snapshot still populates', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('list --flat --type molecule', [
+      { id: 'mol-1', title: 'Good', status: 'open', priority: 2, issue_type: 'molecule' },
+      { id: 'mol-2', title: 'Broken', status: 'open', priority: 2, issue_type: 'molecule' },
+    ]);
+    fake.responses.set('mol progress mol-1', {
+      molecule_id: 'mol-1',
+      molecule_title: 'Good',
+      total: 4,
+      completed: 1,
+      in_progress: 1,
+      percent: 25,
+    });
+    fake.failing.add('mol progress mol-2');
+    fake.responses.set('mol stale', { stale_molecules: null });
+    fake.responses.set('mol wisp list', { wisps: [] });
+    fake.responses.set('gate list', []);
+
+    const snapshot = await molQueries(fake).molSnapshot();
+
+    expect(snapshot.degraded).toBe(true);
+    expect(snapshot.molecules).toHaveLength(2);
+    const good = snapshot.molecules.find((m) => m.root.id === 'mol-1');
+    const broken = snapshot.molecules.find((m) => m.root.id === 'mol-2');
+    expect(good?.degraded).toBe(false);
+    expect(good?.progress?.total).toBe(4);
+    expect(broken?.degraded).toBe(true);
+    expect(broken?.progress).toBeNull();
+  });
+
+  it('reuses the existing gates() read, so molecule cards can show open gates for free', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('list --flat --type molecule', [
+      { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+    ]);
+    fake.responses.set('mol progress mol-1', {
+      molecule_id: 'mol-1',
+      molecule_title: 'fixdemo',
+      total: 4,
+      completed: 1,
+      in_progress: 1,
+      percent: 25,
+    });
+    fake.responses.set('mol stale', { stale_molecules: null });
+    fake.responses.set('mol wisp list', { wisps: [] });
+    fake.responses.set('gate list', [
+      { id: 'gate-1', title: 'Gate: human', status: 'open', priority: 2, issue_type: 'gate', await_type: 'human' },
+    ]);
+
+    const snapshot = await molQueries(fake).molSnapshot();
+
+    expect(snapshot.gates.map((g) => g.id)).toEqual(['gate-1']);
+  });
+});

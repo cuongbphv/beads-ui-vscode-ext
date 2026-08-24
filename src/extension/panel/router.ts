@@ -165,6 +165,9 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       host.transcriptUnsubscribe(requireTargetId(params.targetId, 'targetId'));
       return { ok: true };
 
+    case 'getMolSnapshot':
+      return queries.molSnapshot();
+
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);
   }

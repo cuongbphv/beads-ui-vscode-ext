@@ -45,10 +45,22 @@ class FakeMutations {
 class FakeQueries {
   readonly calls: Array<{ method: string; args: unknown[] }> = [];
   historyResult: unknown = [];
+  molSnapshotResult: unknown = {
+    molecules: [],
+    wisps: [],
+    gates: [],
+    fetchedAt: '2026-08-24T00:00:00Z',
+    degraded: false,
+  };
 
   async history(id: string, limit?: number): Promise<unknown> {
     this.calls.push({ method: 'history', args: [id, limit] });
     return this.historyResult;
+  }
+
+  async molSnapshot(): Promise<unknown> {
+    this.calls.push({ method: 'molSnapshot', args: [] });
+    return this.molSnapshotResult;
   }
 }
 
@@ -370,6 +382,28 @@ describe('router getHistory', () => {
 
     expect(response.ok).toBe(false);
     expect(queries.calls).toEqual([]);
+  });
+});
+
+describe('router getMolSnapshot', () => {
+  it('calls queries.molSnapshot with no params and returns its result', async () => {
+    const queries = new FakeQueries();
+    queries.molSnapshotResult = {
+      molecules: [{ root: { id: 'mol-1' }, progress: null, stale: false, degraded: false }],
+      wisps: [],
+      gates: [],
+      fetchedAt: '2026-08-24T12:00:00Z',
+      degraded: false,
+    };
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getMolSnapshot', {}),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: queries.molSnapshotResult });
+    expect(queries.calls).toEqual([{ method: 'molSnapshot', args: [] }]);
   });
 });
 

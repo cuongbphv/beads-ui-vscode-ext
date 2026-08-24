@@ -5,6 +5,16 @@
  * (a filter object, an id) and never assemble CLI flags themselves.
  */
 import { diffHistory, type HistoryEvent, type HistorySnapshot } from '../../shared/history-diff';
+import {
+  toMolDetail,
+  toMolProgress,
+  toMolWisp,
+  toStaleIds,
+  type MolDetail,
+  type MolProgress,
+  type MolSnapshot,
+  type MolWisp,
+} from '../../shared/mol';
 import type {
   Bead,
   BeadComment,
@@ -259,6 +269,94 @@ export class BdQueries {
     }));
 
     return diffHistory(snapshots);
+  }
+
+  /**
+   * Molecule roots: plain issue rows with `issue_type: 'molecule'` — bd 1.2.2
+   * emits no `mol_type` field to filter on client-side (fixtures/mol/README.md
+   * #5), so `--type molecule` on the CLI side is the only filter needed.
+   */
+  async molRoots(): Promise<Bead[]> {
+    return pickArray<Bead>(
+      await this.bd.json<unknown>(['list', '--flat', '--type', 'molecule']),
+      'issues',
+    );
+  }
+
+  /**
+   * `bd mol progress <id> --json` — a bare object, not an array; no rate/ETA
+   * fields are emitted despite the CLI's help text (fixtures/mol/README.md #1).
+   */
+  async molProgress(id: string): Promise<MolProgress> {
+    return toMolProgress(await this.bd.json<unknown>(['mol', 'progress', id]));
+  }
+
+  /**
+   * `bd mol show <id> --parallel --json`. Gate dependencies never appear in
+   * `blocked_by` and never flip `is_ready` (fixtures/mol/README.md #2) — a
+   * step waiting only on an open gate can still come back `ready` here; gate
+   * awareness is out of scope for this read model.
+   */
+  async molShow(id: string): Promise<MolDetail> {
+    return toMolDetail(await this.bd.json<unknown>(['mol', 'show', id, '--parallel']));
+  }
+
+  /**
+   * `bd mol wisp list --json` → `{count, wisps: [...]}`, root and step rows
+   * both included. Rows key the issue type as `type`, never `wisp_type`
+   * (fixtures/mol/README.md #5, #6).
+   */
+  async wisps(): Promise<MolWisp[]> {
+    return pickArray<Record<string, unknown>>(
+      await this.bd.json<unknown>(['mol', 'wisp', 'list']),
+      'wisps',
+    ).map(toMolWisp);
+  }
+
+  /**
+   * `bd mol stale --json`. On bd 1.2.2 only epic-type roots are ever flagged
+   * (fixtures/mol/README.md #10) — a molecule-only project should expect this
+   * to settle to `[]` in practice, not because it's hardcoded but because bd
+   * itself has nothing to report.
+   */
+  async molStaleIds(): Promise<string[]> {
+    return toStaleIds(await this.bd.json<unknown>(['mol', 'stale']));
+  }
+
+  /**
+   * Composes the Molecules tab's one round trip. Short-circuits before any
+   * per-root or project-wide mol/gate read when there are no molecule roots —
+   * the common case — so a project with none costs exactly the one `bd list`
+   * call above. Otherwise fans `molProgress` out per root via
+   * `Promise.allSettled`: one broken molecule's progress read degrades only
+   * its own card (and flips the snapshot's `degraded` flag) instead of
+   * blanking the whole tab.
+   */
+  async molSnapshot(): Promise<MolSnapshot> {
+    const roots = await this.molRoots();
+    if (roots.length === 0) {
+      return { molecules: [], wisps: [], gates: [], fetchedAt: new Date().toISOString(), degraded: false };
+    }
+
+    const [progressOutcomes, staleIds, wisps, gates] = await Promise.all([
+      Promise.allSettled(roots.map((root) => this.molProgress(root.id))),
+      this.molStaleIds(),
+      this.wisps(),
+      this.gates(),
+    ]);
+
+    const staleSet = new Set(staleIds);
+    let degraded = false;
+    const molecules = roots.map((root, index) => {
+      const outcome = progressOutcomes[index];
+      if (outcome.status === 'fulfilled') {
+        return { root, progress: outcome.value, stale: staleSet.has(root.id), degraded: false };
+      }
+      degraded = true;
+      return { root, progress: null, stale: staleSet.has(root.id), degraded: true };
+    });
+
+    return { molecules, wisps, gates, fetchedAt: new Date().toISOString(), degraded };
   }
 
   /**
