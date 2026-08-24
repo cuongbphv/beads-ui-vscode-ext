@@ -59,7 +59,7 @@ function bead(partial: Partial<Bead> & Pick<Bead, 'id'>): Bead {
  * off it — so this test exercises the same shape the host actually sends,
  * not a partial mock.
  */
-function snapshot(beads: Bead[]): DashboardSnapshot {
+function snapshot(beads: Bead[], blockedIds: string[] = []): DashboardSnapshot {
   const openCount = beads.filter((b) => b.status !== 'closed').length;
   const closedCount = beads.length - openCount;
   return {
@@ -69,7 +69,7 @@ function snapshot(beads: Bead[]): DashboardSnapshot {
       total_issues: beads.length,
       open_issues: openCount,
       in_progress_issues: 0,
-      blocked_issues: 0,
+      blocked_issues: blockedIds.length,
       closed_issues: closedCount,
       deferred_issues: 0,
       pinned_issues: 0,
@@ -77,21 +77,21 @@ function snapshot(beads: Bead[]): DashboardSnapshot {
     },
     beads,
     readyIds: [],
-    blockedIds: [],
+    blockedIds,
     gates: [],
     truncated: false,
     fetchedAt: '2026-08-24T00:00:00.000Z',
   };
 }
 
-async function mount(beads: Bead[]): Promise<HTMLDivElement> {
+async function mount(beads: Bead[], blockedIds: string[] = []): Promise<HTMLDivElement> {
   const container = document.createElement('div');
   document.body.append(container);
   mountedRoot = createRoot(container);
   await act(async () => {
     mountedRoot?.render(
       createElement(OverviewView, {
-        snapshot: snapshot(beads),
+        snapshot: snapshot(beads, blockedIds),
         index,
         onSelect: vi.fn(),
       }),
@@ -129,5 +129,69 @@ describe('OverviewView molecules stat card', () => {
     const root = await mount(beads);
 
     expect(statValue(root, 'Molecules')).toBe('0');
+  });
+});
+
+/** The "Blocked" list section, or null if it hasn't rendered. */
+function blockedSection(root: HTMLElement): HTMLElement | null {
+  return root.querySelector('section[aria-label="Blocked"]');
+}
+
+describe('OverviewView Blocked list row hint (beads-ui-vscode-ext-72m.6)', () => {
+  it('shows the direct blocker title on a row with a single open blocker', async () => {
+    installResizeObserver();
+    const beads = [
+      bead({
+        id: 'a',
+        title: 'Ship the release',
+        dependencies: [{ id: 'b', dependency_type: 'blocks' }],
+      }),
+      bead({ id: 'b', title: 'Fix the flaky test' }),
+    ];
+
+    const root = await mount(beads, ['a']);
+
+    expect(blockedSection(root)?.textContent).toContain('Blocked by');
+    expect(blockedSection(root)?.textContent).toContain('Fix the flaky test');
+  });
+
+  it('shows the first blocker title plus a count when there is more than one', async () => {
+    installResizeObserver();
+    const beads = [
+      bead({
+        id: 'a',
+        title: 'Ship the release',
+        dependencies: [
+          { id: 'b', dependency_type: 'blocks' },
+          { id: 'c', dependency_type: 'blocks' },
+        ],
+      }),
+      bead({ id: 'b', title: 'Fix the flaky test' }),
+      bead({ id: 'c', title: 'Update the schema' }),
+    ];
+
+    const root = await mount(beads, ['a']);
+
+    const text = blockedSection(root)?.textContent ?? '';
+    expect(text).toContain('Fix the flaky test');
+    expect(text).toContain('+1 more');
+  });
+
+  it('leaves the row unchanged when no open direct blocker is found (stale poll tick)', async () => {
+    installResizeObserver();
+    // "a" is listed as blocked this tick, but its only recorded blocker is
+    // already closed — buildBlockerChain resolves an empty chain for it.
+    const beads = [
+      bead({
+        id: 'a',
+        title: 'Ship the release',
+        dependencies: [{ id: 'b', dependency_type: 'blocks' }],
+      }),
+      bead({ id: 'b', title: 'Fix the flaky test', status: 'closed' }),
+    ];
+
+    const root = await mount(beads, ['a']);
+
+    expect(blockedSection(root)?.textContent).not.toContain('Blocked by');
   });
 });

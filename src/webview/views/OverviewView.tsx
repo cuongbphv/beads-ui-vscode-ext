@@ -21,6 +21,7 @@ import {
 } from '../components/charts';
 import { HealthScorecard } from '../components/health-scorecard';
 import { EmptyState, StatCard } from '../components/primitives';
+import { directBlockerHint } from '../lib/blocked-hint';
 import { burnUpDensity, workloadDensity } from '../lib/chart-density';
 
 export function OverviewView({
@@ -140,6 +141,8 @@ export function OverviewView({
           title="Ready to start"
           hint="Nothing is blocking these."
           beads={ready}
+          allBeads={beads}
+          index={index}
           onSelect={onSelect}
           selectedId={selectedId}
           emptyText="No unblocked issues right now."
@@ -148,6 +151,8 @@ export function OverviewView({
           title="Blocked"
           hint="Waiting on a dependency."
           beads={blocked}
+          allBeads={beads}
+          index={index}
           blocked
           onSelect={onSelect}
           selectedId={selectedId}
@@ -168,6 +173,8 @@ function BeadList({
   title,
   hint,
   beads,
+  allBeads,
+  index,
   onSelect,
   selectedId,
   emptyText,
@@ -176,6 +183,9 @@ function BeadList({
   title: string;
   hint: string;
   beads: Bead[];
+  /** The full snapshot, so a per-row blocker hint can resolve blocker titles. */
+  allBeads: Bead[];
+  index: StatusIndex;
   onSelect: (id: string) => void;
   selectedId?: string;
   emptyText: string;
@@ -191,16 +201,29 @@ function BeadList({
         <EmptyState icon={<CheckCircle2 className="size-8" />} title={emptyText} />
       ) : (
         <ul className="grid gap-1.5">
-          {beads.map((bead) => (
-            <li key={bead.id}>
-              <BeadCard
-                bead={bead}
-                blocked={blocked}
-                selected={bead.id === selectedId}
-                onSelect={onSelect}
-              />
-            </li>
-          ))}
+          {beads.map((bead) => {
+            // Compact "why blocked" hint: direct blocker only, capped at
+            // depth 1 — see src/webview/lib/blocked-hint.ts. `undefined`
+            // (no open direct blocker, e.g. a stale poll tick) leaves the
+            // row exactly as it was before this hint existed.
+            const blockedHint = blocked ? directBlockerHint(bead, allBeads, index) : undefined;
+            return (
+              <li key={bead.id}>
+                <BeadCard
+                  bead={bead}
+                  blocked={blocked}
+                  selected={bead.id === selectedId}
+                  onSelect={onSelect}
+                />
+                {blockedHint ? (
+                  <p className="text-fg-muted mt-1 truncate text-xs">
+                    Blocked by <span className="text-fg">{blockedHint.title}</span>
+                    {blockedHint.extra > 0 ? ` +${blockedHint.extra} more` : null}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
