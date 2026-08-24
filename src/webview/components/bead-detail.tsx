@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
+import { buildBlockerChain, type BlockerNode } from '../../shared/blocker-chain';
 import { StatusIndex, edgesOfKind, parentIdOf } from '../../shared/model';
 import { formatDuration, spanOf } from '../../shared/schedule';
 import {
@@ -151,6 +152,9 @@ export function BeadDetail({
   const parent = parentId ? beads.find((candidate) => candidate.id === parentId) : undefined;
   const children = beads.filter((candidate) => parentIdOf(candidate) === bead.id);
   const blocks = edgesOfKind(bead, 'blocks');
+  // Why is this blocked, transitively? Only open blockers count — a done bead
+  // still shows its (historic) edges below, but no longer blocks anything.
+  const blockerChain = done ? undefined : buildBlockerChain(bead, beads, index);
   const related = edgesOfKind(bead, 'related');
   const discovered = edgesOfKind(bead, 'discovered-from');
   const statusDef = index.def(bead.status);
@@ -460,6 +464,30 @@ export function BeadDetail({
           </Section>
         ) : null}
 
+        {blockerChain && blockerChain.nodes.length > 0 ? (
+          <Section title="Why blocked" icon={<Lock aria-hidden="true" className="size-3" />}>
+            <ul className="grid gap-1">
+              {blockerChain.nodes.map((node, position) => (
+                <BlockerRow
+                  // The same blocker can legitimately appear on several paths
+                  // (a diamond), so the id alone is not a stable key.
+                  key={`${position}-${node.id}`}
+                  node={node}
+                  beads={beads}
+                  onSelect={onSelect}
+                  index={index}
+                />
+              ))}
+            </ul>
+            {blockerChain.hasCycle ? (
+              <p className="text-warning mt-1 flex items-center gap-1 text-xs">
+                <AlertTriangle aria-hidden="true" className="size-3" />
+                Dependency cycle detected — these issues block each other.
+              </p>
+            ) : null}
+          </Section>
+        ) : null}
+
         {bead.blocked_by?.length ? (
           <Section title="Blocked by" icon={<Lock aria-hidden="true" className="size-3" />}>
             <ul className="grid gap-1">
@@ -689,6 +717,47 @@ function CommentRow({ comment }: { comment: BeadComment }): ReactNode {
         <span title={absoluteTime(comment.created_at)}>{relativeTime(comment.created_at)}</span>
       </div>
       <p className="text-fg mt-0.5 text-sm whitespace-pre-wrap">{comment.text}</p>
+    </li>
+  );
+}
+
+/**
+ * One row of the "Why blocked" chain: an ordinary link row, indented by how
+ * far the blocker sits from the inspected bead, with a chip when the edge
+ * closes a cycle and an ellipsis when the walk was depth-capped there.
+ */
+function BlockerRow({
+  node,
+  beads,
+  onSelect,
+  index,
+}: {
+  node: BlockerNode;
+  beads: Bead[];
+  onSelect: (id: string) => void;
+  index: StatusIndex;
+}): ReactNode {
+  return (
+    <li
+      className="flex items-center gap-1.5"
+      style={{ paddingLeft: `${(node.depth - 1) * 0.75}rem` }}
+    >
+      <div className="min-w-0 flex-1">
+        <LinkRow id={node.id} beads={beads} onSelect={onSelect} index={index} />
+      </div>
+      {node.cycle ? (
+        <span
+          title="This edge closes a dependency cycle"
+          className="text-warning shrink-0 rounded-sm border border-current px-1 text-xs"
+        >
+          cycle
+        </span>
+      ) : null}
+      {node.truncated ? (
+        <span title="Chain continues; too deep to show" className="text-fg-muted shrink-0 text-xs">
+          …
+        </span>
+      ) : null}
     </li>
   );
 }
