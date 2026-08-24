@@ -13,6 +13,7 @@ import type {
   BeadFilters,
   DashboardSnapshot,
   Priority,
+  SyncStatus,
 } from './types';
 
 /**
@@ -178,6 +179,20 @@ export interface RpcMethods {
   getMolSnapshot: {
     params: undefined;
     result: MolSnapshot;
+  };
+  /**
+   * Read-only Dolt sync/engine status (`bd dolt status --json`), for the
+   * header's sync chip. Fetched on demand — piggybacked on the manual
+   * Refresh button, never on a poll tick — and never runs `bd dolt push` or
+   * `bd dolt pull`; this method only reports, and stays out of
+   * {@link MUTATING_METHODS} on purpose.
+   */
+  getSyncStatus: {
+    // No fields, not "any value" — `{}` trips `no-empty-object-type` (it
+    // would accept `0`/`""`/anything non-nullish); this is the empty-object
+    // shape the doc comment above actually means.
+    params: Record<string, never>;
+    result: SyncStatus;
   };
 }
 

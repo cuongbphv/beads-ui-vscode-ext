@@ -52,6 +52,7 @@ class FakeQueries {
     fetchedAt: '2026-08-24T00:00:00Z',
     degraded: false,
   };
+  doltStatusResult: unknown = { mode: 'embedded', server_running: false };
 
   async history(id: string, limit?: number): Promise<unknown> {
     this.calls.push({ method: 'history', args: [id, limit] });
@@ -61,6 +62,11 @@ class FakeQueries {
   async molSnapshot(): Promise<unknown> {
     this.calls.push({ method: 'molSnapshot', args: [] });
     return this.molSnapshotResult;
+  }
+
+  async doltStatus(): Promise<unknown> {
+    this.calls.push({ method: 'doltStatus', args: [] });
+    return this.doltStatusResult;
   }
 }
 
@@ -404,6 +410,27 @@ describe('router getMolSnapshot', () => {
 
     expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: queries.molSnapshotResult });
     expect(queries.calls).toEqual([{ method: 'molSnapshot', args: [] }]);
+  });
+});
+
+describe('router getSyncStatus', () => {
+  it('calls queries.doltStatus (read-only) and returns its result', async () => {
+    const queries = new FakeQueries();
+    queries.doltStatusResult = { mode: 'embedded', server_running: false, data_dir_exists: true };
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getSyncStatus', {}),
+    );
+
+    expect(response).toEqual({
+      kind: 'response',
+      id: 1,
+      ok: true,
+      data: { mode: 'embedded', server_running: false, data_dir_exists: true },
+    });
+    expect(queries.calls).toEqual([{ method: 'doltStatus', args: [] }]);
   });
 });
 

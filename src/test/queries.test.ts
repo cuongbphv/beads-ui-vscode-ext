@@ -792,3 +792,118 @@ describe('BdQueries.molSnapshot', () => {
     expect(snapshot.gates.map((g) => g.id)).toEqual(['gate-1']);
   });
 });
+
+describe('BdQueries.doltStatus', () => {
+  it('sends the exact argv, with --json as a literal element rather than one bd.json would append', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({
+      data_dir: 'C:\\repo\\.beads\\embeddeddolt',
+      data_dir_exists: true,
+      mode: 'embedded',
+      schema_version: 1,
+      server_running: false,
+    });
+
+    await queries(fake).doltStatus();
+
+    expect(fake.argv).toEqual([['dolt', 'status', '--json']]);
+  });
+
+  it('parses the verified embedded-mode shape, tolerating the absence of ahead/behind/last-sync', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({
+      data_dir: 'C:\\repo\\.beads\\embeddeddolt',
+      data_dir_exists: true,
+      mode: 'embedded',
+      schema_version: 1,
+      server_running: false,
+    });
+
+    const status = await queries(fake).doltStatus();
+
+    expect(status).toEqual({
+      mode: 'embedded',
+      server_running: false,
+      data_dir: 'C:\\repo\\.beads\\embeddeddolt',
+      data_dir_exists: true,
+      schema_version: 1,
+    });
+  });
+
+  it('copies ahead/behind/lastSyncAt through only when bd actually sends them (unverified remote-mode fields)', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({
+      mode: 'local-server',
+      server_running: true,
+      ahead: 2,
+      behind: 0,
+      lastSyncAt: '2026-08-24T10:00:00Z',
+    });
+
+    const status = await queries(fake).doltStatus();
+
+    expect(status).toEqual({
+      mode: 'local-server',
+      server_running: true,
+      ahead: 2,
+      behind: 0,
+      lastSyncAt: '2026-08-24T10:00:00Z',
+    });
+  });
+
+  it('never fabricates ahead/behind when bd omits them', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({ mode: 'embedded', server_running: false });
+
+    const status = await queries(fake).doltStatus();
+
+    expect(status.ahead).toBeUndefined();
+    expect(status.behind).toBeUndefined();
+    expect(status.lastSyncAt).toBeUndefined();
+  });
+
+  it('degrades to a safe fallback shape on malformed JSON, without throwing', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = 'not json {{{';
+
+    await expect(queries(fake).doltStatus()).resolves.toEqual({
+      mode: 'unknown',
+      server_running: false,
+      degraded: true,
+    });
+  });
+
+  it('degrades to a safe fallback shape when the payload is an unexpected shape (bare array)', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify([1, 2, 3]);
+
+    await expect(queries(fake).doltStatus()).resolves.toEqual({
+      mode: 'unknown',
+      server_running: false,
+      degraded: true,
+    });
+  });
+
+  it('degrades to a safe fallback shape when mode is missing entirely', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({ server_running: true });
+
+    await expect(queries(fake).doltStatus()).resolves.toEqual({
+      mode: 'unknown',
+      server_running: false,
+      degraded: true,
+    });
+  });
+
+  it('never runs bd dolt push or bd dolt pull', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({ mode: 'embedded', server_running: false });
+
+    await queries(fake).doltStatus();
+
+    for (const argv of fake.argv) {
+      expect(argv).not.toContain('push');
+      expect(argv).not.toContain('pull');
+    }
+  });
+});

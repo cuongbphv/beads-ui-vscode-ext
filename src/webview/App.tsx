@@ -25,9 +25,11 @@ import { BeadDetail } from './components/bead-detail';
 import type { RoadmapZoom } from './components/gantt';
 import { Button, EmptyState, Skeleton } from './components/primitives';
 import { Splitter } from './components/splitter';
+import { SyncStatusChip } from './components/sync-status-chip';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import { useSyncStatus } from './hooks/use-sync-status';
 import {
   persistedFleetPreferences,
   restoreFleetPreferences,
@@ -75,6 +77,7 @@ export function App(): ReactNode {
   const restoredRoadmap = restoreRoadmapPreferences(saved);
   const restoredFleet = restoreFleetPreferences(saved);
   const { snapshot, index, error, loading, focusedId, setFocusedId, refresh } = useBeads();
+  const syncStatus = useSyncStatus();
 
   const [tab, setTab] = useState<DashboardTab>(saved?.tab ?? 'overview');
   // Matches `beadsDashboard.showClosed`, which the host pushes right after
@@ -177,6 +180,15 @@ export function App(): ReactNode {
 
   const onSelect = useCallback((id: string) => setFocusedId(id), [setFocusedId]);
 
+  // The sync chip fetches nothing on its own — piggybacking its refresh onto
+  // this same click is what keeps `bd dolt status` off the poll tick without
+  // adding a second timer.
+  const refreshSyncStatus = syncStatus.refresh;
+  const onRefresh = useCallback(() => {
+    refresh();
+    refreshSyncStatus();
+  }, [refresh, refreshSyncStatus]);
+
   /** A successful create replaces the create form with the new issue's detail. */
   const onCreated = useCallback(
     (id: string) => {
@@ -239,6 +251,11 @@ export function App(): ReactNode {
                 truncated
               </span>
             ) : null}
+            <SyncStatusChip
+              status={syncStatus.status}
+              loading={syncStatus.loading}
+              error={syncStatus.error}
+            />
             <Button
               variant="secondary"
               disabled={!snapshot}
@@ -248,7 +265,7 @@ export function App(): ReactNode {
               <Plus aria-hidden="true" className="size-3.5" />
               New
             </Button>
-            <Button variant="ghost" onClick={refresh} title="Refresh from bd">
+            <Button variant="ghost" onClick={onRefresh} title="Refresh from bd">
               <RefreshCw aria-hidden="true" className={cn('size-3.5', loading && 'animate-spin')} />
               <span className="sr-only @md:not-sr-only">Refresh</span>
             </Button>

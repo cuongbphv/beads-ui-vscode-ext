@@ -21,6 +21,10 @@ describe('MUTATING_METHODS', () => {
   it('excludes getMolSnapshot — it only ever reads mol/gate state, never writes it', () => {
     expect(MUTATING_METHODS.has('getMolSnapshot')).toBe(false);
   });
+
+  it('excludes getSyncStatus — it only reports `bd dolt status`, never `bd dolt push`/`bd dolt pull`', () => {
+    expect(MUTATING_METHODS.has('getSyncStatus')).toBe(false);
+  });
 });
 
 describe('resolveDashboardTab', () => {

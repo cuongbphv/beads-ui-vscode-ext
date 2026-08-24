@@ -26,6 +26,7 @@ import type {
   DashboardSnapshot,
   IssueTypeDef,
   StatusDef,
+  SyncStatus,
 } from '../../shared/types';
 import { toCategory } from '../../shared/types';
 import type { BdService } from './BdService';
@@ -56,6 +57,59 @@ function pickArray<T>(payload: unknown, ...keys: string[]): T[] {
   return [];
 }
 
+/** Safe fallback when `bd dolt status --json` cannot be parsed into a usable shape. */
+const DEGRADED_SYNC_STATUS: SyncStatus = { mode: 'unknown', server_running: false, degraded: true };
+
+/**
+ * Turns `bd dolt status --json`'s stdout into a typed {@link SyncStatus},
+ * never throwing.
+ *
+ * Verified shape (embedded mode, this project, bd 1.x): `{data_dir,
+ * data_dir_exists, mode, schema_version, server_running}` — no ahead/behind or
+ * last-sync fields. Local-server / externally-managed modes are documented
+ * (PID, port, reachability, server version, database) but unverified here, so
+ * every field beyond `mode`/`server_running` is read defensively and only
+ * copied across when it is actually present with the expected type.
+ */
+export function parseDoltStatus(stdout: string): SyncStatus {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stdout);
+  } catch {
+    return { ...DEGRADED_SYNC_STATUS };
+  }
+
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ...DEGRADED_SYNC_STATUS };
+  }
+
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.mode !== 'string' || obj.mode === '') {
+    return { ...DEGRADED_SYNC_STATUS };
+  }
+
+  const status: SyncStatus = {
+    mode: obj.mode,
+    server_running: obj.server_running === true,
+  };
+  if (typeof obj.data_dir === 'string') status.data_dir = obj.data_dir;
+  if (typeof obj.data_dir_exists === 'boolean') status.data_dir_exists = obj.data_dir_exists;
+  if (typeof obj.schema_version === 'number') status.schema_version = obj.schema_version;
+  if (typeof obj.pid === 'number') status.pid = obj.pid;
+  if (typeof obj.port === 'number') status.port = obj.port;
+  if (typeof obj.host === 'string') status.host = obj.host;
+  if (typeof obj.reachable === 'boolean') status.reachable = obj.reachable;
+  if (typeof obj.server_version === 'string') status.server_version = obj.server_version;
+  if (typeof obj.database === 'string') status.database = obj.database;
+  // Unverified in any real payload; copied through only when bd actually sends them.
+  if (typeof obj.ahead === 'number') status.ahead = obj.ahead;
+  if (typeof obj.behind === 'number') status.behind = obj.behind;
+  if (typeof obj.lastSyncAt === 'string') status.lastSyncAt = obj.lastSyncAt;
+  else if (typeof obj.last_sync_at === 'string') status.lastSyncAt = obj.last_sync_at as string;
+
+  return status;
+}
+
 export class BdQueries {
   private vocabularyCache: BdVocabulary | undefined;
 
@@ -82,6 +136,21 @@ export class BdQueries {
       is_redirected: raw?.is_redirected as boolean | undefined,
       sync_remote: raw?.sync_remote as string | undefined,
     };
+  }
+
+  /**
+   * Read-only Dolt engine/sync status (`bd dolt status --json`). This method
+   * never runs `bd dolt push`/`bd dolt pull` — it only reports what bd says,
+   * for a header chip that offers to *copy* a sync command, never run one.
+   *
+   * Goes through `exec`, not `json`: `json` appends its own `--json` flag,
+   * which would double it up here since the argv must be exactly
+   * `['dolt', 'status', '--json']`, and `json` throws on a malformed reply
+   * where this method must instead degrade to a safe fallback shape.
+   */
+  async doltStatus(): Promise<SyncStatus> {
+    const stdout = await this.bd.exec(['dolt', 'status', '--json']);
+    return parseDoltStatus(stdout);
   }
 
   /**

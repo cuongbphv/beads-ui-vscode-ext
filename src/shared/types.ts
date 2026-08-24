@@ -259,6 +259,43 @@ export interface BdContext {
   sync_remote?: string;
 }
 
+/**
+ * `bd dolt status --json` (read-only — never `dolt push`/`dolt pull`).
+ *
+ * Verified against a real embedded-mode project (bd, this repo, 2026-08-24):
+ * only `data_dir`, `data_dir_exists`, `mode`, `schema_version` and
+ * `server_running` are present — there is no `ahead`/`behind`/last-sync
+ * concept in this command's output for embedded mode. The CLI reference's
+ * description of local-server and externally-managed modes (PID, port,
+ * reachability, server version, database) is not itself a source of
+ * ahead/behind/last-sync fields either — nothing in bd's docs describes this
+ * command reporting a comparison against a remote. `ahead`/`behind`/
+ * `lastSyncAt` below are kept purely defensive, in case a future bd build
+ * adds them to a remote-mode payload; the parser never fabricates them, and
+ * the webview renders them only when actually present.
+ */
+export interface SyncStatus {
+  /** e.g. `"embedded"`, `"local-server"`, `"external"` — bd is the authority on the set. */
+  mode: string;
+  server_running: boolean;
+  data_dir?: string;
+  data_dir_exists?: boolean;
+  schema_version?: number;
+  /** Local-server / externally-managed modes (unverified shape — passed through as-is). */
+  pid?: number;
+  port?: number;
+  host?: string;
+  reachable?: boolean;
+  server_version?: string;
+  database?: string;
+  /** Unverified: no confirmed bd build emits these for `dolt status`. Render only if present. */
+  ahead?: number;
+  behind?: number;
+  lastSyncAt?: string;
+  /** True when bd's JSON could not be parsed into a usable shape; every other field is a safe fallback. */
+  degraded?: boolean;
+}
+
 /** Counters from `bd stats --json` (the `summary` object). */
 export interface BdStats {
   total_issues: number;

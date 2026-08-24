@@ -168,6 +168,11 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'getMolSnapshot':
       return queries.molSnapshot();
 
+    case 'getSyncStatus':
+      // Read-only: reports what `bd dolt status` says and nothing more. Never
+      // runs `bd dolt push`/`bd dolt pull` — see queries.doltStatus.
+      return queries.doltStatus();
+
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);
   }
