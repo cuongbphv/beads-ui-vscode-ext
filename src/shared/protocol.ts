@@ -13,6 +13,36 @@ import type {
   Priority,
 } from './types';
 
+/**
+ * Params for `createBead`, shared by the router's narrowing helper and
+ * `BdMutations.create` so the narrowed shape and the argv builder cannot
+ * drift apart.
+ *
+ * `type`, `priority` and `status` are plain strings, not enums: beads
+ * vocabulary is user-extensible and loaded at runtime, so the CLI — not this
+ * file — is the authority on which values exist.
+ */
+export interface CreateBeadParams {
+  /** Required; the router rejects a blank title before any argv is built. */
+  title: string;
+  type?: string;
+  priority?: string;
+  parent?: string;
+  labels?: string[];
+  /** `YYYY-MM-DD`, same format `setDue` uses. */
+  due?: string;
+  /** Minutes, as bd stores them; must be a positive finite number. */
+  estimate?: number;
+  description?: string;
+  design?: string;
+  acceptance?: string;
+  /**
+   * `bd create` has no `--status` flag, so a requested status lands via a
+   * follow-up `bd update <id> --status` after the create succeeds.
+   */
+  status?: string;
+}
+
 /** Every request the webview may send. Keys are the method names on the wire. */
 export interface RpcMethods {
   /** One round trip that fills the whole dashboard. */
@@ -81,6 +111,11 @@ export interface RpcMethods {
     params: { id: string; text: string };
     result: { ok: true };
   };
+  /** Create an issue (`bd create <title> --silent`); resolves with the new id. */
+  createBead: {
+    params: CreateBeadParams;
+    result: { id: string };
+  };
   /** Start receiving `fleetChanged` events. Non-mutating: it observes the fleet, it does not run one. */
   subscribeFleet: {
     params: undefined;
@@ -121,6 +156,7 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'closeBead',
   'addComment',
   'appendNotes',
+  'createBead',
 ]);
 
 export interface RpcRequest<M extends RpcMethodName = RpcMethodName> {

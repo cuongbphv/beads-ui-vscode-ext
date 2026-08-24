@@ -22,9 +22,12 @@ class FakeBd {
     return this.json<T>(args);
   }
 
+  /** Canned stdout for `exec`, keyed by the first argv word (e.g. `create`). */
+  execResults: Record<string, string> = {};
+
   async exec(args: string[]): Promise<string> {
     this.argv.push(args);
-    return '';
+    return this.execResults[args[0]] ?? '';
   }
 }
 
@@ -240,6 +243,112 @@ describe('BdMutations', () => {
     await mutations.setStatus('bd-7', 'closed');
 
     expect(seen).toEqual([['bd-7']]);
+  });
+});
+
+describe('BdMutations.create', () => {
+  function mutations(fake: FakeBd): BdMutations {
+    return new BdMutations(fake as unknown as BdService);
+  }
+
+  it('builds the full argv with --silent and every optional flag, labels comma-joined', async () => {
+    const fake = new FakeBd();
+    fake.execResults = { create: 'bd-42\n' };
+
+    const { id } = await mutations(fake).create({
+      title: 'Fix the flaky poll',
+      type: 'bug',
+      priority: '1',
+      parent: 'bd-epic-1',
+      labels: ['ui', 'backend'],
+      due: '2026-09-01',
+      estimate: 90,
+      description: 'It polls too eagerly.',
+      design: 'Debounce it.',
+      acceptance: 'No duplicate polls.',
+    });
+
+    expect(id).toBe('bd-42');
+    expect(fake.argv).toEqual([
+      [
+        'create',
+        'Fix the flaky poll',
+        '--silent',
+        '-t',
+        'bug',
+        '-p',
+        '1',
+        '--parent',
+        'bd-epic-1',
+        '-l',
+        'ui,backend',
+        '--due',
+        '2026-09-01',
+        '-e',
+        '90',
+        '-d',
+        'It polls too eagerly.',
+        '--design',
+        'Debounce it.',
+        '--acceptance',
+        'No duplicate polls.',
+      ],
+    ]);
+  });
+
+  it('runs exactly one exec for a title-only create and trims the returned id', async () => {
+    const fake = new FakeBd();
+    fake.execResults = { create: '  bd-7  \n' };
+
+    const { id } = await mutations(fake).create({ title: 'Just a title' });
+
+    expect(id).toBe('bd-7');
+    expect(fake.argv).toEqual([['create', 'Just a title', '--silent']]);
+  });
+
+  it('follows up with bd update --status when a status is requested — create has no --status flag', async () => {
+    const fake = new FakeBd();
+    fake.execResults = { create: 'bd-9\n' };
+
+    const { id } = await mutations(fake).create({ title: 'With status', status: 'in_progress' });
+
+    expect(id).toBe('bd-9');
+    expect(fake.argv).toEqual([
+      ['create', 'With status', '--silent'],
+      ['update', 'bd-9', '--status', 'in_progress'],
+    ]);
+  });
+
+  it('sends the estimate as whole minutes, same contract as setEstimate', async () => {
+    const fake = new FakeBd();
+    fake.execResults = { create: 'bd-11\n' };
+
+    await mutations(fake).create({ title: 'Rounded', estimate: 89.6 });
+
+    expect(fake.argv[0]).toEqual(['create', 'Rounded', '--silent', '-e', '90']);
+  });
+
+  it('notifies listeners once, with the new id, after every write has succeeded', async () => {
+    const fake = new FakeBd();
+    fake.execResults = { create: 'bd-13\n' };
+    const bd = mutations(fake);
+    const changed: string[][] = [];
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.create({ title: 'Notify me', status: 'in_progress' });
+
+    expect(changed).toEqual([['bd-13']]);
+  });
+
+  it('throws instead of returning a blank id when bd prints nothing', async () => {
+    const fake = new FakeBd();
+    fake.execResults = { create: '   \n' };
+    const bd = mutations(fake);
+    const changed: string[][] = [];
+    bd.onChanged((ids) => changed.push(ids));
+
+    await expect(bd.create({ title: 'Silent failure' })).rejects.toThrow(/no id/);
+    expect(changed).toEqual([]);
   });
 });
 

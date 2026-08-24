@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RouterHost } from '../extension/panel/router';
 import type { BeadsStore } from '../extension/store';
 import type { TranscriptBackfill } from '../shared/fleet';
-import type { RpcRequest } from '../shared/protocol';
+import type { CreateBeadParams, RpcRequest } from '../shared/protocol';
 
 vi.mock('vscode', () => ({
   env: { clipboard: { writeText: vi.fn() } },
@@ -29,6 +29,11 @@ class FakeMutations {
 
   async appendNotes(id: string, text: string): Promise<void> {
     this.calls.push({ method: 'appendNotes', args: [id, text] });
+  }
+
+  async create(input: CreateBeadParams): Promise<{ id: string }> {
+    this.calls.push({ method: 'create', args: [input] });
+    return { id: 'bd-new-1' };
   }
 }
 
@@ -128,6 +133,88 @@ describe('router appendNotes', () => {
       makeStore(mutations),
       host,
       request('appendNotes', { id: 'bd-1', text: '' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router createBead', () => {
+  it('calls mutations.create with the exact narrowed params and returns the new id', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('createBead', {
+        title: '  New task  ',
+        type: 'bug',
+        priority: '1',
+        labels: ['ui', ' backend ', ''],
+        due: '2026-09-01',
+        estimate: 45,
+        status: 'in_progress',
+        bogus: 'ignored',
+      }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { id: 'bd-new-1' } });
+    expect(mutations.calls).toEqual([
+      {
+        method: 'create',
+        args: [
+          {
+            title: 'New task',
+            type: 'bug',
+            priority: '1',
+            labels: ['ui', 'backend'],
+            due: '2026-09-01',
+            estimate: 45,
+            status: 'in_progress',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('rejects a missing title before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(makeStore(mutations), host, request('createBead', {}));
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a whitespace-only title before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('createBead', { title: '   ' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a malformed due date before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('createBead', { title: 'ok', due: 'someday' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a non-positive estimate before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('createBead', { title: 'ok', estimate: -5 }),
     );
 
     expect(response.ok).toBe(false);

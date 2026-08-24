@@ -17,7 +17,7 @@ import {
 import { toPriority } from '../../shared/types';
 import type { BeadsStore } from '../store';
 import { toRpcError } from '../store';
-import { requireDueDate, requireTargetId } from './param-validation';
+import { narrowCreateParams, requireDueDate, requireTargetId } from './param-validation';
 
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
@@ -125,6 +125,12 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'appendNotes':
       await mutations.appendNotes(id(), requireString(params.text, 'text'));
       return { ok: true };
+
+    case 'createBead':
+      // narrowCreateParams throws before any argv is built when the shape is
+      // wrong; vocabulary values (type/priority/status) pass through and the
+      // bd CLI stays the authority on whether they exist.
+      return mutations.create(narrowCreateParams(params));
 
     case 'subscribeFleet':
       host.fleetSubscribe();

@@ -3,7 +3,13 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { DASHBOARD_TABS, resolveDashboardTab } from '../shared/protocol';
+import { DASHBOARD_TABS, MUTATING_METHODS, resolveDashboardTab } from '../shared/protocol';
+
+describe('MUTATING_METHODS', () => {
+  it('includes createBead, so the host refetches and broadcasts after a create', () => {
+    expect(MUTATING_METHODS.has('createBead')).toBe(true);
+  });
+});
 
 describe('resolveDashboardTab', () => {
   it('keeps any value that is still a known tab', () => {

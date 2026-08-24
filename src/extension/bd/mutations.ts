@@ -1,13 +1,14 @@
 /**
  * Every write the extension performs against beads.
  *
- * The scope is deliberately narrow — status, priority, assignee, due, estimate, close — which
- * is the "view + quick actions" contract. Creating, deleting and reparenting
- * issues stay in the `bd` CLI where the user can see exactly what they ran.
+ * The scope is deliberately narrow — create, status, priority, assignee, due, estimate,
+ * close — which is the "view + quick actions + create" contract. Deleting and
+ * reparenting issues stay in the `bd` CLI where the user can see exactly what they ran.
  *
  * Nothing here runs `bd init`, `bd dolt push` or `bd dolt pull`: syncing is the
  * user's decision, never a side effect of clicking a card.
  */
+import type { CreateBeadParams } from '../../shared/protocol';
 import type { Priority } from '../../shared/types';
 import type { BdService } from './BdService';
 
@@ -22,6 +23,40 @@ export class BdMutations {
   onChanged(listener: MutationListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Create an issue. `--silent` makes bd print only the new id, which is the
+   * whole reason this can return `{ id }` without a follow-up lookup.
+   *
+   * `bd create` has no `--status` flag (verified against the CLI reference),
+   * so a requested status lands via a follow-up `bd update <id> --status`
+   * once the id is known. Listeners fire exactly once, after every write for
+   * this create has succeeded, so views never repaint against a half-created
+   * issue.
+   */
+  async create(input: CreateBeadParams): Promise<{ id: string }> {
+    const args = ['create', input.title, '--silent'];
+    if (input.type !== undefined) args.push('-t', input.type);
+    if (input.priority !== undefined) args.push('-p', input.priority);
+    if (input.parent !== undefined) args.push('--parent', input.parent);
+    if (input.labels !== undefined && input.labels.length > 0) args.push('-l', input.labels.join(','));
+    if (input.due !== undefined) args.push('--due', input.due);
+    // bd stores whole minutes, same rounding contract as setEstimate.
+    if (input.estimate !== undefined) args.push('-e', String(Math.round(input.estimate)));
+    if (input.description !== undefined) args.push('-d', input.description);
+    if (input.design !== undefined) args.push('--design', input.design);
+    if (input.acceptance !== undefined) args.push('--acceptance', input.acceptance);
+
+    const id = (await this.bd.exec(args)).trim();
+    if (id === '') {
+      throw new Error('bd create --silent printed no id; the issue may not have been created.');
+    }
+    if (input.status !== undefined) {
+      await this.bd.exec(['update', id, '--status', input.status]);
+    }
+    this.notify([id]);
+    return { id };
   }
 
   /**
@@ -109,6 +144,10 @@ export class BdMutations {
 
   private async run(args: string[], ...changedIds: string[]): Promise<void> {
     await this.bd.exec(args);
+    this.notify(changedIds);
+  }
+
+  private notify(changedIds: string[]): void {
     for (const listener of this.listeners) listener(changedIds);
   }
 }
