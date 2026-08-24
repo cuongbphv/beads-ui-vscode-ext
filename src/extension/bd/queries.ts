@@ -295,6 +295,31 @@ export class BdQueries {
   }
 
   /**
+   * Server-side search fallback for a truncated workspace
+   * (beads-ui-vscode-ext-72m.4): `bd search <text> --status all --limit
+   * <limit> --json` searches title/id across the *whole* project, not just
+   * the `beadsDashboard.issueLimit` rows already loaded into the snapshot.
+   * `--status all` is deliberate — the client-side includeClosed toggle
+   * still has to work on whatever this returns, so closed issues must not
+   * be filtered out at the bd layer.
+   *
+   * Uses `json`, not `jsonShared`: this is an on-demand, debounced,
+   * user-typed read that nothing else on the poll tick races.
+   *
+   * Verified shape (bd 1.2.2, this repo's own board, 2026-08-25, read-only):
+   * a bare JSON array of full issue rows, the same shape `list()` returns —
+   * `pickArray` handles that directly, with `'issues'`/`'results'` kept as a
+   * defensive fallback should a future bd wrap the payload instead.
+   */
+  async search(text: string, limit = 50): Promise<Bead[]> {
+    return pickArray<Bead>(
+      await this.bd.json<unknown>(['search', text, '--status', 'all', '--limit', String(limit)]),
+      'issues',
+      'results',
+    );
+  }
+
+  /**
    * Open gates. `bd gate list --json` answers with a bare array, or `null`
    * when the project has none — `pickArray` turns both into `[]`/the array.
    */

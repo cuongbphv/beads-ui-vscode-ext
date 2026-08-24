@@ -1135,3 +1135,56 @@ describe('BdQueries.healthReport', () => {
     expect(fake.argv.some((argv) => argv[0] === 'doctor')).toBe(false);
   });
 });
+
+describe('BdQueries.search', () => {
+  it('builds the argv exactly, including the default limit', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('search roadmap --status all --limit 50', [
+      { id: 'bd-1', title: 'Roadmap polish', status: 'open', priority: 2, issue_type: 'task' },
+    ]);
+
+    const results = await molQueries(fake).search('roadmap');
+
+    expect(fake.argv).toEqual([['search', 'roadmap', '--status', 'all', '--limit', '50']]);
+    expect(results).toEqual([
+      { id: 'bd-1', title: 'Roadmap polish', status: 'open', priority: 2, issue_type: 'task' },
+    ]);
+  });
+
+  it('threads a caller-supplied limit through to the argv', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('search roadmap --status all --limit 10', []);
+
+    await molQueries(fake).search('roadmap', 10);
+
+    expect(fake.argv).toEqual([['search', 'roadmap', '--status', 'all', '--limit', '10']]);
+  });
+
+  it('always passes --status all, so the client-side includeClosed toggle keeps working on the results', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('search bug --status all --limit 50', []);
+
+    await molQueries(fake).search('bug');
+
+    expect(fake.argv[0]).toContain('--status');
+    expect(fake.argv[0][fake.argv[0].indexOf('--status') + 1]).toBe('all');
+  });
+
+  it('accepts the real bare-array shape measured against a live bd search (bd 1.2.2)', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('search beads --status all --limit 50', [
+      {
+        id: 'beads-ui-vscode-ext-ayq.1',
+        title: 'Lease/claim liveness badges',
+        status: 'closed',
+        priority: 1,
+        issue_type: 'task',
+      },
+    ]);
+
+    const results = await molQueries(fake).search('beads');
+
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('beads-ui-vscode-ext-ayq.1');
+  });
+});

@@ -209,6 +209,31 @@ export function filterBeads(beads: Bead[], query: BeadQuery, index: StatusIndex)
   });
 }
 
+/**
+ * Merges server-search hits into the beads already loaded in the snapshot
+ * (beads-ui-vscode-ext-72m.4, `useServerSearch`).
+ *
+ * A search result can duplicate a bead already in `loaded` — the same issue
+ * is simply outside the truncated window `bd list` returned. The loaded
+ * copy always wins: it is the one every other view already renders and
+ * mutates optimistically, so replacing it with a second, independently
+ * fetched copy would let a stale search result overwrite a fresher local
+ * edit. Pure and framework-free so the dedupe/precedence rule is testable
+ * without a DOM.
+ */
+export function mergeSearchResults(loaded: Bead[], searchResults: Bead[]): Bead[] {
+  const known = new Set(loaded.map((bead) => bead.id));
+  const merged = [...loaded];
+
+  for (const bead of searchResults) {
+    if (known.has(bead.id)) continue;
+    known.add(bead.id);
+    merged.push(bead);
+  }
+
+  return merged;
+}
+
 /** Percentage of an epic's children that are done. Returns 0 for an empty epic. */
 export function progressOf(group: EpicGroup): number {
   if (group.totalCount === 0) return 0;

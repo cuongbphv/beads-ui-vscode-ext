@@ -228,6 +228,19 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       return staleDays === undefined ? queries.healthReport() : queries.healthReport(staleDays);
     }
 
+    case 'searchBeads': {
+      // Read-only fallback for a truncated workspace — see queries.search.
+      // Only a positive finite limit reaches the argv; anything else falls
+      // back to BdQueries' own default (50, matching bd's own default).
+      const rawLimit = params.limit;
+      const limit =
+        typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.floor(rawLimit)
+          : undefined;
+      const text = requireString(params.text, 'text');
+      return limit === undefined ? queries.search(text) : queries.search(text, limit);
+    }
+
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);
   }

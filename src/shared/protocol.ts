@@ -271,6 +271,19 @@ export interface RpcMethods {
     params: { staleDays?: number } | undefined;
     result: HealthReport;
   };
+  /**
+   * Server-side search fallback for a truncated workspace
+   * (beads-ui-vscode-ext-72m.4): `bd search <text> --status all --limit
+   * <limit> --json`, run only once the client-side filter bar can no
+   * longer see the whole project. `limit` defaults to 50 — bd's own
+   * default — when omitted. Read-only — stays out of
+   * {@link MUTATING_METHODS} — and fetched only by `useServerSearch`, never
+   * on the poll tick.
+   */
+  searchBeads: {
+    params: { text: string; limit?: number };
+    result: Bead[];
+  };
 }
 
 export type RpcMethodName = keyof RpcMethods;

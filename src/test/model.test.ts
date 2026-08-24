@@ -6,6 +6,7 @@ import {
   buildColumns,
   filterBeads,
   groupByEpic,
+  mergeSearchResults,
   parentIdOf,
   progressOf,
 } from '../shared/model';
@@ -192,5 +193,43 @@ describe('activeMoleculeCount', () => {
     const beads = [bead({ id: 'mol-frozen', issue_type: 'molecule', status: 'pinned' })];
 
     expect(activeMoleculeCount(beads, index)).toBe(1);
+  });
+});
+
+describe('mergeSearchResults', () => {
+  it('returns the loaded list unchanged when there are no search results', () => {
+    const loaded = [bead({ id: 'bd-1' })];
+
+    expect(mergeSearchResults(loaded, [])).toEqual(loaded);
+  });
+
+  it('appends a search hit that is not already loaded', () => {
+    const loaded = [bead({ id: 'bd-1' })];
+    const extra = bead({ id: 'bd-2', title: 'Found by search' });
+
+    expect(mergeSearchResults(loaded, [extra])).toEqual([loaded[0], extra]);
+  });
+
+  it('keeps the already-loaded copy of a bead present in both — it never loses to a second, independently fetched copy', () => {
+    const loaded = [bead({ id: 'bd-1', title: 'Loaded title', status: 'in_progress' })];
+    // Same id, different (e.g. stale) field values — as if bd's search index
+    // had not yet caught up with a local edit already reflected in `loaded`.
+    const staleCopy = bead({ id: 'bd-1', title: 'Stale title from search', status: 'open' });
+
+    expect(mergeSearchResults(loaded, [staleCopy])).toEqual(loaded);
+  });
+
+  it('dedupes repeated ids within the search results themselves, keeping the first', () => {
+    const first = bead({ id: 'bd-2', title: 'First copy' });
+    const second = bead({ id: 'bd-2', title: 'Second copy' });
+
+    expect(mergeSearchResults([], [first, second])).toEqual([first]);
+  });
+
+  it('preserves the loaded order and appends new hits after it', () => {
+    const loaded = [bead({ id: 'bd-2' }), bead({ id: 'bd-1' })];
+    const extra = bead({ id: 'bd-3' });
+
+    expect(mergeSearchResults(loaded, [extra]).map((b) => b.id)).toEqual(['bd-2', 'bd-1', 'bd-3']);
   });
 });

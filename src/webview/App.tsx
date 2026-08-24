@@ -25,7 +25,7 @@ import {
 } from 'react';
 
 import type { FleetStatusFilter } from '../shared/fleet-filter';
-import type { BeadQuery } from '../shared/model';
+import { mergeSearchResults, type BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
 import type { RoadmapSort } from '../shared/roadmap-sort';
 import type { StatusCategory } from '../shared/types';
@@ -38,6 +38,7 @@ import { SyncStatusChip } from './components/sync-status-chip';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import { useServerSearch } from './hooks/use-server-search';
 import { useSyncStatus } from './hooks/use-sync-status';
 import {
   persistedFleetPreferences,
@@ -215,7 +216,16 @@ export function App(): ReactNode {
     setFocusedId(undefined);
   }, [setFocusedId]);
 
-  const beads = snapshot?.beads ?? [];
+  // Only fires against the whole project once the client-side filter can no
+  // longer see it (`snapshot.truncated`) and the typed query is long enough
+  // to be worth the round trip; see `useServerSearch`. Merged into `beads`
+  // here so every downstream consumer — Roadmap, Board, the detail pane —
+  // keeps operating on a single list instead of learning this exists.
+  const serverSearch = useServerSearch(query.text ?? '', snapshot?.truncated ?? false);
+  const beads = useMemo(
+    () => mergeSearchResults(snapshot?.beads ?? [], serverSearch.extraBeads),
+    [snapshot?.beads, serverSearch.extraBeads],
+  );
   const selected = focusedId ? beads.find((bead) => bead.id === focusedId) : undefined;
   const blockedIds = useMemo(() => new Set(snapshot?.blockedIds ?? []), [snapshot?.blockedIds]);
   // Full-id lookup the Fleet tab uses to pair a worker's claimed bead with its

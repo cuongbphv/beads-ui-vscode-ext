@@ -97,6 +97,13 @@ class FakeQueries {
     this.calls.push({ method: 'healthReport', args: [staleDays] });
     return this.healthReportResult;
   }
+
+  searchResult: unknown = [];
+
+  async search(text: string, limit?: number): Promise<unknown> {
+    this.calls.push({ method: 'search', args: [text, limit] });
+    return this.searchResult;
+  }
 }
 
 function makeStore(mutations: FakeMutations, queries: FakeQueries = new FakeQueries()): BeadsStore {
@@ -674,6 +681,72 @@ describe('router getHealthReport', () => {
     );
 
     expect(queries.calls).toEqual([{ method: 'healthReport', args: [undefined] }]);
+  });
+});
+
+describe('router searchBeads', () => {
+  it('calls queries.search with no limit when none is given, and returns its result', async () => {
+    const queries = new FakeQueries();
+    queries.searchResult = [{ id: 'bd-9', title: 'found it' }];
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('searchBeads', { text: 'found' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: queries.searchResult });
+    expect(queries.calls).toEqual([{ method: 'search', args: ['found', undefined] }]);
+  });
+
+  it('narrows a positive finite limit through to queries.search', async () => {
+    const queries = new FakeQueries();
+
+    await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('searchBeads', { text: 'found', limit: 10 }),
+    );
+
+    expect(queries.calls).toEqual([{ method: 'search', args: ['found', 10] }]);
+  });
+
+  it('ignores a non-numeric/zero/negative limit and falls back to the default', async () => {
+    const queries = new FakeQueries();
+
+    await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('searchBeads', { text: 'found', limit: -5 }),
+    );
+
+    expect(queries.calls).toEqual([{ method: 'search', args: ['found', undefined] }]);
+  });
+
+  it('rejects a missing text param before any argv is built', async () => {
+    const queries = new FakeQueries();
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('searchBeads', {}),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(queries.calls).toEqual([]);
+  });
+
+  it('rejects a whitespace-only text before any argv is built', async () => {
+    const queries = new FakeQueries();
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('searchBeads', { text: '   ' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(queries.calls).toEqual([]);
   });
 });
 
