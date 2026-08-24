@@ -25,6 +25,11 @@ describe('MUTATING_METHODS', () => {
   it('excludes getSyncStatus — it only reports `bd dolt status`, never `bd dolt push`/`bd dolt pull`', () => {
     expect(MUTATING_METHODS.has('getSyncStatus')).toBe(false);
   });
+
+  it('includes addDependency and removeDependency, so the host refetches and broadcasts after either', () => {
+    expect(MUTATING_METHODS.has('addDependency')).toBe(true);
+    expect(MUTATING_METHODS.has('removeDependency')).toBe(true);
+  });
 });
 
 describe('resolveDashboardTab', () => {

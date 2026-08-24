@@ -17,7 +17,14 @@ import {
 import { toPriority } from '../../shared/types';
 import type { BeadsStore } from '../store';
 import { toRpcError } from '../store';
-import { narrowCreateParams, narrowUpdateTextParams, requireDueDate, requireTargetId } from './param-validation';
+import {
+  narrowAddDependencyParams,
+  narrowCreateParams,
+  narrowDependencyParams,
+  narrowUpdateTextParams,
+  requireDueDate,
+  requireTargetId,
+} from './param-validation';
 
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
@@ -149,6 +156,24 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       // wrong; vocabulary values (type/priority/status) pass through and the
       // bd CLI stays the authority on whether they exist.
       return mutations.create(narrowCreateParams(params));
+
+    case 'addDependency': {
+      // narrowAddDependencyParams throws before any argv is built when id or
+      // dependsOn is blank, they are equal (a self-edge), or type is outside
+      // DEP_TYPES. A cycle bd itself refuses to create is not special-cased
+      // here — it surfaces as a normal RpcError toast.
+      const narrowed = narrowAddDependencyParams(params);
+      await mutations.addDependency(narrowed.id, narrowed.dependsOn, narrowed.type);
+      return { ok: true };
+    }
+
+    case 'removeDependency': {
+      // Same self-edge guard as addDependency; bd dep remove takes no --type
+      // flag, so there is nothing else to narrow here.
+      const narrowed = narrowDependencyParams(params);
+      await mutations.removeDependency(narrowed.id, narrowed.dependsOn);
+      return { ok: true };
+    }
 
     case 'subscribeFleet':
       host.fleetSubscribe();

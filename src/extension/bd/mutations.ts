@@ -2,14 +2,15 @@
  * Every write the extension performs against beads.
  *
  * The scope is deliberately narrow — create, status, priority, assignee, due, estimate,
- * close, comment/notes, text fields (title/description/design/acceptance/notes), claim
- * and gate resolution — which is the "view + quick actions + create" contract. Deleting
- * and reparenting issues stay in the `bd` CLI where the user can see exactly what they ran.
+ * close, comment/notes, text fields (title/description/design/acceptance/notes), claim,
+ * gate resolution and dependency edges — which is the "view + quick actions + create"
+ * contract. Deleting and reparenting issues stay in the `bd` CLI where the user can see
+ * exactly what they ran.
  *
  * Nothing here runs `bd init`, `bd dolt push` or `bd dolt pull`: syncing is the
  * user's decision, never a side effect of clicking a card.
  */
-import type { CreateBeadParams, TextField } from '../../shared/protocol';
+import type { CreateBeadParams, DepType, TextField } from '../../shared/protocol';
 import type { Priority } from '../../shared/types';
 import type { BdService } from './BdService';
 
@@ -160,6 +161,31 @@ export class BdMutations {
    */
   async appendNotes(id: string, text: string): Promise<void> {
     await this.run(['update', id, '--append-notes', text], id);
+  }
+
+  /**
+   * Add a dependency edge (`bd dep add <id> <dependsOn> --type <type>`). The
+   * router narrows `id`/`dependsOn`/`type` (self-edge rejected, `type`
+   * checked against `DEP_TYPES`) before this is ever called, so this trusts
+   * the caller. A cycle bd itself refuses to create is not special-cased:
+   * `BdService` turns bd's non-zero exit into a normal `RpcError`, which
+   * reaches the webview as a toast.
+   */
+  async addDependency(id: string, dependsOn: string, type: DepType): Promise<void> {
+    await this.run(['dep', 'add', id, dependsOn, '--type', type], id, dependsOn);
+  }
+
+  /**
+   * Remove a dependency edge (`bd dep remove <id> <dependsOn>`).
+   *
+   * `bd dep remove` takes no `--type` flag at all (verified against
+   * `CLI_REFERENCE.md`: `bd dep remove [issue-id] [depends-on-id]` lists no
+   * flags), and measuring it live in `src/test/bd-live.test.ts` confirms it
+   * removes every edge kind between the pair, not only the default `blocks`
+   * kind — so this never attempts to pass one.
+   */
+  async removeDependency(id: string, dependsOn: string): Promise<void> {
+    await this.run(['dep', 'remove', id, dependsOn], id, dependsOn);
   }
 
   private async run(args: string[], ...changedIds: string[]): Promise<void> {

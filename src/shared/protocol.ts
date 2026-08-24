@@ -26,6 +26,27 @@ import type {
 export type TextField = 'title' | 'description' | 'design' | 'acceptance' | 'notes';
 
 /**
+ * The dependency-edge kinds `bd dep add --type` accepts. Like `TextField`,
+ * this is CLI shape, not beads' user-extensible vocabulary — the fixed enum
+ * one dedicated flag exposes — so it is hardcoded here rather than loaded at
+ * runtime. bd's own default when `--type` is omitted is `blocks`. The
+ * allowlist constant that enforces this at the router boundary,
+ * `DEP_TYPES`, lives in `src/extension/panel/param-validation.ts` alongside
+ * `TEXT_FIELDS`.
+ */
+export type DepType =
+  | 'blocks'
+  | 'tracks'
+  | 'related'
+  | 'parent-child'
+  | 'discovered-from'
+  | 'until'
+  | 'caused-by'
+  | 'validates'
+  | 'relates-to'
+  | 'supersedes';
+
+/**
  * Params for `createBead`, shared by the router's narrowing helper and
  * `BdMutations.create` so the narrowed shape and the argv builder cannot
  * drift apart.
@@ -148,6 +169,27 @@ export interface RpcMethods {
     params: CreateBeadParams;
     result: { id: string };
   };
+  /**
+   * Add a dependency edge (`bd dep add <id> <dependsOn> --type <type>`).
+   * The router rejects a self-edge (`id === dependsOn`) and a `type` outside
+   * `DEP_TYPES` before any argv is built. `type` defaults to `'blocks'`, same
+   * as bd itself. A cycle bd refuses to create surfaces as a normal
+   * `RpcError` toast — no special-casing needed for that case.
+   */
+  addDependency: {
+    params: { id: string; dependsOn: string; type?: DepType };
+    result: { ok: true };
+  };
+  /**
+   * Remove a dependency edge (`bd dep remove <id> <dependsOn>`). `bd dep
+   * remove` takes no `--type` flag — measured against the live CLI in
+   * `src/test/bd-live.test.ts`, it removes every edge kind between the pair,
+   * not only the default `blocks` kind — so this method has no `type` param.
+   */
+  removeDependency: {
+    params: { id: string; dependsOn: string };
+    result: { ok: true };
+  };
   /** Start receiving `fleetChanged` events. Non-mutating: it observes the fleet, it does not run one. */
   subscribeFleet: {
     params: undefined;
@@ -212,6 +254,8 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'appendNotes',
   'updateText',
   'createBead',
+  'addDependency',
+  'removeDependency',
 ]);
 
 export interface RpcRequest<M extends RpcMethodName = RpcMethodName> {

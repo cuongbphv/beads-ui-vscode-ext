@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  narrowAddDependencyParams,
   narrowCreateParams,
+  narrowDependencyParams,
   narrowUpdateTextParams,
+  requireDepType,
   requireDueDate,
   requireTargetId,
   requireTextField,
 } from '../extension/panel/param-validation';
-import type { TextField } from '../shared/protocol';
+import type { DepType, TextField } from '../shared/protocol';
 
 describe('requireDueDate (router param narrowing)', () => {
   it('accepts a well-formed YYYY-MM-DD date', () => {
@@ -74,6 +77,95 @@ describe('requireTextField (router param narrowing)', () => {
   it('rejects a non-string value, including undefined', () => {
     expect(() => requireTextField(undefined, 'field')).toThrow();
     expect(() => requireTextField(42, 'field')).toThrow();
+  });
+});
+
+describe('requireDepType (router param narrowing)', () => {
+  it('defaults to "blocks" when type is undefined, mirroring bd\'s own default', () => {
+    expect(requireDepType(undefined, 'type')).toBe('blocks');
+  });
+
+  it('accepts each of the ten allowlisted dependency types', () => {
+    const types: DepType[] = [
+      'blocks',
+      'tracks',
+      'related',
+      'parent-child',
+      'discovered-from',
+      'until',
+      'caused-by',
+      'validates',
+      'relates-to',
+      'supersedes',
+    ];
+    for (const type of types) {
+      expect(requireDepType(type, 'type')).toBe(type);
+    }
+  });
+
+  it('rejects a value outside the allowlist and names the parameter in the error', () => {
+    expect(() => requireDepType('depends-on', 'type')).toThrow(/"type"/);
+    expect(() => requireDepType('bogus', 'type')).toThrow(/"type"/);
+  });
+
+  it('rejects a non-string value other than undefined', () => {
+    expect(() => requireDepType(42, 'type')).toThrow();
+    expect(() => requireDepType(null, 'type')).toThrow();
+  });
+});
+
+describe('narrowDependencyParams (router param narrowing)', () => {
+  it('narrows a well-formed id/dependsOn pair', () => {
+    expect(narrowDependencyParams({ id: 'bd-1', dependsOn: 'bd-2' })).toEqual({
+      id: 'bd-1',
+      dependsOn: 'bd-2',
+    });
+  });
+
+  it('rejects a self-edge where id equals dependsOn', () => {
+    expect(() => narrowDependencyParams({ id: 'bd-1', dependsOn: 'bd-1' })).toThrow(/"dependsOn"/);
+  });
+
+  it('rejects a missing or blank id', () => {
+    expect(() => narrowDependencyParams({ dependsOn: 'bd-2' })).toThrow(/"id"/);
+    expect(() => narrowDependencyParams({ id: '', dependsOn: 'bd-2' })).toThrow(/"id"/);
+    expect(() => narrowDependencyParams({ id: '   ', dependsOn: 'bd-2' })).toThrow(/"id"/);
+  });
+
+  it('rejects a missing or blank dependsOn', () => {
+    expect(() => narrowDependencyParams({ id: 'bd-1' })).toThrow(/"dependsOn"/);
+    expect(() => narrowDependencyParams({ id: 'bd-1', dependsOn: '' })).toThrow(/"dependsOn"/);
+    expect(() => narrowDependencyParams({ id: 'bd-1', dependsOn: '   ' })).toThrow(/"dependsOn"/);
+  });
+});
+
+describe('narrowAddDependencyParams (router param narrowing)', () => {
+  it('narrows a well-formed request and defaults type to "blocks"', () => {
+    expect(narrowAddDependencyParams({ id: 'bd-1', dependsOn: 'bd-2' })).toEqual({
+      id: 'bd-1',
+      dependsOn: 'bd-2',
+      type: 'blocks',
+    });
+  });
+
+  it('narrows an explicit, allowlisted type', () => {
+    expect(narrowAddDependencyParams({ id: 'bd-1', dependsOn: 'bd-2', type: 'tracks' })).toEqual({
+      id: 'bd-1',
+      dependsOn: 'bd-2',
+      type: 'tracks',
+    });
+  });
+
+  it('rejects a self-edge before type is even considered', () => {
+    expect(() =>
+      narrowAddDependencyParams({ id: 'bd-1', dependsOn: 'bd-1', type: 'blocks' }),
+    ).toThrow(/"dependsOn"/);
+  });
+
+  it('rejects a type outside the allowlist', () => {
+    expect(() =>
+      narrowAddDependencyParams({ id: 'bd-1', dependsOn: 'bd-2', type: 'bogus' }),
+    ).toThrow(/"type"/);
   });
 });
 

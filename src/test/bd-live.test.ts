@@ -5,16 +5,30 @@
  * This is the layer that proves the extension reports the truth. It needs no
  * VSCode, no display and no window reload, so it runs unattended.
  *
- * Read-only by construction: not a single command here mutates the workspace.
- * See CLAUDE.md cardinal sin #4.
+ * Read-only by construction, with one deliberate exception: the "dependency
+ * edges" describe block below creates throwaway issues and wires/unwires real
+ * `bd dep add`/`bd dep remove` edges between them to settle an [Unverified]
+ * question against the live CLI. Those mutations run against a fresh,
+ * throwaway `bd` project created in a temp directory for that block alone —
+ * never against this repo's own shared board — and the temp project is
+ * deleted afterwards regardless of how the tests end. See that block's doc
+ * comment for why: `bd` does not scope its database lookup to whatever `cwd`
+ * happens to be passed to it in the general case; a workspace's `.beads/`
+ * has to actually exist under that `cwd` (or a parent of it) for the lookup
+ * to land there instead of on whatever project a shared git checkout
+ * otherwise resolves to. Every other describe block in this file still
+ * mutates nothing. See CLAUDE.md cardinal sin #4.
  */
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { BdError, BdService } from '../extension/bd/BdService';
+import { BdMutations } from '../extension/bd/mutations';
 import { BdQueries } from '../extension/bd/queries';
 import { PARENT_CHILD, toCategory } from '../shared/types';
 import type { Bead } from '../shared/types';
@@ -116,6 +130,21 @@ async function beadsWorkspaceRoot(): Promise<string> {
 
 const service = new BdService({ cwd: CWD });
 const queries = new BdQueries(service);
+// No module-level `BdMutations` on `service`: every mutating test in this file
+// now builds its own `BdMutations` on an isolated scratch project instead (see
+// the "dependency edges" describe block below) — nothing here has a reason to
+// mutate the shared board `service`/`queries` are built on.
+
+/**
+ * Deletes a throwaway pair permanently — the cleanup step for the
+ * dependency-edge tests below. `cwd` is always the isolated scratch
+ * project those tests create, never the shared `CWD` the rest of this file
+ * uses: nothing in this function's callers is allowed to touch the real
+ * board.
+ */
+async function deleteScratchIssues(cwd: string, ...ids: string[]): Promise<void> {
+  await execFileAsync('bd', ['delete', ...ids, '--force'], { cwd });
+}
 
 describe('bd CLI is reachable', () => {
   it('spawns bd and reports a version', async () => {
@@ -332,6 +361,151 @@ describe('epic hierarchy', () => {
         }
       }
     });
+  });
+});
+
+describe('dependency edges (mutating: runs against an isolated scratch `bd` project, never the shared board)', () => {
+  /**
+   * The one exception to this file's read-only rule (see the file doc
+   * comment). `addDependency`/`removeDependency` route straight to `bd dep
+   * add`/`bd dep remove`, which only a real spawn of the live CLI can prove
+   * out. Those spawns still must not land on the repo's own shared board, so
+   * this block creates its own throwaway `bd` project in a temp directory —
+   * completely separate Dolt database, separate `.beads/` — runs every test
+   * below against *that* project's `cwd`, and deletes the temp directory
+   * again in `afterAll` no matter how the tests end.
+   *
+   * Earlier revisions of these tests called `mutations.create`/
+   * `addDependency`/`removeDependency` — built on a `BdService` pointed at
+   * this file's shared `CWD` — directly, on the theory that a linked git
+   * worktree with no local `.beads/` would make `bd` treat it as its own,
+   * separate, empty workspace. MEASURED to be false: `bd` does not require a
+   * `.beads/` under `cwd` to resolve a workspace there; from a worktree with
+   * no local `.beads/` at all, `bd list` still returns the real shared
+   * project's issues (this repo's own `beadsWorkspaceRoot()` helper above
+   * documents exactly why — bd deliberately resolves worktree checkouts back
+   * to the workspace of the main checkout that owns the shared git
+   * directory). Running these tests that way created real throwaway issues
+   * on the actual shared project board every single `npm test` run. A fresh
+   * `mkdtemp` directory that a plain `bd init --non-interactive` initializes
+   * from scratch has its own `.beads/` sitting directly under the `cwd` it
+   * is given, with no shared git directory for `bd` to resolve past it —
+   * `bd context --json` run there reports `beads_dir` inside the temp
+   * directory itself, confirmed by hand before writing this — so this is a
+   * genuinely separate project, not the shared one.
+   */
+  let scratchDir: string;
+  let scratchMutations: BdMutations;
+
+  beforeAll(async () => {
+    scratchDir = await mkdtemp(path.join(tmpdir(), 'bd-live-dep-edge-'));
+    // `--non-interactive`: skip every interactive prompt (bd's own --help:
+    // "Skips all interactive prompts, using sensible defaults"). `--skip-hooks`
+    // and `--skip-agents`: this scratch project only ever needs a Dolt
+    // database to exist; it has no reason to install git hooks or generate
+    // AGENTS.md/CLAUDE.md/Claude-Code-skill files into a directory that is
+    // about to be deleted.
+    const initArgs = ['init', '--non-interactive', '--skip-hooks', '--skip-agents'];
+    const initOptions = { cwd: scratchDir, windowsHide: true };
+    try {
+      await execFileAsync('bd', initArgs, initOptions);
+    } catch (error) {
+      // Same Windows `.cmd` shim fallback `rawJson` above already relies on.
+      if ((error as { code?: string }).code !== 'ENOENT') throw error;
+      await execFileAsync('bd', initArgs, { ...initOptions, shell: true });
+    }
+    const scratchService = new BdService({ cwd: scratchDir });
+    scratchMutations = new BdMutations(scratchService);
+  });
+
+  afterAll(async () => {
+    // maxRetries/retryDelay: measured by hand — the embedded Dolt engine can
+    // still hold a file lock for a moment after the `bd` process that opened
+    // it has exited, which turns an immediate `rm` into a transient Windows
+    // EBUSY. Retrying a few times over ~3s clears it without leaving the
+    // scratch directory behind.
+    await rm(scratchDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+  });
+
+  /** Raw `bd --json`, scoped to the isolated scratch project rather than this file's shared `CWD`. */
+  async function scratchJson<T>(args: string[]): Promise<T> {
+    const options = {
+      cwd: scratchDir,
+      encoding: 'utf8' as const,
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+      env: { ...process.env, BD_JSON_ENVELOPE: '0' },
+    };
+    let stdout: string;
+    try {
+      ({ stdout } = await execFileAsync('bd', [...args, '--json'], options));
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'ENOENT') throw error;
+      ({ stdout } = await execFileAsync('bd', [...args, '--json'], { ...options, shell: true }));
+    }
+    return JSON.parse(stdout) as T;
+  }
+
+  it('dep add wires an edge dep list reports, and dep remove un-wires it — against the isolated scratch project', async () => {
+    const { id: a } = await scratchMutations.create({ title: 'bd-live dep-edge scratch (isolated project, temp, safe to delete)' });
+    const { id: b } = await scratchMutations.create({ title: 'bd-live dep-edge scratch (isolated project, temp, safe to delete)' });
+    try {
+      await scratchMutations.addDependency(a, b, 'blocks');
+      const wired = rows<{ id?: string; dependency_type?: string }>(await scratchJson(['dep', 'list', a]));
+      expect(wired.some((d) => d.id === b && d.dependency_type === 'blocks')).toBe(true);
+
+      await scratchMutations.removeDependency(a, b);
+      const unwired = rows<{ id?: string }>(await scratchJson(['dep', 'list', a]));
+      expect(unwired.some((d) => d.id === b)).toBe(false);
+    } finally {
+      await deleteScratchIssues(scratchDir, a, b);
+    }
+  });
+
+  /**
+   * Settles the [Unverified] question this bead exists to close: does `bd
+   * dep remove <id> <dependsOn>` with no `-t` remove every edge kind between
+   * the pair, or only one (e.g. the default `blocks` kind)?
+   *
+   * MEASURED against bd 1.2.2, by hand, before writing this assertion (run
+   * against the isolated scratch project, not the shared board):
+   *   $ bd dep add <a> <b> --type blocks     # succeeds
+   *   $ bd dep add <a> <b> --type related    # Error: dependency <a> -> <b>
+   *     already exists with type "blocks" (requested "related"); remove it
+   *     first with 'bd dep remove' then re-add
+   *   $ bd dep remove --help                 # lists no -t/--type flag at all
+   *   $ bd dep remove <a> <b>                 # ✓ Removed dependency ...
+   *   $ bd dep list <a> --json                # []
+   *
+   * ANSWER: the question is moot for a single ordered (id, dependsOn) pair —
+   * `bd dep add` enforces at most one edge per ordered pair regardless of
+   * type (a second `--type` on the same pair is REJECTED, not merged or
+   * added alongside the first), so there is structurally never more than one
+   * edge kind to remove. `bd dep remove` with no `-t` therefore always
+   * removes "every edge kind between the pair" in the trivial sense that
+   * there is only ever one. This test proves the "second type is rejected,
+   * not stacked" half of that, since it is the half a router/mutations
+   * change could actually get wrong (e.g. by retrying with a different type).
+   */
+  it('a second dep add with a different type is rejected, not stacked alongside the first — against the isolated scratch project', async () => {
+    const { id: a } = await scratchMutations.create({ title: 'bd-live dep-edge scratch (isolated project, temp, safe to delete)' });
+    const { id: b } = await scratchMutations.create({ title: 'bd-live dep-edge scratch (isolated project, temp, safe to delete)' });
+    try {
+      await scratchMutations.addDependency(a, b, 'blocks');
+      await expect(scratchMutations.addDependency(a, b, 'related')).rejects.toBeInstanceOf(BdError);
+
+      // Only the original edge exists — the rejected second `dep add` left
+      // no second, differently-typed edge sitting alongside it.
+      const wired = rows<{ id?: string; dependency_type?: string }>(await scratchJson(['dep', 'list', a]));
+      expect(wired.filter((d) => d.id === b)).toHaveLength(1);
+      expect(wired.find((d) => d.id === b)?.dependency_type).toBe('blocks');
+
+      await scratchMutations.removeDependency(a, b);
+      const unwired = rows<{ id?: string }>(await scratchJson(['dep', 'list', a]));
+      expect(unwired.some((d) => d.id === b)).toBe(false);
+    } finally {
+      await deleteScratchIssues(scratchDir, a, b);
+    }
   });
 });
 

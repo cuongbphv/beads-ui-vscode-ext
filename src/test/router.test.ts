@@ -39,6 +39,14 @@ class FakeMutations {
   async updateText(id: string, field: TextField, text: string): Promise<void> {
     this.calls.push({ method: 'updateText', args: [id, field, text] });
   }
+
+  async addDependency(id: string, dependsOn: string, type: string): Promise<void> {
+    this.calls.push({ method: 'addDependency', args: [id, dependsOn, type] });
+  }
+
+  async removeDependency(id: string, dependsOn: string): Promise<void> {
+    this.calls.push({ method: 'removeDependency', args: [id, dependsOn] });
+  }
 }
 
 /** Records every call so a test can assert on the argv-shaped params. */
@@ -312,6 +320,106 @@ describe('router createBead', () => {
       makeStore(mutations),
       host,
       request('createBead', { title: 'ok', estimate: -5 }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router addDependency', () => {
+  it('calls mutations.addDependency with the default type "blocks" when none is given', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addDependency', { id: 'bd-1', dependsOn: 'bd-2' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'addDependency', args: ['bd-1', 'bd-2', 'blocks'] }]);
+  });
+
+  it('calls mutations.addDependency with an explicit, allowlisted type', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addDependency', { id: 'bd-1', dependsOn: 'bd-2', type: 'tracks' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'addDependency', args: ['bd-1', 'bd-2', 'tracks'] }]);
+  });
+
+  it('rejects a self-edge before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addDependency', { id: 'bd-1', dependsOn: 'bd-1' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a type outside the allowlist before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addDependency', { id: 'bd-1', dependsOn: 'bd-2', type: 'bogus' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a missing dependsOn before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addDependency', { id: 'bd-1' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router removeDependency', () => {
+  it('calls mutations.removeDependency with the exact narrowed args and returns ok', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('removeDependency', { id: 'bd-1', dependsOn: 'bd-2' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'removeDependency', args: ['bd-1', 'bd-2'] }]);
+  });
+
+  it('rejects a self-edge before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('removeDependency', { id: 'bd-1', dependsOn: 'bd-1' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a missing id before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('removeDependency', { dependsOn: 'bd-2' }),
     );
 
     expect(response.ok).toBe(false);

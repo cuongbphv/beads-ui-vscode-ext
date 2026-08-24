@@ -7,7 +7,7 @@
  * file imports nothing at runtime — no `vscode`, no `react` — and never
  * will; the one `import type` below is erased at compile time.
  */
-import type { CreateBeadParams, TextField } from '../../shared/protocol';
+import type { CreateBeadParams, DepType, TextField } from '../../shared/protocol';
 
 const DUE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -87,6 +87,85 @@ export function narrowUpdateTextParams(params: Record<string, unknown>): UpdateT
     throw new Error('Invalid parameter "text": title must not be empty.');
   }
   return { id, field, text: params.text };
+}
+
+/**
+ * `dep add --type`'s allowlist — CLI shape, not beads' user-extensible
+ * vocabulary, same rationale as `TEXT_FIELDS` above. bd's own default when
+ * `--type` is omitted is `'blocks'`, which `requireDepType` mirrors.
+ */
+const DEP_TYPES: readonly DepType[] = [
+  'blocks',
+  'tracks',
+  'related',
+  'parent-child',
+  'discovered-from',
+  'until',
+  'caused-by',
+  'validates',
+  'relates-to',
+  'supersedes',
+];
+
+/**
+ * Narrows the optional `type` param for `addDependency`. `undefined` narrows
+ * to bd's own default, `'blocks'`; anything else must be in `DEP_TYPES` or
+ * this throws before an argv is ever built.
+ */
+export function requireDepType(value: unknown, field: string): DepType {
+  if (value === undefined) return 'blocks';
+  if (typeof value === 'string' && (DEP_TYPES as readonly string[]).includes(value)) {
+    return value as DepType;
+  }
+  throw new Error(`Invalid parameter "${field}": expected one of ${DEP_TYPES.join(', ')}.`);
+}
+
+export interface DependencyParams {
+  id: string;
+  dependsOn: string;
+}
+
+export interface AddDependencyParams extends DependencyParams {
+  type: DepType;
+}
+
+/**
+ * Narrows the `id`/`dependsOn` pair shared by `addDependency` and
+ * `removeDependency`, and rejects a self-edge (`id === dependsOn`) before any
+ * argv is built — `bd dep add`/`bd dep remove` would otherwise happily wire
+ * (or unwire) an issue against itself.
+ */
+export function narrowDependencyParams(params: Record<string, unknown>): DependencyParams {
+  const id = requireString(params.id, 'id');
+  const dependsOn = requireString(params.dependsOn, 'dependsOn');
+  if (id === dependsOn) {
+    throw new Error('Invalid parameter "dependsOn": an issue cannot depend on itself.');
+  }
+  return { id, dependsOn };
+}
+
+/**
+ * Narrows the params for `addDependency` into the exact shape
+ * `BdMutations.addDependency` builds an argv from: the shared self-edge check
+ * above, plus `type` narrowed against `DEP_TYPES`.
+ */
+export function narrowAddDependencyParams(params: Record<string, unknown>): AddDependencyParams {
+  const { id, dependsOn } = narrowDependencyParams(params);
+  const type = requireDepType(params.type, 'type');
+  return { id, dependsOn, type };
+}
+
+/**
+ * Same non-blank check `router.ts`'s local `requireString` performs, kept
+ * here too so this file needs no import from `router.ts` (which pulls in
+ * `vscode` and is not importable from a unit test — see the file doc comment
+ * above).
+ */
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Missing required parameter "${field}".`);
+  }
+  return value;
 }
 
 /**

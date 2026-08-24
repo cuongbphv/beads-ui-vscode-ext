@@ -531,6 +531,52 @@ describe('BdMutations comment and notes writes', () => {
   });
 });
 
+describe('BdMutations dependency writes', () => {
+  function mutations(fake: FakeBd): BdMutations {
+    return new BdMutations(fake as unknown as BdService);
+  }
+
+  it('adds a dependency with --type', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).addDependency('bd-1', 'bd-2', 'blocks');
+    expect(fake.argv).toEqual([['dep', 'add', 'bd-1', 'bd-2', '--type', 'blocks']]);
+  });
+
+  it('passes through a non-default type verbatim', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).addDependency('bd-1', 'bd-2', 'tracks');
+    expect(fake.argv).toEqual([['dep', 'add', 'bd-1', 'bd-2', '--type', 'tracks']]);
+  });
+
+  it('removes a dependency with no --type flag', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).removeDependency('bd-1', 'bd-2');
+    expect(fake.argv).toEqual([['dep', 'remove', 'bd-1', 'bd-2']]);
+  });
+
+  it('notifies listeners with both ids after adding a dependency', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.addDependency('bd-1', 'bd-2', 'blocks');
+
+    expect(changed).toEqual([['bd-1', 'bd-2']]);
+  });
+
+  it('notifies listeners with both ids after removing a dependency', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.removeDependency('bd-1', 'bd-2');
+
+    expect(changed).toEqual([['bd-1', 'bd-2']]);
+  });
+});
+
 describe('BdMutations.updateText', () => {
   function mutations(fake: FakeBd): BdMutations {
     return new BdMutations(fake as unknown as BdService);
