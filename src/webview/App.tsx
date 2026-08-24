@@ -4,7 +4,7 @@
  * The detail pane docks beside the content when the container is wide and takes
  * the whole panel when it is not — same component, no duplicate markup.
  */
-import { AlertCircle, Bot, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
+import { AlertCircle, Bot, LayoutDashboard, Map as MapIcon, Plus, RefreshCw, Columns3 } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -20,6 +20,7 @@ import type { BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
 import type { RoadmapSort } from '../shared/roadmap-sort';
 import type { StatusCategory } from '../shared/types';
+import { BeadCreate } from './components/bead-create';
 import { BeadDetail } from './components/bead-detail';
 import type { RoadmapZoom } from './components/gantt';
 import { Button, EmptyState, Skeleton } from './components/primitives';
@@ -92,6 +93,9 @@ export function App(): ReactNode {
   // since it is the only tab with its own list+detail split.
   const [fleetDetailWidth, setFleetDetailWidth] = useState(saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX);
   const [fleetStatusFilter, setFleetStatusFilter] = useState<FleetStatusFilter>(restoredFleet.statusFilter);
+  // Not persisted: a create-in-flight form is a live editing session, not a
+  // preference the panel should reopen into.
+  const [creating, setCreating] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
   const [mainWidth, setMainWidth] = useState(0);
 
@@ -173,6 +177,21 @@ export function App(): ReactNode {
 
   const onSelect = useCallback((id: string) => setFocusedId(id), [setFocusedId]);
 
+  /** A successful create replaces the create form with the new issue's detail. */
+  const onCreated = useCallback(
+    (id: string) => {
+      setCreating(false);
+      setFocusedId(id);
+    },
+    [setFocusedId],
+  );
+
+  /** Cancelling drops the form; no issue is left selected in its place. */
+  const onCancelCreate = useCallback(() => {
+    setCreating(false);
+    setFocusedId(undefined);
+  }, [setFocusedId]);
+
   const beads = snapshot?.beads ?? [];
   const selected = focusedId ? beads.find((bead) => bead.id === focusedId) : undefined;
   const blockedIds = useMemo(() => new Set(snapshot?.blockedIds ?? []), [snapshot?.blockedIds]);
@@ -220,6 +239,15 @@ export function App(): ReactNode {
                 truncated
               </span>
             ) : null}
+            <Button
+              variant="secondary"
+              disabled={!snapshot}
+              onClick={() => setCreating(true)}
+              title="Create a new issue"
+            >
+              <Plus aria-hidden="true" className="size-3.5" />
+              New
+            </Button>
             <Button variant="ghost" onClick={refresh} title="Refresh from bd">
               <RefreshCw aria-hidden="true" className={cn('size-3.5', loading && 'animate-spin')} />
               <span className="sr-only @md:not-sr-only">Refresh</span>
@@ -317,7 +345,7 @@ export function App(): ReactNode {
             )}
           </div>
 
-          {selected ? (
+          {(creating && snapshot) || selected ? (
             <>
               {/* Narrow: the pane covers the content, so there is nothing to split. */}
               <Splitter
@@ -333,14 +361,23 @@ export function App(): ReactNode {
                 onReset={() => setDetailWidth(DETAIL_DEFAULT_PX)}
               />
               <div className="absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-[var(--detail-w)] @3xl:shrink-0">
-                <BeadDetail
-                  bead={selected}
-                  beads={beads}
-                  index={index}
-                  onClose={() => setFocusedId(undefined)}
-                  onSelect={onSelect}
-                  refreshKey={snapshot?.fetchedAt}
-                />
+                {creating && snapshot ? (
+                  <BeadCreate
+                    snapshot={snapshot}
+                    beads={beads}
+                    onCancel={onCancelCreate}
+                    onSelect={onCreated}
+                  />
+                ) : selected ? (
+                  <BeadDetail
+                    bead={selected}
+                    beads={beads}
+                    index={index}
+                    onClose={() => setFocusedId(undefined)}
+                    onSelect={onSelect}
+                    refreshKey={snapshot?.fetchedAt}
+                  />
+                ) : null}
               </div>
             </>
           ) : null}
