@@ -3,17 +3,17 @@ name: CI
 # Runs the repo's quality gates (CLAUDE.md: build, typecheck, lint, test, audit)
 # on every pull request and on every push to main.
 #
-# KNOWN GAP, not fixed here (see beads-ui-vscode-ext-58b and CONTRIBUTING.md
-# "Before you open a PR"): `npm test` runs the full `vitest` suite under
-# src/test/, which includes src/test/bd-live.test.ts. That file drives the
-# real `bd` CLI against a real .beads workspace and does not skip itself when
-# `bd` is missing from PATH — its only ENOENT handling is a Windows `.cmd`
-# shim retry (`shell: true`), not a "no binary at all" fallback. This runner
-# has no `bd` installed, so the `npm test` step below is expected to fail
-# until a deliberate decision is made to either install/vendor a `bd` binary
-# here or make that suite CI-skippable. That decision is intentionally not
-# made in this workflow. This mirrors why release.yml does not run tests at
-# all and instead asks contributors to run `npm run verify` locally.
+# `npm run test:ci` runs the same vitest suite as `npm test`, minus
+# src/test/bd-live.test.ts (`vitest run --exclude src/test/bd-live.test.ts`,
+# see package.json). That file drives the real `bd` CLI against a real
+# .beads workspace and does not skip itself when `bd` is missing from PATH —
+# its only ENOENT handling is a Windows `.cmd` shim retry (`shell: true`),
+# not a "no binary at all" fallback — and this runner has no `bd` installed.
+# This mirrors why release.yml does not run tests at all and instead asks
+# contributors to run `npm run verify` locally. `npm test` (unfiltered) still
+# runs bd-live.test.ts for local development, per CONTRIBUTING.md "Before you
+# open a PR": that suite must still be run and pass locally, against a real
+# `bd`, before opening any PR that touches src/extension/bd/.
 
 on:
   pull_request:
@@ -44,7 +44,7 @@ jobs:
 
       - run: npm run lint
 
-      - run: npm test
+      - run: npm run test:ci
 
       # Hard gate, matching CLAUDE.md's "Security gate: npm audit
       # --audit-level=low must report 0 vulnerabilities" — unlike

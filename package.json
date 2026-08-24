@@ -329,6 +329,7 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "test": "vitest run",
+    "test:ci": "vitest run --exclude src/test/bd-live.test.ts",
     "test:electron": "node scripts/run-electron-test.mjs",
     "test:webview": "node scripts/run-webview-test.mjs",
     "preview": "npm run build && node scripts/render-preview.mjs",
