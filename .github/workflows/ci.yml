@@ -1,0 +1,53 @@
+name: CI
+
+# Runs the repo's quality gates (CLAUDE.md: build, typecheck, lint, test, audit)
+# on every pull request and on every push to main.
+#
+# KNOWN GAP, not fixed here (see beads-ui-vscode-ext-58b and CONTRIBUTING.md
+# "Before you open a PR"): `npm test` runs the full `vitest` suite under
+# src/test/, which includes src/test/bd-live.test.ts. That file drives the
+# real `bd` CLI against a real .beads workspace and does not skip itself when
+# `bd` is missing from PATH — its only ENOENT handling is a Windows `.cmd`
+# shim retry (`shell: true`), not a "no binary at all" fallback. This runner
+# has no `bd` installed, so the `npm test` step below is expected to fail
+# until a deliberate decision is made to either install/vendor a `bd` binary
+# here or make that suite CI-skippable. That decision is intentionally not
+# made in this workflow. This mirrors why release.yml does not run tests at
+# all and instead asks contributors to run `npm run verify` locally.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm test
+
+      # Hard gate, matching CLAUDE.md's "Security gate: npm audit
+      # --audit-level=low must report 0 vulnerabilities" — unlike
+      # release.yml's advisory-only `continue-on-error` audit, a PR is
+      # allowed to fail here.
+      - run: npm audit --audit-level=low
