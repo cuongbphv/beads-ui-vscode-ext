@@ -12,6 +12,7 @@ import type {
   BeadComment,
   BeadFilters,
   DashboardSnapshot,
+  HealthReport,
   Priority,
   SyncStatus,
 } from './types';
@@ -235,6 +236,21 @@ export interface RpcMethods {
     // shape the doc comment above actually means.
     params: Record<string, never>;
     result: SyncStatus;
+  };
+  /**
+   * On-demand project-health scorecard (`bd stale`/`bd orphans`/`bd
+   * lint`/`bd dep cycles`, fanned out via `Promise.allSettled`; see
+   * `BdQueries.healthReport`). Read-only — stays out of
+   * {@link MUTATING_METHODS} — and fetched only when the webview's "Run
+   * checks" button is pressed, never on the poll tick or on mount.
+   *
+   * `bd preflight` and `bd doctor` are deliberately excluded from this
+   * report; see the doc comment on {@link HealthReport} in `shared/types.ts`
+   * for why, before adding either here.
+   */
+  getHealthReport: {
+    params: { staleDays?: number } | undefined;
+    result: HealthReport;
   };
 }
 

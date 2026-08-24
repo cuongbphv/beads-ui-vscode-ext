@@ -198,6 +198,19 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       // runs `bd dolt push`/`bd dolt pull` — see queries.doltStatus.
       return queries.doltStatus();
 
+    case 'getHealthReport': {
+      // Read-only fan-out (stale/orphans/lint/dep cycles) — see
+      // queries.healthReport for why `bd preflight`/`bd doctor` are excluded.
+      // Only a positive finite staleDays reaches the argv; anything else
+      // falls back to BdQueries' own default.
+      const rawStaleDays = params.staleDays;
+      const staleDays =
+        typeof rawStaleDays === 'number' && Number.isFinite(rawStaleDays) && rawStaleDays > 0
+          ? Math.floor(rawStaleDays)
+          : undefined;
+      return staleDays === undefined ? queries.healthReport() : queries.healthReport(staleDays);
+    }
+
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);
   }

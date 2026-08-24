@@ -19,9 +19,9 @@ import {
   TypeChart,
   WorkloadChart,
 } from '../components/charts';
-import { EmptyState } from '../components/primitives';
+import { HealthScorecard } from '../components/health-scorecard';
+import { EmptyState, StatCard } from '../components/primitives';
 import { burnUpDensity, workloadDensity } from '../lib/chart-density';
-import { cn } from '../lib/utils';
 
 export function OverviewView({
   snapshot,
@@ -154,46 +154,14 @@ export function OverviewView({
           emptyText="Nothing is blocked."
         />
       </div>
+
+      <HealthScorecard onSelect={onSelect} />
     </div>
   );
 }
 
 function percentDone(done: number, total: number): number {
   return total <= 0 ? 0 : Math.round((done / total) * 100);
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-  hint,
-  tone = 'default',
-}: {
-  icon: ReactNode;
-  label: string;
-  value: number;
-  hint?: string;
-  tone?: 'default' | 'accent' | 'warning' | 'success' | 'danger';
-}): ReactNode {
-  return (
-    <div className="bg-surface border-border surface-interactive card-raise hover:border-border-strong rounded-lg border p-3">
-      <div
-        className={cn(
-          'flex items-center gap-1.5 text-xs',
-          tone === 'default' && 'text-fg-muted',
-          tone === 'accent' && 'text-accent',
-          tone === 'warning' && 'text-warning',
-          tone === 'success' && 'text-success',
-          tone === 'danger' && 'text-danger',
-        )}
-      >
-        {icon}
-        {label}
-      </div>
-      <p className="text-fg-strong mt-1 text-2xl leading-none font-semibold tabular-nums">{value}</p>
-      {hint ? <p className="text-fg-muted mt-1 text-xs">{hint}</p> : null}
-    </div>
-  );
 }
 
 function BeadList({

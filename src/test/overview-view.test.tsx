@@ -7,6 +7,17 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { StatusIndex } from '../shared/model';
 import type { Bead, DashboardSnapshot } from '../shared/types';
 import { installResizeObserver } from './support/dom-harness';
+
+// OverviewView now mounts HealthScorecard (bead beads-ui-vscode-ext-72m.2),
+// which reaches `acquireVsCodeApi()` through `use-health.ts` -> bridge/rpc.
+// That global only exists inside a real webview, so every test that renders
+// OverviewView must stub the bridge, same as bead-detail-history.test.tsx
+// does for bead-detail.tsx's own RPC-backed sections.
+vi.mock('../webview/bridge/rpc', () => ({
+  call: () => new Promise(() => undefined),
+  asRpcError: (error: unknown) => ({ kind: 'unknown', message: String(error) }),
+}));
+
 import { OverviewView } from '../webview/views/OverviewView';
 
 declare global {

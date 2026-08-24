@@ -26,6 +26,10 @@ describe('MUTATING_METHODS', () => {
     expect(MUTATING_METHODS.has('getSyncStatus')).toBe(false);
   });
 
+  it('excludes getHealthReport — it only reads stale/orphans/lint/dep cycles, never writes anything', () => {
+    expect(MUTATING_METHODS.has('getHealthReport')).toBe(false);
+  });
+
   it('includes addDependency and removeDependency, so the host refetches and broadcasts after either', () => {
     expect(MUTATING_METHODS.has('addDependency')).toBe(true);
     expect(MUTATING_METHODS.has('removeDependency')).toBe(true);

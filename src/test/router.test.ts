@@ -61,6 +61,14 @@ class FakeQueries {
     degraded: false,
   };
   doltStatusResult: unknown = { mode: 'embedded', server_running: false };
+  healthReportResult: unknown = {
+    stale: { ok: true, items: [] },
+    orphans: { ok: true, items: [] },
+    lint: { ok: true, items: [] },
+    cycles: { ok: true, items: [] },
+    staleDays: 30,
+    fetchedAt: '2026-08-25T00:00:00Z',
+  };
 
   async history(id: string, limit?: number): Promise<unknown> {
     this.calls.push({ method: 'history', args: [id, limit] });
@@ -75,6 +83,11 @@ class FakeQueries {
   async doltStatus(): Promise<unknown> {
     this.calls.push({ method: 'doltStatus', args: [] });
     return this.doltStatusResult;
+  }
+
+  async healthReport(staleDays?: number): Promise<unknown> {
+    this.calls.push({ method: 'healthReport', args: [staleDays] });
+    return this.healthReportResult;
   }
 }
 
@@ -539,6 +552,45 @@ describe('router getSyncStatus', () => {
       data: { mode: 'embedded', server_running: false, data_dir_exists: true },
     });
     expect(queries.calls).toEqual([{ method: 'doltStatus', args: [] }]);
+  });
+});
+
+describe('router getHealthReport', () => {
+  it('calls queries.healthReport with no staleDays when none is given, and returns its result', async () => {
+    const queries = new FakeQueries();
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHealthReport', {}),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: queries.healthReportResult });
+    expect(queries.calls).toEqual([{ method: 'healthReport', args: [undefined] }]);
+  });
+
+  it('narrows a positive finite staleDays through to queries.healthReport', async () => {
+    const queries = new FakeQueries();
+
+    await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHealthReport', { staleDays: 7 }),
+    );
+
+    expect(queries.calls).toEqual([{ method: 'healthReport', args: [7] }]);
+  });
+
+  it('ignores a non-numeric/zero/negative staleDays and falls back to the default', async () => {
+    const queries = new FakeQueries();
+
+    await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('getHealthReport', { staleDays: -3 }),
+    );
+
+    expect(queries.calls).toEqual([{ method: 'healthReport', args: [undefined] }]);
   });
 });
 

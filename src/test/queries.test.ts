@@ -993,3 +993,105 @@ describe('BdQueries.eventsTail', () => {
     expect(page.latestSeq).toBe(4);
   });
 });
+
+/**
+ * BdQueries.healthReport (bead beads-ui-vscode-ext-72m.2): the four
+ * `bd stale`/`bd orphans`/`bd lint`/`bd dep cycles` argvs, fanned out via
+ * `Promise.allSettled`, and the degradation guarantee that one check
+ * throwing degrades only that check's card.
+ */
+describe('BdQueries.healthReport', () => {
+  it('sends the exact argv for each of the four checks, with staleDays as --days', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('stale --days 30', []);
+    fake.responses.set('orphans', []);
+    fake.responses.set('lint', { total: 0, issues: 0, results: [] });
+    fake.responses.set('dep cycles', []);
+
+    await molQueries(fake).healthReport();
+
+    expect(fake.argv).toEqual([
+      ['stale', '--days', '30'],
+      ['orphans'],
+      ['lint'],
+      ['dep', 'cycles'],
+    ]);
+  });
+
+  it('passes a custom staleDays through to --days', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('stale --days 7', []);
+    fake.responses.set('orphans', []);
+    fake.responses.set('lint', { results: [] });
+    fake.responses.set('dep cycles', []);
+
+    const report = await molQueries(fake).healthReport(7);
+
+    expect(fake.argv[0]).toEqual(['stale', '--days', '7']);
+    expect(report.staleDays).toBe(7);
+  });
+
+  it('unwraps the verified real shapes: bare arrays for stale/cycles, null for orphans, keyed results for lint', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('stale --days 30', [
+      { id: 'bd-1', title: 'Stale one', status: 'open', priority: 2, issue_type: 'task' },
+    ]);
+    // `bd orphans --json` answers `null`, not `[]`, when there is nothing to report.
+    fake.responses.set('orphans', null);
+    fake.responses.set('lint', {
+      total: 1,
+      issues: 1,
+      results: [
+        {
+          id: 'bd-2',
+          title: 'Missing acceptance criteria',
+          type: 'task',
+          missing: ['## Acceptance Criteria'],
+          warnings: 1,
+        },
+      ],
+    });
+    fake.responses.set('dep cycles', []);
+
+    const report = await molQueries(fake).healthReport();
+
+    expect(report.stale).toEqual({ ok: true, items: [expect.objectContaining({ id: 'bd-1' })] });
+    expect(report.orphans).toEqual({ ok: true, items: [] });
+    expect(report.lint.items).toHaveLength(1);
+    expect(report.lint.items[0]).toMatchObject({ id: 'bd-2', missing: ['## Acceptance Criteria'] });
+    expect(report.cycles).toEqual({ ok: true, items: [] });
+    expect(typeof report.fetchedAt).toBe('string');
+  });
+
+  it('degrades only the check that throws — the other three still populate (Promise.allSettled, per-check, never one try/catch around all four)', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('stale --days 30', [
+      { id: 'bd-1', title: 'Stale one', status: 'open', priority: 2, issue_type: 'task' },
+    ]);
+    fake.responses.set('orphans', []);
+    fake.failing.add('lint');
+    fake.responses.set('dep cycles', []);
+
+    const report = await molQueries(fake).healthReport();
+
+    expect(report.stale).toEqual({ ok: true, items: [expect.objectContaining({ id: 'bd-1' })] });
+    expect(report.orphans).toEqual({ ok: true, items: [] });
+    expect(report.cycles).toEqual({ ok: true, items: [] });
+    expect(report.lint.ok).toBe(false);
+    expect(report.lint.items).toEqual([]);
+    expect(report.lint.error).toContain('lint failed');
+  });
+
+  it('never spawns bd preflight or bd doctor', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('stale --days 30', []);
+    fake.responses.set('orphans', []);
+    fake.responses.set('lint', { results: [] });
+    fake.responses.set('dep cycles', []);
+
+    await molQueries(fake).healthReport();
+
+    expect(fake.argv.some((argv) => argv[0] === 'preflight')).toBe(false);
+    expect(fake.argv.some((argv) => argv[0] === 'doctor')).toBe(false);
+  });
+});

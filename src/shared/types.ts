@@ -378,6 +378,60 @@ export interface DashboardSnapshot {
   fetchedAt: string;
 }
 
+/**
+ * One row of `bd lint --json`'s `results` array.
+ *
+ * Verified shape (bd 1.2.2, this repo, 2026-08-25):
+ * `{total, issues, results: [{id, title, type, missing: string[], warnings}]}`.
+ */
+export interface LintFinding {
+  id: string;
+  title: string;
+  type: string;
+  missing: string[];
+  warnings: number;
+}
+
+/**
+ * One health-scorecard check's result (bead beads-ui-vscode-ext-72m.2).
+ *
+ * Mirrors the degradation convention `MolListItem`/`MolSnapshot` established
+ * in `shared/mol.ts`: a failed read never throws past this shape, it flips
+ * `ok` to `false` and carries the message that explains why `items` is
+ * empty. One check failing must never blank the other three.
+ */
+export interface HealthCheck<T> {
+  ok: boolean;
+  items: T[];
+  error?: string;
+}
+
+/**
+ * `getHealthReport`'s result: one card per check, each independently
+ * degradable via {@link HealthCheck}.
+ *
+ * `cycles` is typed `unknown[]` — `bd dep cycles --json` returned `[]`
+ * against this project's own board (no cycles to sample), so the element
+ * shape when a cycle actually exists is [Unverified]; the UI renders each
+ * entry defensively rather than assuming a field name.
+ *
+ * `bd preflight` and `bd doctor` are deliberately excluded from this report:
+ * `preflight` executes the project's own build/lint/test commands and
+ * `doctor` calls out to GitHub to check for releases. Neither is a read-only
+ * project-health check, so neither belongs in a report fetched on a button
+ * click with no confirmation step. A "Run preflight…" escape hatch behind an
+ * explicit confirmation is a later, separate bead — do not fold either
+ * command into this RPC without re-reading this comment.
+ */
+export interface HealthReport {
+  stale: HealthCheck<Bead>;
+  orphans: HealthCheck<Bead>;
+  lint: HealthCheck<LintFinding>;
+  cycles: HealthCheck<unknown>;
+  staleDays: number;
+  fetchedAt: string;
+}
+
 /** Priority display metadata. Colour alone never conveys priority — see MASTER.md. */
 export const PRIORITY_LABELS: Record<number, string> = {
   0: 'P0 · Critical',

@@ -24,7 +24,10 @@ import type {
   BdStats,
   BdVocabulary,
   DashboardSnapshot,
+  HealthCheck,
+  HealthReport,
   IssueTypeDef,
+  LintFinding,
   StatusDef,
   SyncStatus,
 } from '../../shared/types';
@@ -36,6 +39,9 @@ export const DEFAULT_ISSUE_LIMIT = 2000;
 
 /** `bd history` defaults to 50 commits when no `--limit` is given. */
 export const DEFAULT_HISTORY_LIMIT = 50;
+
+/** `bd stale` defaults to 30 days when no `--days` is given. */
+export const DEFAULT_STALE_DAYS = 30;
 
 /** One row of `bd history <id> --json`'s bare array, before translation. */
 interface RawHistoryCommit {
@@ -65,6 +71,18 @@ function pickArray<T>(payload: unknown, ...keys: string[]): T[] {
     }
   }
   return [];
+}
+
+/**
+ * Turns one `Promise.allSettled` outcome into a {@link HealthCheck},
+ * degrading only this one check when its `bd` call threw — the same
+ * per-item convention `molSnapshot` uses for a broken molecule's progress
+ * read, applied here per health check instead of per molecule.
+ */
+function toHealthCheck<T>(outcome: PromiseSettledResult<T[]>): HealthCheck<T> {
+  if (outcome.status === 'fulfilled') return { ok: true, items: outcome.value };
+  const reason = outcome.reason;
+  return { ok: false, items: [], error: reason instanceof Error ? reason.message : String(reason) };
 }
 
 /** Safe fallback when `bd dolt status --json` cannot be parsed into a usable shape. */
@@ -468,6 +486,56 @@ export class BdQueries {
     });
 
     return { molecules, wisps, gates, fetchedAt: new Date().toISOString(), degraded };
+  }
+
+  /**
+   * On-demand project-health scorecard (bead beads-ui-vscode-ext-72m.2):
+   * `bd stale`, `bd orphans`, `bd lint`, `bd dep cycles`, fanned out with
+   * `Promise.allSettled` — the same fan-out shape `molSnapshot` uses for its
+   * per-molecule progress reads — so one check throwing degrades only that
+   * check's card (`{ok: false, items: [], error}` via `toHealthCheck`),
+   * never the other three. Called only from the webview's "Run checks"
+   * button (see `use-health.ts`), never on the poll tick.
+   *
+   * `bd preflight` and `bd doctor` are DELIBERATELY EXCLUDED from this
+   * report: `bd preflight` executes the project's own build/lint/test
+   * commands, and `bd doctor` calls out to GitHub to check for releases.
+   * Neither is a read-only project-health check, so neither belongs behind
+   * a button with no confirmation step — see the `HealthReport` doc comment
+   * in `shared/types.ts` for the full rationale. Do not add either command
+   * to this fan-out without re-reading that comment first.
+   *
+   * Verified shapes (bd 1.2.2, this repo, 2026-08-25, read-only against the
+   * project's own board):
+   *   - `bd stale --days N --json` → bare array (`[]` here).
+   *   - `bd orphans --json` → bare array, or `null` when there are none
+   *     (`null` here) — `pickArray` already normalises both to `[]`/the array.
+   *   - `bd lint --json` → `{total, issues, results: [{id, title, type,
+   *     missing: string[], warnings}]}`.
+   *   - `bd dep cycles --json` → bare array (`[]` here — no cycles existed to
+   *     sample, so the populated element shape is [Unverified]; `cycles`
+   *     stays `HealthCheck<unknown>` and the UI renders each entry
+   *     defensively rather than assuming a field name).
+   *
+   * Uses `json`, not `jsonShared`: these are on-demand, button-triggered
+   * reads that nothing else on the poll tick races.
+   */
+  async healthReport(staleDays = DEFAULT_STALE_DAYS): Promise<HealthReport> {
+    const [staleOutcome, orphansOutcome, lintOutcome, cyclesOutcome] = await Promise.allSettled([
+      this.bd.json<unknown>(['stale', '--days', String(staleDays)]).then((raw) => pickArray<Bead>(raw)),
+      this.bd.json<unknown>(['orphans']).then((raw) => pickArray<Bead>(raw)),
+      this.bd.json<unknown>(['lint']).then((raw) => pickArray<LintFinding>(raw, 'results')),
+      this.bd.json<unknown>(['dep', 'cycles']).then((raw) => pickArray<unknown>(raw)),
+    ]);
+
+    return {
+      stale: toHealthCheck(staleOutcome),
+      orphans: toHealthCheck(orphansOutcome),
+      lint: toHealthCheck(lintOutcome),
+      cycles: toHealthCheck(cyclesOutcome),
+      staleDays,
+      fetchedAt: new Date().toISOString(),
+    };
   }
 
   /**
