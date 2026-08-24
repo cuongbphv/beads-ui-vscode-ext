@@ -188,6 +188,70 @@ export function toMolDetail(raw: unknown): MolDetail {
 }
 
 /**
+ * [Speculation] Heuristic, NOT bd-sourced, per-`type` TTL used only to paint
+ * a rough "time remaining" hint on the wisp strip (Molecules tab).
+ *
+ * The original design plan (`t-m-hi-u-...ae51903e778dc1210.md`) proposed a
+ * `WispType` ('heartbeat' | 'ping' | 'patrol' | 'gc_report' | 'recovery' |
+ * 'error' | 'escalation') read from a `wisp_type` field, with TTLs of 6h for
+ * heartbeat/ping, 24h for patrol, and 7d for recovery/error/escalation. Bead
+ * beads-ui-vscode-ext-8eo.1's fixture capture measured bd 1.2.2 and found
+ * **no such field exists anywhere in `bd mol wisp list --json`** — a wisp
+ * row's only type-like field is `type` (fixtures/mol/README.md #5/#6), and
+ * that field is just the ordinary ISSUE type (`"molecule"` for a wisp root,
+ * `"task"` for its steps in every real capture so far), not a semantic wisp
+ * category. bd's only actual time-based knob anywhere near wisps is `bd mol
+ * wisp gc --age` (default `"1h"`, an abandonment threshold, not a TTL).
+ *
+ * So the roadmap brief's category names cannot be keyed onto `type` in any
+ * bd-verified way — this map is an honest, labeled *guess*, reusing the
+ * brief's numeric tiers on the theory that a wisp root (`"molecule"`) is
+ * the longer-lived "patrol"-like anchor and a wisp step (`"task"`) churns
+ * faster like "heartbeat/ping":
+ *
+ *   - `molecule` -> 24h (brief's "patrol" tier)
+ *   - `task`     -> 6h  (brief's "heartbeat"/"ping" tier)
+ *
+ * Any other `type` value (a step whose formula uses a different issue type,
+ * e.g. `bug`/`feature`/`chore`) has NO entry here on purpose — per the
+ * fixture README's own conclusion, "UI must treat TTL as unknown/heuristic,
+ * not CLI-sourced", an absent entry is treated as *unknown*, not defaulted
+ * to one of the two guesses above. Do not cite these numbers as bd-reported.
+ */
+export const WISP_TTL_MS: Readonly<Record<string, number>> = {
+  molecule: 24 * 3_600_000,
+  task: 6 * 3_600_000,
+};
+
+/**
+ * Result of {@link wispTtlState}: exactly one of
+ *  - `'unknown'` — `wisp.type` has no entry in {@link WISP_TTL_MS}, or
+ *    `wisp.created_at` is missing/unparseable. Never a crash, never a guess.
+ *  - `'expired'` — the heuristic TTL has already elapsed. Never a negative
+ *    duration is produced for this case.
+ *  - `'active'` — `remainingMs` is always a positive, finite number of
+ *    milliseconds left, safe to hand to `formatDurationMs`.
+ */
+export type WispTtlState = { kind: 'unknown' } | { kind: 'expired' } | { kind: 'active'; remainingMs: number };
+
+/**
+ * Computes a wisp's client-side TTL countdown against the heuristic
+ * {@link WISP_TTL_MS} map. Pure function of an injectable clock (`nowMs`) so
+ * callers/tests never depend on the real wall clock. Never throws.
+ */
+export function wispTtlState(wisp: Pick<MolWisp, 'type' | 'created_at'>, nowMs: number): WispTtlState {
+  const ttlMs = WISP_TTL_MS[wisp.type];
+  if (ttlMs === undefined) return { kind: 'unknown' };
+
+  const createdAt = wisp.created_at ? Date.parse(wisp.created_at) : NaN;
+  if (Number.isNaN(createdAt)) return { kind: 'unknown' };
+
+  const remainingMs = createdAt + ttlMs - nowMs;
+  if (remainingMs <= 0) return { kind: 'expired' };
+  return { kind: 'active', remainingMs };
+}
+
+/**
  * Extracts, from a batched `bd show <step-id>... --json` payload, the open
  * gate (if any) blocking each step. Each row's own `dependencies[]` embeds
  * the full dependency issue inline — a gate dependency row carries

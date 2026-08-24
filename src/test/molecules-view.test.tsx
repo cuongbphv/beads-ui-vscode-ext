@@ -306,6 +306,38 @@ describe('MoleculesView', () => {
     expect(el.querySelector('section[aria-label^="Gates ("]')).not.toBeNull();
   });
 
+  it('does not show the full "No molecules" empty state when only wisps exist (zero molecules, zero gates)', async () => {
+    const el = await mount();
+    await resolveOldest({
+      molecules: [],
+      wisps: wispRows,
+      gates: [],
+      fetchedAt: new Date().toISOString(),
+      degraded: false,
+    });
+
+    expect(el.textContent).not.toContain('No molecules in this project');
+    expect(el.querySelector('section[aria-label^="Wisps ("]')).not.toBeNull();
+  });
+
+  it('renders the wisp strip from snapshot.wisps with zero new RPC calls beyond getMolSnapshot', async () => {
+    const el = await mount();
+    await resolveOldest(populatedSnapshot());
+
+    // Real fixture wisp-list.json: 5 rows (1 "molecule" root + 4 "task" steps).
+    const section = el.querySelector('section[aria-label^="Wisps ("]');
+    expect(section?.getAttribute('aria-label')).toBe('Wisps (5)');
+    expect(el.querySelectorAll('section[aria-label^="Wisps ("] article')).toHaveLength(5);
+    expect(rpc.calls).toEqual([{ method: 'getMolSnapshot', params: undefined }]);
+  });
+
+  it('renders no wisp section when snapshot.wisps is empty, even with molecules present', async () => {
+    const el = await mount();
+    await resolveOldest(populatedSnapshot({ wisps: [] }));
+
+    expect(el.querySelector('section[aria-label^="Wisps ("]')).toBeNull();
+  });
+
   it('closes the detail section when its close button is clicked', async () => {
     const el = await mount();
     await resolveOldest(populatedSnapshot());

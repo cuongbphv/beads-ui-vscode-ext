@@ -15,7 +15,9 @@ import {
   toMolProgress,
   toMolWisp,
   toStaleIds,
+  WISP_TTL_MS,
   withGateBadges,
+  wispTtlState,
   type MolProgress,
   type MolStep,
 } from '../shared/mol';
@@ -231,6 +233,61 @@ describe('toMolWisp', () => {
       created_at: undefined,
       updated_at: undefined,
     });
+  });
+});
+
+describe('wispTtlState', () => {
+  const CREATED = '2026-08-24T15:07:00Z'; // real wisp-list.json created_at
+  const CREATED_MS = Date.parse(CREATED);
+
+  it('reports "active" with a positive remainingMs well before the heuristic TTL elapses', () => {
+    // type "task" -> WISP_TTL_MS.task = 6h. 1h in: 5h remain.
+    const now = CREATED_MS + 3_600_000;
+    const state = wispTtlState({ type: 'task', created_at: CREATED }, now);
+
+    expect(state.kind).toBe('active');
+    if (state.kind === 'active') {
+      expect(state.remainingMs).toBeCloseTo(5 * 3_600_000, -2);
+      expect(state.remainingMs).toBeGreaterThan(0);
+    }
+  });
+
+  it('reports "active" for a "molecule"-type wisp root using the longer 24h tier', () => {
+    const now = CREATED_MS + 3_600_000; // 1h in of a 24h TTL
+    const state = wispTtlState({ type: 'molecule', created_at: CREATED }, now);
+
+    expect(state.kind).toBe('active');
+    if (state.kind === 'active') {
+      expect(state.remainingMs).toBeCloseTo(23 * 3_600_000, -2);
+    }
+  });
+
+  it('reports "expired" — never a negative remainingMs — once the heuristic TTL has elapsed', () => {
+    const now = CREATED_MS + WISP_TTL_MS.task + 1; // 1ms past the 6h task TTL
+    expect(wispTtlState({ type: 'task', created_at: CREATED }, now)).toEqual({ kind: 'expired' });
+  });
+
+  it('reports "expired" exactly at the TTL boundary (zero remaining is not "active")', () => {
+    const now = CREATED_MS + WISP_TTL_MS.task;
+    expect(wispTtlState({ type: 'task', created_at: CREATED }, now)).toEqual({ kind: 'expired' });
+  });
+
+  it('reports "unknown" for a type with no entry in WISP_TTL_MS, never defaulting to a guess', () => {
+    expect(wispTtlState({ type: 'bug', created_at: CREATED }, CREATED_MS)).toEqual({ kind: 'unknown' });
+    expect(wispTtlState({ type: '', created_at: CREATED }, CREATED_MS)).toEqual({ kind: 'unknown' });
+  });
+
+  it('reports "unknown" instead of throwing when created_at is missing or unparseable', () => {
+    expect(() => wispTtlState({ type: 'task', created_at: undefined }, CREATED_MS)).not.toThrow();
+    expect(wispTtlState({ type: 'task', created_at: undefined }, CREATED_MS)).toEqual({ kind: 'unknown' });
+    expect(wispTtlState({ type: 'task', created_at: 'not-a-date' }, CREATED_MS)).toEqual({ kind: 'unknown' });
+  });
+
+  it('never throws for any row parsed straight out of the real wisp-list.json fixture', () => {
+    const raw = load('wisp-list.json') as { wisps: unknown[] };
+    for (const row of raw.wisps.map(toMolWisp)) {
+      expect(() => wispTtlState(row, Date.now())).not.toThrow();
+    }
   });
 });
 
