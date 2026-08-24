@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import type { BdGate } from '../shared/types';
+
 /**
  * Shape smoke tests over REAL bd 1.2.2 output captured in a scratch project
  * (bead beads-ui-vscode-ext-8eo.1). See src/test/fixtures/mol/README.md for
@@ -153,6 +155,34 @@ describe('mol fixtures (bd 1.2.2 captures)', () => {
     expect(byAwait.get('timer')?.timeout).toBe(7_200_000_000_000);
     expect('timeout' in (byAwait.get('human') ?? {})).toBe(false);
     expect('await_id' in (byAwait.get('human') ?? {})).toBe(false);
+  });
+
+  it('BdGate declares await_id/timeout so gate-list.json parses through typed, not dropped', () => {
+    const gates = load('gate-list.json') as BdGate[];
+    const byAwait = new Map(gates.map((g) => [g.await_type, g] as const));
+
+    const prGate = byAwait.get('gh:pr');
+    expect(prGate?.await_id).toBe('42');
+    expect(typeof prGate?.await_id).toBe('string');
+
+    const timerGate = byAwait.get('timer');
+    expect(timerGate?.timeout).toBe(7_200_000_000_000);
+    expect(typeof timerGate?.timeout).toBe('number');
+    // A timer gate never carries await_id — the field stays absent, not "".
+    expect(timerGate?.await_id).toBeUndefined();
+
+    const humanGate = byAwait.get('human');
+    // A human gate carries neither field — absence, never a fabricated value.
+    expect(humanGate?.await_id).toBeUndefined();
+    expect(humanGate?.timeout).toBeUndefined();
+  });
+
+  it('BdGate.timeout on gate-show-timer.json is a number (Go nanoseconds), not a string', () => {
+    const gate = load('gate-show-timer.json') as BdGate;
+    expect(gate.await_type).toBe('timer');
+    expect(gate.timeout).toBe(7_200_000_000_000);
+    expect(typeof gate.timeout).toBe('number');
+    expect(gate.await_id).toBeUndefined();
   });
 
   it('bd gate show: single object, same fields + schema_version, no waiters', () => {

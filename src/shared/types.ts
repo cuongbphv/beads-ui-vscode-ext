@@ -191,6 +191,22 @@ export interface BdGate {
   created_by?: string;
   updated_at?: string;
   await_type: GateAwaitType;
+  /**
+   * The thing being awaited, when `await_type` names one (`gh:pr` → the PR
+   * number as a string, e.g. `"42"`). `omitempty` on bd's side — absent for
+   * `await_type: 'human'` (verified against
+   * `src/test/fixtures/mol/gate-list.json`, bd 1.2.2). Never fabricated when
+   * absent.
+   */
+  await_id?: string;
+  /**
+   * Only present for `await_type: 'timer'`. A Go `time.Duration` serialised
+   * as nanoseconds (e.g. `7200000000000` for 2h) — a number, not a string.
+   * `omitempty` on bd's side — absent for every other `await_type` (verified
+   * against `src/test/fixtures/mol/gate-list.json` /
+   * `gate-show-timer.json`, bd 1.2.2). Never fabricated when absent.
+   */
+  timeout?: number;
 }
 
 /** A comment attached to an issue (`bd show --include-comments`). */
