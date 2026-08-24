@@ -12,6 +12,7 @@ import { resolveDashboardTab } from '../shared/protocol';
 import { ActorResolver } from './actor';
 import { registerCommands } from './commands';
 import { FleetService } from './fleet/FleetService';
+import { createBeadsNotifier } from './notifications';
 import { DashboardPanel } from './panel/DashboardPanel';
 import { createBeadsStatusBar } from './status-bar';
 import { BeadsStore, bindVisibility } from './store';
@@ -161,6 +162,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Same affordance as the tree badge, but visible without the sidebar open.
   context.subscriptions.push(createBeadsStatusBar(store, vscode));
+
+  // Opt-in toasts (`beadsDashboard.notifications`, default off): a gate opens,
+  // or an issue assigned to `actor.current` becomes blocked. Wired before the
+  // first `store.refresh()` below so whatever that call loads is the
+  // session's baseline snapshot, never something to toast about.
+  context.subscriptions.push(
+    createBeadsNotifier(store, vscode, {
+      getIdentity: () => actor.current,
+      openDashboard,
+    }),
+  );
 
   const state = await store.refresh();
   if (state.error) {

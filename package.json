@@ -300,6 +300,21 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Who you are in beads, for the sidebar's **Needs You** section. Leave empty to use the same identity `bd` does: `BEADS_ACTOR`, then `BD_ACTOR`, then `git config user.name`, then your OS username."
+        },
+        "beadsDashboard.notifications": {
+          "type": "string",
+          "enum": [
+            "off",
+            "gates",
+            "gates-and-blocked"
+          ],
+          "enumDescriptions": [
+            "Never show a notification.",
+            "Notify when a gate needs a human.",
+            "Also notify when an issue assigned to you becomes blocked."
+          ],
+          "default": "off",
+          "markdownDescription": "Show a notification when a gate opens, or when an issue assigned to you becomes blocked. Opt-in: it only evaluates snapshots the dashboard already fetched, so it never spawns `bd` on its own. Each gate notifies at most once per window session."
         }
       }
     }
