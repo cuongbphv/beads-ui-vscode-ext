@@ -4,6 +4,7 @@ import {
   narrowAddDependencyParams,
   narrowCreateParams,
   narrowDependencyParams,
+  narrowLabelParams,
   narrowUpdateTextParams,
   requireDepType,
   requireDueDate,
@@ -205,6 +206,29 @@ describe('narrowUpdateTextParams (router param narrowing)', () => {
   it('rejects a missing or non-string text', () => {
     expect(() => narrowUpdateTextParams({ id: 'bd-1', field: 'notes' })).toThrow(/"text"/);
     expect(() => narrowUpdateTextParams({ id: 'bd-1', field: 'notes', text: 42 })).toThrow(/"text"/);
+  });
+});
+
+describe('narrowLabelParams (router param narrowing)', () => {
+  it('narrows a well-formed id/label pair', () => {
+    expect(narrowLabelParams({ id: 'bd-1', label: 'ui' })).toEqual({ id: 'bd-1', label: 'ui' });
+  });
+
+  it('trims the label', () => {
+    expect(narrowLabelParams({ id: 'bd-1', label: '  ui  ' })).toEqual({ id: 'bd-1', label: 'ui' });
+  });
+
+  it('rejects a missing or blank id', () => {
+    expect(() => narrowLabelParams({ label: 'ui' })).toThrow(/"id"/);
+    expect(() => narrowLabelParams({ id: '', label: 'ui' })).toThrow(/"id"/);
+    expect(() => narrowLabelParams({ id: '   ', label: 'ui' })).toThrow(/"id"/);
+  });
+
+  it('rejects a missing, blank, whitespace-only or non-string label', () => {
+    expect(() => narrowLabelParams({ id: 'bd-1' })).toThrow(/"label"/);
+    expect(() => narrowLabelParams({ id: 'bd-1', label: '' })).toThrow(/"label"/);
+    expect(() => narrowLabelParams({ id: 'bd-1', label: '   ' })).toThrow(/"label"/);
+    expect(() => narrowLabelParams({ id: 'bd-1', label: 42 })).toThrow(/"label"/);
   });
 });
 

@@ -191,6 +191,25 @@ export interface RpcMethods {
     params: { id: string; dependsOn: string };
     result: { ok: true };
   };
+  /**
+   * Add a label (`bd update <id> --add-label <label>`, confirmed against
+   * `bd update --help` on the installed CLI). Labels are user-defined and
+   * unbounded — like `assignee`, `label` is a plain string with no allowlist
+   * to check it against; the router only rejects a blank one before any
+   * argv is built.
+   */
+  addLabel: {
+    params: { id: string; label: string };
+    result: { ok: true };
+  };
+  /**
+   * Remove a label (`bd update <id> --remove-label <label>`, confirmed
+   * against `bd update --help` on the installed CLI).
+   */
+  removeLabel: {
+    params: { id: string; label: string };
+    result: { ok: true };
+  };
   /** Start receiving `fleetChanged` events. Non-mutating: it observes the fleet, it does not run one. */
   subscribeFleet: {
     params: undefined;
@@ -272,6 +291,8 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'createBead',
   'addDependency',
   'removeDependency',
+  'addLabel',
+  'removeLabel',
 ]);
 
 export interface RpcRequest<M extends RpcMethodName = RpcMethodName> {

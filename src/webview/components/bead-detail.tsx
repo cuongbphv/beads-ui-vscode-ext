@@ -28,7 +28,7 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { buildBlockerChain, type BlockerNode } from '../../shared/blocker-chain';
 import type { HistoryEvent } from '../../shared/history-diff';
@@ -75,6 +75,14 @@ export function BeadDetail({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(bead.title);
   const [commentDraft, setCommentDraft] = useState('');
+  /**
+   * Optimistic label override: id → labels. Applied on top of the fetched
+   * bead so a chip add/remove lands immediately; rolled back (the key is
+   * dropped) on error, and retired once `beads` — the same full snapshot
+   * array whose refresh drives every other view — agrees. Same shape as
+   * BoardView's optimistic status override.
+   */
+  const [labelOverrides, setLabelOverrides] = useState<Record<string, string[]>>({});
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -107,6 +115,68 @@ export function BeadDetail({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Retire each label override the moment `beads` — refreshed by the host
+  // after every mutation — agrees with it; leaving one in place would mask a
+  // later change made outside this pane. Same shape as BoardView's
+  // optimistic-status cleanup effect.
+  useEffect(() => {
+    setLabelOverrides((current) => {
+      const remaining = Object.entries(current).filter(([id, labels]) => {
+        const match = beads.find((candidate) => candidate.id === id);
+        return match === undefined || !sameLabelSet(match.labels ?? [], labels);
+      });
+      return remaining.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(remaining);
+    });
+  }, [beads]);
+
+  const currentLabels = labelOverrides[bead.id] ?? bead.labels ?? [];
+  const labelOptions = useMemo(
+    () => Array.from(new Set(beads.flatMap((candidate) => candidate.labels ?? []))).sort(),
+    [beads],
+  );
+
+  /**
+   * Applies the add optimistically, then calls `bd`. On failure the override
+   * is dropped — reverting the chip list to whatever `bead.labels` (the last
+   * fetched real value) already has — and a toast reports why.
+   */
+  async function addLabel(label: string): Promise<void> {
+    if (currentLabels.includes(label)) return;
+    setLabelOverrides((current) => ({ ...current, [bead.id]: [...currentLabels, label] }));
+    try {
+      await call('addLabel', { id: bead.id, label });
+      notify(`${bead.id} labeled "${label}"`);
+    } catch (error) {
+      setLabelOverrides((current) => {
+        const next = { ...current };
+        delete next[bead.id];
+        return next;
+      });
+      notify(asRpcError(error).message, 'error');
+    }
+  }
+
+  /** Same shape as {@link addLabel}, removing rather than appending. */
+  async function removeLabel(label: string): Promise<void> {
+    setLabelOverrides((current) => ({
+      ...current,
+      [bead.id]: currentLabels.filter((existing) => existing !== label),
+    }));
+    try {
+      await call('removeLabel', { id: bead.id, label });
+      notify(`${bead.id} label "${label}" removed`);
+    } catch (error) {
+      setLabelOverrides((current) => {
+        const next = { ...current };
+        delete next[bead.id];
+        return next;
+      });
+      notify(asRpcError(error).message, 'error');
+    }
+  }
 
   /** Returns whether the write succeeded, so a caller can decide what to reset. */
   async function mutate(action: () => Promise<unknown>, success: string): Promise<boolean> {
@@ -325,19 +395,26 @@ export function BeadDetail({
           ) : null}
         </div>
 
-        {bead.labels?.length ? (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {bead.labels.map((label) => (
-              <span
-                key={label}
-                className="label-chip rounded-sm px-1.5 py-0.5 text-xs"
-                style={labelChipStyle(label)}
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          {currentLabels.map((label) => (
+            <span
+              key={label}
+              className="label-chip inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs"
+              style={labelChipStyle(label)}
+            >
+              {label}
+              <button
+                type="button"
+                aria-label={`Remove label ${label}`}
+                onClick={() => void removeLabel(label)}
+                className="hover:opacity-70"
               >
-                {label}
-              </span>
-            ))}
-          </div>
-        ) : null}
+                <X aria-hidden="true" className="size-2.5" />
+              </button>
+            </span>
+          ))}
+          <LabelAdder options={labelOptions} onAdd={(label) => void addLabel(label)} />
+        </div>
 
         {/* People and effort: the fields a planner reads first. */}
         <dl className="border-border mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-md border p-2 text-xs">
@@ -764,6 +841,58 @@ export function BeadDetail({
         </Button>
       </footer>
     </aside>
+  );
+}
+
+/** Unordered comparison — bd's own label order need not match the optimistic array's. */
+function sameLabelSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setB = new Set(b);
+  return a.every((label) => setB.has(label));
+}
+
+/**
+ * The chip row's add affordance: a small text input with a `<datalist>` of
+ * labels already seen across every loaded bead (there is no dedicated `bd`
+ * command to list every label that exists project-wide, so this is derived
+ * rather than hardcoded — same derivation `BeadCreate`'s label datalist
+ * uses). Enter adds the trimmed value and clears the draft; the caller
+ * (`addLabel` in `BeadDetail`) owns the optimistic apply and rollback.
+ */
+function LabelAdder({
+  options,
+  onAdd,
+}: {
+  options: string[];
+  onAdd: (label: string) => void;
+}): ReactNode {
+  const [draft, setDraft] = useState('');
+
+  return (
+    <>
+      <input
+        type="text"
+        list="bead-detail-labels"
+        value={draft}
+        placeholder="Add label…"
+        aria-label="Add label"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          const trimmed = draft.trim();
+          if (!trimmed) return;
+          onAdd(trimmed);
+          setDraft('');
+        }}
+        className="bg-input-bg border-input-border text-fg w-24 min-w-0 rounded-sm border px-1.5 py-0.5 text-xs"
+      />
+      <datalist id="bead-detail-labels">
+        {options.map((label) => (
+          <option key={label} value={label} />
+        ))}
+      </datalist>
+    </>
   );
 }
 

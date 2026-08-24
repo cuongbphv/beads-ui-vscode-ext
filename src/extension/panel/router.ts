@@ -21,6 +21,7 @@ import {
   narrowAddDependencyParams,
   narrowCreateParams,
   narrowDependencyParams,
+  narrowLabelParams,
   narrowUpdateTextParams,
   requireDueDate,
   requireTargetId,
@@ -172,6 +173,22 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       // flag, so there is nothing else to narrow here.
       const narrowed = narrowDependencyParams(params);
       await mutations.removeDependency(narrowed.id, narrowed.dependsOn);
+      return { ok: true };
+    }
+
+    case 'addLabel': {
+      // narrowLabelParams throws before any argv is built when id or label
+      // is blank. Labels are user-defined, so there is no allowlist to check
+      // label against.
+      const narrowed = narrowLabelParams(params);
+      await mutations.addLabel(narrowed.id, narrowed.label);
+      return { ok: true };
+    }
+
+    case 'removeLabel': {
+      // Same narrowing as addLabel.
+      const narrowed = narrowLabelParams(params);
+      await mutations.removeLabel(narrowed.id, narrowed.label);
       return { ok: true };
     }
 

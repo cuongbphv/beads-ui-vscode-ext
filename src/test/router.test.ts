@@ -47,6 +47,14 @@ class FakeMutations {
   async removeDependency(id: string, dependsOn: string): Promise<void> {
     this.calls.push({ method: 'removeDependency', args: [id, dependsOn] });
   }
+
+  async addLabel(id: string, label: string): Promise<void> {
+    this.calls.push({ method: 'addLabel', args: [id, label] });
+  }
+
+  async removeLabel(id: string, label: string): Promise<void> {
+    this.calls.push({ method: 'removeLabel', args: [id, label] });
+  }
 }
 
 /** Records every call so a test can assert on the argv-shaped params. */
@@ -433,6 +441,81 @@ describe('router removeDependency', () => {
       makeStore(mutations),
       host,
       request('removeDependency', { dependsOn: 'bd-2' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router addLabel', () => {
+  it('calls mutations.addLabel with the exact narrowed args and returns ok', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addLabel', { id: 'bd-1', label: 'ui' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'addLabel', args: ['bd-1', 'ui'] }]);
+  });
+
+  it('trims the label before it reaches the mutation', async () => {
+    const mutations = new FakeMutations();
+    await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addLabel', { id: 'bd-1', label: '  ui  ' }),
+    );
+
+    expect(mutations.calls).toEqual([{ method: 'addLabel', args: ['bd-1', 'ui'] }]);
+  });
+
+  it('rejects an empty or whitespace-only label before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addLabel', { id: 'bd-1', label: '   ' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a missing id before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('addLabel', { label: 'ui' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router removeLabel', () => {
+  it('calls mutations.removeLabel with the exact narrowed args and returns ok', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('removeLabel', { id: 'bd-1', label: 'ui' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'removeLabel', args: ['bd-1', 'ui'] }]);
+  });
+
+  it('rejects a missing label before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('removeLabel', { id: 'bd-1' }),
     );
 
     expect(response.ok).toBe(false);

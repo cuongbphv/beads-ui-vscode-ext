@@ -168,6 +168,28 @@ function requireString(value: unknown, field: string): string {
   return value;
 }
 
+export interface LabelParams {
+  id: string;
+  label: string;
+}
+
+/**
+ * Narrows the `id`/`label` pair shared by `addLabel` and `removeLabel`, into
+ * the exact shape `BdMutations.addLabel`/`removeLabel` build an argv from.
+ *
+ * Unlike `TEXT_FIELDS` or `DEP_TYPES`, `label` has no allowlist to check
+ * against — beads labels are user-defined and unbounded, same reasoning as
+ * `type`/`priority`/`status` elsewhere in this file — so only its shape (a
+ * non-blank string) is enforced here.
+ */
+export function narrowLabelParams(params: Record<string, unknown>): LabelParams {
+  const id = requireString(params.id, 'id');
+  if (typeof params.label !== 'string' || params.label.trim() === '') {
+    throw new Error('Missing required parameter "label".');
+  }
+  return { id, label: params.label.trim() };
+}
+
 /**
  * Narrows the params for `createBead` into the exact shape
  * `BdMutations.create` builds an argv from.

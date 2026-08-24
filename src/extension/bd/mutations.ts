@@ -188,6 +188,25 @@ export class BdMutations {
     await this.run(['dep', 'remove', id, dependsOn], id, dependsOn);
   }
 
+  /**
+   * Add a label (`bd update <id> --add-label <label>` — flag name confirmed
+   * against `bd update --help` on the installed CLI). The router rejects a
+   * blank `id`/`label` before this is ever called; labels are user-defined
+   * and unbounded, so there is no allowlist for this to check `label`
+   * against.
+   */
+  async addLabel(id: string, label: string): Promise<void> {
+    await this.run(['update', id, '--add-label', label], id);
+  }
+
+  /**
+   * Remove a label (`bd update <id> --remove-label <label>` — flag name
+   * confirmed against `bd update --help` on the installed CLI).
+   */
+  async removeLabel(id: string, label: string): Promise<void> {
+    await this.run(['update', id, '--remove-label', label], id);
+  }
+
   private async run(args: string[], ...changedIds: string[]): Promise<void> {
     await this.bd.exec(args);
     this.notify(changedIds);

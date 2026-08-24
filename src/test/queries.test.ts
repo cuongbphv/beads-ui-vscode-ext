@@ -630,6 +630,46 @@ describe('BdMutations.updateText', () => {
   });
 });
 
+describe('BdMutations label writes', () => {
+  function mutations(fake: FakeBd): BdMutations {
+    return new BdMutations(fake as unknown as BdService);
+  }
+
+  it('adds a label with --add-label', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).addLabel('bd-a1', 'ui');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--add-label', 'ui']]);
+  });
+
+  it('removes a label with --remove-label', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).removeLabel('bd-a1', 'ui');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--remove-label', 'ui']]);
+  });
+
+  it('notifies listeners with the changed id after adding a label', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.addLabel('bd-a1', 'ui');
+
+    expect(changed).toEqual([['bd-a1']]);
+  });
+
+  it('notifies listeners with the changed id after removing a label', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.removeLabel('bd-a1', 'ui');
+
+    expect(changed).toEqual([['bd-a1']]);
+  });
+});
+
 /**
  * `FakeBd` above keys canned responses by `args[0]` only, which is fine when
  * every fixture in a describe block hits a distinct top-level command. Every
