@@ -178,3 +178,46 @@ its `id` is the bare formula name (`fixdemo`, no project prefix).
   nothing on reuse; timestamps inside `dependencies[].created_at` are local
   +07:00 wall-clock stored as `Z` (off by 7h vs the issue rows' true UTC) —
   do not trust dep timestamps for ordering against issue timestamps.
+
+## 12. Addendum (bead beads-ui-vscode-ext-8eo.4, 2026-08-25): where the gate edge from #11 actually surfaces
+
+This capture batch (mol-show-parallel.json etc.) was taken *before* the three
+gates existed (README step 5 progresses steps, step 6 creates the gates), so
+none of the files above contain a gate dependency edge to inspect directly.
+Re-verified live in a fresh isolated scratch project (`bd init` in a
+`mktemp -d`, never this repo's board; deleted after use — no fixture file
+committed for this run, since `bd show`'s own JSON is already pinned by
+`mol-fixtures.test.ts`'s existing assertions elsewhere):
+
+- **`bd mol show <id> --parallel --json`'s top-level `dependencies` array can
+  NEVER contain a gate edge**, confirmed by reading `loadTemplateSubgraph` in
+  beads' own `cmd/bd/template.go`: it keeps a dependency only when *both*
+  ends are already inside the molecule subgraph, and a gate created via
+  `bd gate create --blocks <step>` is a standalone issue outside it — the
+  edge is unconditionally dropped before the JSON is ever built. `--parallel`
+  info (`is_ready`/`blocked_by`) never reflects it either, exactly as #2
+  already found.
+- **A plain `bd show <step-id> --json` (no `--long`, no
+  `--include-dependents`) already returns that step's own `dependencies[]`**,
+  with the gate issue's fields inlined directly on the dependency row
+  (`id`, `status`, `issue_type: "gate"`, `await_type`, and `await_id`/
+  `timeout` when the gate type carries them) — confirmed by creating one
+  task, one human gate blocking it, then running `bd show <step-id> --json`
+  and `bd show <step-id> --include-dependents --json` (identical output for
+  this direction). This is the one call `BdQueries.showMolecule` needs,
+  batched across every step id in one process (`bd show <id1> <id2> ...
+  --json`) rather than one call per step.
+- `bd show <gate-id> --include-dependents --json` also works (the gate's own
+  `dependents[]` lists the step(s) it blocks, via the `--include-dependents`
+  flag — which the plain per-step direction above does not need), but is not
+  what this bead uses: it would cost one call per open gate instead of one
+  call total for however many steps a molecule has.
+- `src/test/fixtures/mol/show-steps-with-gates.json` (used by
+  `mol-model.test.ts`) is **not** a byte-for-byte capture like the files
+  above — its human-gate row shape was, but the timer/gh:pr rows were
+  hand-assembled by combining that live-verified dependency-embedding shape
+  with the already-pinned `gate-list.json` field values (`timeout`,
+  `await_id`) for those two gate types, plus one resolved (`status:
+  "closed"`) gate row to pin the "closed gates never badge" behaviour. Flag
+  this file for re-capture if a future bd version changes the embedded
+  dependency row's fields.

@@ -7,13 +7,16 @@ import type { Bead } from '../shared/types';
 
 import {
   estimateEtaMs,
+  gatesByStepId,
   normalizeStepStatus,
   stepStateOf,
   toMolDetail,
   toMolProgress,
   toMolWisp,
   toStaleIds,
+  withGateBadges,
   type MolProgress,
+  type MolStep,
 } from '../shared/mol';
 
 /**
@@ -99,6 +102,105 @@ describe('toMolDetail', () => {
     expect(detail.steps).toEqual([]);
     expect(detail.parallelAvailable).toBe(false);
     expect(detail.progress).toBeNull();
+  });
+
+  it('carries the real parallel_group name for every step the fixture actually put in "group-1"', () => {
+    const detail = toMolDetail(load('mol-show-parallel.json'));
+
+    expect(detail.parallelAvailable).toBe(true);
+    // mol-show-parallel.json's parallel_groups.group-1 lists the root plus
+    // hqf/25d/7ps — NOT w0q, whose own parallel_group is "" (see the
+    // dedicated ungrouped-step test below).
+    const grouped = detail.steps.filter((s) => s.issue.id !== 'bd-mol-fixtures-scratch-mol-w0q');
+    expect(grouped).toHaveLength(3);
+    for (const step of grouped) {
+      expect(step.parallelGroup, step.issue.id).toBe('group-1');
+    }
+    // Every step out of toMolDetail alone (no gates batch merged yet) has no gate.
+    expect(detail.steps.every((s) => s.gate === undefined)).toBe(true);
+  });
+
+  it('leaves parallelGroup undefined for every step when the parallel block is unparseable', () => {
+    const detail = toMolDetail({ root: { id: 'r' }, issues: [{ id: 'r' }, { id: 's1', status: 'open' }] });
+
+    expect(detail.parallelAvailable).toBe(false);
+    expect(detail.steps.every((s) => s.parallelGroup === undefined)).toBe(true);
+  });
+
+  it('leaves an explicitly ungrouped step (parallel_group: "") without a parallelGroup even when parallel data is available', () => {
+    // bd-mol-fixtures-scratch-mol-w0q in the real fixture has parallel_group: ""
+    // (it depends on siblings still open, so it never joined group-1).
+    const detail = toMolDetail(load('mol-show-parallel.json'));
+    const ungrouped = detail.steps.find((s) => s.issue.id === 'bd-mol-fixtures-scratch-mol-w0q');
+
+    expect(ungrouped).toBeDefined();
+    expect(ungrouped?.parallelGroup).toBeUndefined();
+  });
+});
+
+describe('gatesByStepId', () => {
+  it('badges each step with its own open gate from a batched bd show payload, keeping await_id/timeout only where bd emits them', () => {
+    const gates = gatesByStepId(load('show-steps-with-gates.json'));
+
+    expect(gates.get('bd-mol-fixtures-scratch-mol-w0q')).toEqual({
+      gateId: 'bd-mol-fixtures-scratch-wb6',
+      awaitType: 'human',
+      awaitId: undefined,
+      timeout: undefined,
+    });
+    expect(gates.get('bd-mol-fixtures-scratch-mol-hqf')).toEqual({
+      gateId: 'bd-mol-fixtures-scratch-qpb',
+      awaitType: 'timer',
+      awaitId: undefined,
+      timeout: 7_200_000_000_000,
+    });
+  });
+
+  it('never badges a step whose only gate dependency is resolved (status: closed)', () => {
+    const gates = gatesByStepId(load('show-steps-with-gates.json'));
+
+    // bd-mol-fixtures-scratch-mol-25d's only dependency is the resolved gh:pr gate.
+    expect(gates.has('bd-mol-fixtures-scratch-mol-25d')).toBe(false);
+  });
+
+  it('never badges a step with no gate dependency at all', () => {
+    const gates = gatesByStepId(load('show-steps-with-gates.json'));
+
+    expect(gates.has('bd-mol-fixtures-scratch-mol-7ps')).toBe(false);
+  });
+
+  it('degrades to an empty map instead of throwing on an unparseable payload', () => {
+    expect(gatesByStepId(null)).toEqual(new Map());
+    expect(gatesByStepId(undefined)).toEqual(new Map());
+    expect(gatesByStepId({})).toEqual(new Map());
+    expect(gatesByStepId([{}, { id: 'x' }, { id: 'y', dependencies: 'not-an-array' }])).toEqual(new Map());
+  });
+});
+
+describe('withGateBadges', () => {
+  function step(id: string): MolStep {
+    return {
+      issue: { id, title: id, status: 'open', priority: 2, issue_type: 'task' },
+      status: 'ready',
+      is_current: false,
+    };
+  }
+
+  it('attaches a gate only to the steps present in the map, leaving the rest untouched', () => {
+    const gate = { gateId: 'g1', awaitType: 'human' as const };
+    const steps = [step('a'), step('b')];
+    const result = withGateBadges(steps, new Map([['a', gate]]));
+
+    expect(result[0].gate).toEqual(gate);
+    expect(result[1].gate).toBeUndefined();
+    // The untouched step is the same reference bd already trusted — no
+    // needless copy of a step with nothing to change.
+    expect(result[1]).toBe(steps[1]);
+  });
+
+  it('returns the same steps, unmodified, when the gate map is empty', () => {
+    const steps = [step('a')];
+    expect(withGateBadges(steps, new Map())).toEqual(steps);
   });
 });
 

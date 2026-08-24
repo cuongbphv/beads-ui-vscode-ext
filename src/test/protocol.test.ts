@@ -22,6 +22,10 @@ describe('MUTATING_METHODS', () => {
     expect(MUTATING_METHODS.has('getMolSnapshot')).toBe(false);
   });
 
+  it('excludes showMolecule — it only reads one molecule\'s step list, never writes anything', () => {
+    expect(MUTATING_METHODS.has('showMolecule')).toBe(false);
+  });
+
   it('excludes getSyncStatus — it only reports `bd dolt status`, never `bd dolt push`/`bd dolt pull`', () => {
     expect(MUTATING_METHODS.has('getSyncStatus')).toBe(false);
   });

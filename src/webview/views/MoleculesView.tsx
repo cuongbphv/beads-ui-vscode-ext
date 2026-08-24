@@ -10,10 +10,11 @@
  * `queries.ts`), and only while a webview session has this tab open.
  */
 import { AlertCircle, FlaskConical } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 
 import type { Bead } from '../../shared/types';
 import { MoleculeCard } from '../components/mol/molecule-card';
+import { MoleculeDetail } from '../components/mol/molecule-detail';
 import { EmptyState, Skeleton } from '../components/primitives';
 import { useMolecules } from '../hooks/use-molecules';
 
@@ -28,6 +29,18 @@ export function MoleculesView({
   selectedId?: string;
 }): ReactNode {
   const { snapshot, loading, error } = useMolecules();
+  // Which molecule's step list is expanded inline below the grid. A card
+  // click still calls `onSelect(root.id)` exactly as bead 8eo.3 wired it
+  // (opens the App-level BeadDetail pane for the root) — this is additive,
+  // not a replacement.
+  const [expandedId, setExpandedId] = useState<string>();
+  const handleCardSelect = useCallback(
+    (id: string) => {
+      onSelect(id);
+      setExpandedId(id);
+    },
+    [onSelect],
+  );
 
   if (!snapshot) {
     if (loading) {
@@ -57,6 +70,8 @@ export function MoleculesView({
     );
   }
 
+  const expandedMolecule = snapshot.molecules.find((item) => item.root.id === expandedId);
+
   return (
     <div className="@container h-full overflow-y-auto p-3">
       {snapshot.degraded ? (
@@ -75,12 +90,21 @@ export function MoleculesView({
             <MoleculeCard
               item={item}
               beadsById={beadsById}
-              onSelect={onSelect}
+              onSelect={handleCardSelect}
               selected={item.root.id === selectedId}
             />
           </li>
         ))}
       </ul>
+
+      {expandedMolecule ? (
+        <MoleculeDetail
+          root={expandedMolecule.root}
+          onSelect={onSelect}
+          selectedId={selectedId}
+          onClose={() => setExpandedId(undefined)}
+        />
+      ) : null}
     </div>
   );
 }

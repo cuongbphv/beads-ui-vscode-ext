@@ -6,15 +6,19 @@
  * `src/test/fixtures/mol/` (bead beads-ui-vscode-ext-8eo.1) run through the
  * same `shared/mol.ts` parsers the extension host uses — never an invented
  * mock shape. The hook's own fetch/refetch contract is `use-molecules.test.tsx`'s
- * subject; this file only checks that mount drives `getMolSnapshot`, that
- * each snapshot shape renders the right view, and that a card click reaches
- * `onSelect`.
+ * subject; this file checks that mount drives `getMolSnapshot`, that each
+ * snapshot shape renders the right view, that a card click reaches
+ * `onSelect` (bead 8eo.3) AND now also opens the inline step-list detail
+ * (bead 8eo.4, `MoleculeDetail`/`useMolDetail`), and that a step click
+ * inside that detail reaches `onSelect` with the STEP's id, not the
+ * molecule root's — the actual `StepList` rendering (states, parallel
+ * groups, gate badges) is `step-list.test.tsx`'s subject, not this file's.
  */
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { toMolProgress, toMolWisp, type MolListItem, type MolSnapshot } from '../shared/mol';
+import { toMolProgress, toMolWisp, type MolDetail, type MolListItem, type MolSnapshot } from '../shared/mol';
 import type { HostEvent } from '../shared/protocol';
 import type { Bead } from '../shared/types';
 // Static JSON imports (`resolveJsonModule`), not `node:fs` + `import.meta.url`:
@@ -61,9 +65,10 @@ function fireIssuesChanged(): void {
   }
 }
 
-async function resolveOldest(value: MolSnapshot): Promise<void> {
+/** Resolves the oldest still-pending RPC call — getMolSnapshot or showMolecule alike. */
+async function resolveOldest(value: MolSnapshot | MolDetail): Promise<void> {
   const call = rpc.pending.shift();
-  if (!call) throw new Error('no pending getMolSnapshot call to resolve');
+  if (!call) throw new Error('no pending RPC call to resolve');
   await act(async () => call.resolve(value));
 }
 
@@ -219,5 +224,59 @@ describe('MoleculesView', () => {
 
     expect(rpc.calls).toEqual([{ method: 'getMolSnapshot', params: undefined }]);
     await resolveOldest(emptySnapshot());
+  });
+
+  it('opens the inline step-list detail for a molecule when its card is clicked, fetching showMolecule for its id', async () => {
+    const el = await mount();
+    await resolveOldest(populatedSnapshot());
+
+    const card = el.querySelector(`article[aria-label^="${rootBead.id}"]`) as HTMLElement;
+    await act(async () => card.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(rpc.calls).toEqual([
+      { method: 'getMolSnapshot', params: undefined },
+      { method: 'showMolecule', params: { id: rootBead.id } },
+    ]);
+    expect(el.querySelector(`section[aria-label="${rootBead.title} steps"]`)).not.toBeNull();
+  });
+
+  it('a step click inside the opened detail calls onSelect with the STEP id, not the molecule root id', async () => {
+    const onSelect = vi.fn();
+    const el = await mount({ onSelect });
+    await resolveOldest(populatedSnapshot());
+
+    const card = el.querySelector(`article[aria-label^="${rootBead.id}"]`) as HTMLElement;
+    await act(async () => card.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    onSelect.mockClear(); // clear the root-id call the card click itself made
+
+    await resolveOldest({
+      root: rootBead,
+      steps: [{ issue: stepIssues[1], status: 'ready', is_current: false }],
+      parallelAvailable: false,
+      progress: null,
+    });
+
+    const stepRow = Array.from(el.querySelectorAll('section article')).find((row) =>
+      row.getAttribute('aria-label')?.startsWith(stepIssues[1].id),
+    ) as HTMLElement;
+    expect(stepRow).toBeDefined();
+    await act(async () => stepRow.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onSelect).toHaveBeenCalledWith(stepIssues[1].id);
+    expect(onSelect).not.toHaveBeenCalledWith(rootBead.id);
+  });
+
+  it('closes the detail section when its close button is clicked', async () => {
+    const el = await mount();
+    await resolveOldest(populatedSnapshot());
+
+    const card = el.querySelector(`article[aria-label^="${rootBead.id}"]`) as HTMLElement;
+    await act(async () => card.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await resolveOldest({ root: rootBead, steps: [], parallelAvailable: false, progress: null });
+
+    const closeButton = el.querySelector('button[aria-label="Close step list"]') as HTMLElement;
+    await act(async () => closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(el.querySelector(`section[aria-label="${rootBead.title} steps"]`)).toBeNull();
   });
 });

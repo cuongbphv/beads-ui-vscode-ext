@@ -954,6 +954,121 @@ describe('BdQueries.molSnapshot', () => {
   });
 });
 
+describe('BdQueries.showMolecule', () => {
+  function withRootAndTwoSteps(fake: FakeArgvBd): void {
+    fake.responses.set('mol show mol-1 --parallel', {
+      root: { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+      issues: [
+        { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+        { id: 'step-a', title: 'Step A', status: 'open', priority: 2, issue_type: 'task' },
+        { id: 'step-b', title: 'Step B', status: 'open', priority: 2, issue_type: 'task' },
+      ],
+      parallel: {
+        parallel_groups: { 'group-1': ['step-a', 'step-b'] },
+        steps: {
+          'step-a': { status: 'open', is_ready: true, parallel_group: 'group-1' },
+          'step-b': { status: 'open', is_ready: true, parallel_group: 'group-1' },
+        },
+      },
+    });
+  }
+
+  it('composes mol show, a batched step gate lookup and mol progress into one MolDetail', async () => {
+    const fake = new FakeArgvBd();
+    withRootAndTwoSteps(fake);
+    fake.responses.set('show step-a step-b', [
+      {
+        id: 'step-a',
+        dependencies: [
+          { id: 'gate-1', status: 'open', issue_type: 'gate', await_type: 'human', dependency_type: 'blocks' },
+        ],
+      },
+      { id: 'step-b', dependencies: [] },
+    ]);
+    fake.responses.set('mol progress mol-1', {
+      molecule_id: 'mol-1',
+      molecule_title: 'fixdemo',
+      total: 2,
+      completed: 0,
+      in_progress: 0,
+      percent: 0,
+    });
+
+    const detail = await molQueries(fake).showMolecule('mol-1');
+
+    expect(fake.argv).toEqual([
+      ['mol', 'show', 'mol-1', '--parallel'],
+      ['show', 'step-a', 'step-b'],
+      ['mol', 'progress', 'mol-1'],
+    ]);
+    expect(detail.root.id).toBe('mol-1');
+    expect(detail.parallelAvailable).toBe(true);
+    expect(detail.progress?.total).toBe(2);
+    const stepA = detail.steps.find((s) => s.issue.id === 'step-a');
+    const stepB = detail.steps.find((s) => s.issue.id === 'step-b');
+    expect(stepA?.gate).toEqual({ gateId: 'gate-1', awaitType: 'human', awaitId: undefined, timeout: undefined });
+    expect(stepB?.gate).toBeUndefined();
+  });
+
+  it('skips the batched step-gate lookup entirely for a root-only molecule (no steps)', async () => {
+    const fake = new FakeArgvBd();
+    fake.responses.set('mol show mol-1 --parallel', {
+      root: { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+      issues: [{ id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' }],
+      parallel: { parallel_groups: {}, steps: {} },
+    });
+    fake.failing.add('mol progress mol-1');
+
+    const detail = await molQueries(fake).showMolecule('mol-1');
+
+    expect(fake.argv).toEqual([
+      ['mol', 'show', 'mol-1', '--parallel'],
+      ['mol', 'progress', 'mol-1'],
+    ]);
+    expect(detail.steps).toEqual([]);
+    expect(detail.progress).toBeNull();
+  });
+
+  it('degrades progress to null when mol progress fails, without losing the already-parsed steps', async () => {
+    const fake = new FakeArgvBd();
+    withRootAndTwoSteps(fake);
+    fake.responses.set('show step-a step-b', [{ id: 'step-a' }, { id: 'step-b' }]);
+    fake.failing.add('mol progress mol-1');
+
+    const detail = await molQueries(fake).showMolecule('mol-1');
+
+    expect(detail.progress).toBeNull();
+    expect(detail.steps).toHaveLength(2);
+  });
+
+  it('degrades gate badging to "no badges" when the batched bd show call fails, without losing steps or progress', async () => {
+    const fake = new FakeArgvBd();
+    withRootAndTwoSteps(fake);
+    fake.failing.add('show step-a step-b');
+    fake.responses.set('mol progress mol-1', {
+      molecule_id: 'mol-1',
+      molecule_title: 'fixdemo',
+      total: 2,
+      completed: 0,
+      in_progress: 0,
+      percent: 0,
+    });
+
+    const detail = await molQueries(fake).showMolecule('mol-1');
+
+    expect(detail.steps).toHaveLength(2);
+    expect(detail.steps.every((s) => s.gate === undefined)).toBe(true);
+    expect(detail.progress?.total).toBe(2);
+  });
+
+  it('propagates a real failure from mol show itself (e.g. an unknown molecule id)', async () => {
+    const fake = new FakeArgvBd();
+    fake.failing.add('mol show bad-id --parallel');
+
+    await expect(molQueries(fake).showMolecule('bad-id')).rejects.toThrow();
+  });
+});
+
 describe('BdQueries.doltStatus', () => {
   it('sends the exact argv, with --json as a literal element rather than one bd.json would append', async () => {
     const fake = new FakeBd();

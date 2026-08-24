@@ -6,7 +6,7 @@
  */
 import type { FleetSnapshot, TranscriptBackfill, TranscriptEvent } from './fleet';
 import type { HistoryEvent } from './history-diff';
-import type { MolSnapshot } from './mol';
+import type { MolDetail, MolSnapshot } from './mol';
 import type {
   Bead,
   BeadComment,
@@ -270,6 +270,17 @@ export interface RpcMethods {
   getMolSnapshot: {
     params: undefined;
     result: MolSnapshot;
+  };
+  /**
+   * One molecule's step list for the Molecules tab's detail view: `bd mol
+   * show <id> --parallel` plus best-effort gate badging and progress,
+   * composed by `BdQueries.showMolecule`. Read-only — stays out of
+   * {@link MUTATING_METHODS} — and fetched only while a molecule is
+   * expanded in the Molecules tab.
+   */
+  showMolecule: {
+    params: { id: string };
+    result: MolDetail;
   };
   /**
    * Read-only Dolt sync/engine status (`bd dolt status --json`), for the

@@ -100,6 +100,18 @@ class FakeQueries {
     return this.molSnapshotResult;
   }
 
+  showMoleculeResult: unknown = {
+    root: { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+    steps: [],
+    parallelAvailable: false,
+    progress: null,
+  };
+
+  async showMolecule(id: string): Promise<unknown> {
+    this.calls.push({ method: 'showMolecule', args: [id] });
+    return this.showMoleculeResult;
+  }
+
   async doltStatus(): Promise<unknown> {
     this.calls.push({ method: 'doltStatus', args: [] });
     return this.doltStatusResult;
@@ -756,6 +768,43 @@ describe('router getMolSnapshot', () => {
 
     expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: queries.molSnapshotResult });
     expect(queries.calls).toEqual([{ method: 'molSnapshot', args: [] }]);
+  });
+});
+
+describe('router showMolecule', () => {
+  it('calls queries.showMolecule with the requested id and returns its result', async () => {
+    const queries = new FakeQueries();
+    queries.showMoleculeResult = {
+      root: { id: 'mol-1', title: 'fixdemo', status: 'open', priority: 2, issue_type: 'molecule' },
+      steps: [
+        {
+          issue: { id: 'step-a', title: 'Step A', status: 'open', priority: 2, issue_type: 'task' },
+          status: 'ready',
+          is_current: false,
+          gate: { gateId: 'gate-1', awaitType: 'human' },
+        },
+      ],
+      parallelAvailable: true,
+      progress: { molecule_id: 'mol-1', molecule_title: 'fixdemo', total: 1, completed: 0, in_progress: 0, percent: 0 },
+    };
+
+    const response = await handleRequest(
+      makeStore(new FakeMutations(), queries),
+      host,
+      request('showMolecule', { id: 'mol-1' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: queries.showMoleculeResult });
+    expect(queries.calls).toEqual([{ method: 'showMolecule', args: ['mol-1'] }]);
+  });
+
+  it('rejects with no id reaching queries.showMolecule at all', async () => {
+    const queries = new FakeQueries();
+
+    const response = await handleRequest(makeStore(new FakeMutations(), queries), host, request('showMolecule', {}));
+
+    expect(response.ok).toBe(false);
+    expect(queries.calls).toEqual([]);
   });
 });
 

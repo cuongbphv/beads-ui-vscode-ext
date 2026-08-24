@@ -24,7 +24,7 @@
  * `queries.ts`'s existing `pickArray` convention for the same reason: a
  * partial/odd payload should degrade a card, not crash the tab.
  */
-import type { Bead, BdGate } from './types';
+import type { Bead, BdGate, GateAwaitType } from './types';
 
 /** The four step states bd 1.2.2 has ever been observed to report. */
 export type MolStepStatus = 'done' | 'ready' | 'current' | 'pending';
@@ -96,11 +96,39 @@ export function toMolProgress(raw: unknown): MolProgress {
   };
 }
 
+/**
+ * A step's open-gate badge, attached by {@link withGateBadges} — never by
+ * `toMolDetail` itself. `mol show --parallel`'s own `dependencies` array can
+ * never carry this edge: `loadTemplateSubgraph` (beads' `cmd/bd/template.go`)
+ * only keeps a dependency when BOTH ends are already inside the molecule
+ * subgraph, and a gate created via `bd gate create --blocks <step>` never
+ * is. Instead, a plain `bd show <step-id>... --json` already returns each
+ * step's own `dependencies[]` with the gate's fields inlined (verified live
+ * against bd 1.2.2, this bead, 2026-08-25, isolated scratch project — no
+ * `--include-dependents` needed for this direction; that flag only affects
+ * the reverse `dependents[]` list) — see {@link gatesByStepId}.
+ */
+export interface MolStepGate {
+  gateId: string;
+  awaitType: GateAwaitType;
+  awaitId?: string;
+  /** Go nanoseconds, as `bd gate list`/`bd show` emit it — never a string. */
+  timeout?: number;
+}
+
 /** One step inside a molecule's detail view. */
 export interface MolStep {
   issue: Bead;
   status: MolStepStatus;
   is_current: boolean;
+  /**
+   * Non-empty `parallel_group` name from `mol show --parallel`'s own
+   * per-step analysis; `undefined` when the step is ungrouped or parallel
+   * data was unavailable (`parallelAvailable: false` on the parent detail).
+   */
+  parallelGroup?: string;
+  /** Set only by {@link withGateBadges}; always `undefined` straight out of `toMolDetail`. */
+  gate?: MolStepGate;
 }
 
 /**
@@ -122,6 +150,7 @@ export interface MolDetail {
 interface RawParallelStep {
   status?: string;
   is_ready?: boolean;
+  parallel_group?: string;
 }
 
 /**
@@ -147,10 +176,66 @@ export function toMolDetail(raw: unknown): MolDetail {
       const info = parallelSteps[issue.id] ?? {};
       const isCurrent = issue.status === 'in_progress';
       const status = stepStateOf(issue.status, info.is_ready === true, isCurrent);
-      return { issue, status, is_current: status === 'current' };
+      const parallelGroup =
+        parallelAvailable && typeof info.parallel_group === 'string' && info.parallel_group !== ''
+          ? info.parallel_group
+          : undefined;
+      return { issue, status, is_current: status === 'current', parallelGroup };
     });
 
   return { root, steps, parallelAvailable, progress: null };
+}
+
+/**
+ * Extracts, from a batched `bd show <step-id>... --json` payload, the open
+ * gate (if any) blocking each step. Each row's own `dependencies[]` embeds
+ * the full dependency issue inline — a gate dependency row carries
+ * `issue_type: "gate"`, its `status`, and its `await_type`/`await_id`/
+ * `timeout` directly, with no extra flag needed (verified live against bd
+ * 1.2.2, isolated scratch project, 2026-08-25: `bd show <gate-id>
+ * --include-dependents --json` was NOT required for this direction — a
+ * plain `bd show <step-id> --json` already returns the step's own
+ * `dependencies[]` populated). Never throws: an unparseable row or a step
+ * with no gate dependency is simply absent from the returned map.
+ */
+export function gatesByStepId(raw: unknown): Map<string, MolStepGate> {
+  const rows = Array.isArray(raw) ? raw : [];
+  const result = new Map<string, MolStepGate>();
+  for (const row of rows) {
+    const r = asRecord(row);
+    const stepId = typeof r.id === 'string' ? r.id : undefined;
+    if (!stepId) continue;
+
+    const deps = Array.isArray(r.dependencies) ? r.dependencies : [];
+    for (const depRaw of deps) {
+      const dep = asRecord(depRaw);
+      if (dep.issue_type !== 'gate' || dep.status !== 'open' || typeof dep.await_type !== 'string') {
+        continue;
+      }
+      result.set(stepId, {
+        gateId: typeof dep.id === 'string' ? dep.id : '',
+        awaitType: dep.await_type as GateAwaitType,
+        awaitId: typeof dep.await_id === 'string' ? dep.await_id : undefined,
+        timeout: typeof dep.timeout === 'number' ? dep.timeout : undefined,
+      });
+      break; // A step blocked by more than one open gate badges the first found.
+    }
+  }
+  return result;
+}
+
+/**
+ * Attaches a gate badge to any step whose id is in `gatesByStep` — the pure
+ * merge step `BdQueries.showMolecule` runs after its own batched `bd show`
+ * call settles, kept separate from `toMolDetail` so a caller with only the
+ * `mol show --parallel` payload (no gate data yet) still gets a fully valid
+ * `MolDetail` with every `step.gate` simply `undefined`.
+ */
+export function withGateBadges(steps: readonly MolStep[], gatesByStep: ReadonlyMap<string, MolStepGate>): MolStep[] {
+  return steps.map((step) => {
+    const gate = gatesByStep.get(step.issue.id);
+    return gate ? { ...step, gate } : step;
+  });
 }
 
 /**

@@ -1,0 +1,112 @@
+[
+  {
+    "id": "bd-mol-fixtures-scratch-mol-w0q",
+    "title": "Review auth",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "CuongBPV@fpt.com",
+    "created_at": "2026-08-24T15:06:49Z",
+    "created_by": "CuongBPV",
+    "updated_at": "2026-08-24T15:06:49Z",
+    "dependencies": [
+      {
+        "id": "bd-mol-fixtures-scratch-wb6",
+        "title": "Gate: human",
+        "description": "Ad-hoc gate blocking bd-mol-fixtures-scratch-mol-w0q\n\nReason: Need design review",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "gate",
+        "owner": "CuongBPV@fpt.com",
+        "created_at": "2026-08-24T15:07:31Z",
+        "created_by": "CuongBPV",
+        "updated_at": "2026-08-24T15:07:31Z",
+        "await_type": "human",
+        "dependency_type": "blocks"
+      }
+    ],
+    "dependent_count": 0,
+    "dependency_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "bd-mol-fixtures-scratch-mol-hqf",
+    "title": "Implement auth part B",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "CuongBPV@fpt.com",
+    "created_at": "2026-08-24T15:06:49Z",
+    "created_by": "CuongBPV",
+    "updated_at": "2026-08-24T15:06:49Z",
+    "dependencies": [
+      {
+        "id": "bd-mol-fixtures-scratch-qpb",
+        "title": "Gate: timer",
+        "description": "Ad-hoc gate blocking bd-mol-fixtures-scratch-mol-hqf\n\nReason: Cooldown",
+        "status": "open",
+        "priority": 2,
+        "issue_type": "gate",
+        "owner": "CuongBPV@fpt.com",
+        "created_at": "2026-08-24T15:07:46Z",
+        "created_by": "CuongBPV",
+        "updated_at": "2026-08-24T15:07:46Z",
+        "await_type": "timer",
+        "timeout": 7200000000000,
+        "dependency_type": "blocks"
+      }
+    ],
+    "dependent_count": 0,
+    "dependency_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "bd-mol-fixtures-scratch-mol-25d",
+    "title": "Implement auth part A",
+    "status": "in_progress",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "CuongBPV@fpt.com",
+    "created_at": "2026-08-24T15:06:49Z",
+    "created_by": "CuongBPV",
+    "started_at": "2026-08-24T15:07:31Z",
+    "updated_at": "2026-08-24T15:07:31Z",
+    "dependencies": [
+      {
+        "id": "bd-mol-fixtures-scratch-d33",
+        "title": "Gate: gh:pr 42",
+        "description": "Ad-hoc gate blocking bd-mol-fixtures-scratch-mol-25d\n\nReason: Wait PR 42",
+        "status": "closed",
+        "closed_at": "2026-08-24T22:10:00Z",
+        "priority": 2,
+        "issue_type": "gate",
+        "owner": "CuongBPV@fpt.com",
+        "created_at": "2026-08-24T15:07:47Z",
+        "created_by": "CuongBPV",
+        "updated_at": "2026-08-24T22:10:00Z",
+        "await_type": "gh:pr",
+        "await_id": "42",
+        "dependency_type": "blocks"
+      }
+    ],
+    "dependent_count": 0,
+    "dependency_count": 1,
+    "comment_count": 0
+  },
+  {
+    "id": "bd-mol-fixtures-scratch-mol-7ps",
+    "title": "Design auth",
+    "status": "closed",
+    "priority": 2,
+    "issue_type": "task",
+    "owner": "CuongBPV@fpt.com",
+    "created_at": "2026-08-24T15:06:49Z",
+    "created_by": "CuongBPV",
+    "started_at": "2026-08-24T15:07:29Z",
+    "closed_at": "2026-08-24T15:07:30Z",
+    "updated_at": "2026-08-24T15:07:30Z",
+    "dependent_count": 0,
+    "dependency_count": 0,
+    "comment_count": 0
+  }
+]

@@ -6,10 +6,12 @@
  */
 import { diffHistory, type HistoryEvent, type HistorySnapshot } from '../../shared/history-diff';
 import {
+  gatesByStepId,
   toMolDetail,
   toMolProgress,
   toMolWisp,
   toStaleIds,
+  withGateBadges,
   type MolDetail,
   type MolProgress,
   type MolSnapshot,
@@ -453,6 +455,50 @@ export class BdQueries {
    */
   async molShow(id: string): Promise<MolDetail> {
     return toMolDetail(await this.bd.json<unknown>(['mol', 'show', id, '--parallel']));
+  }
+
+  /**
+   * Composes the Molecules tab's detail view (step list) for one molecule:
+   * `bd mol show <id> --parallel` for the steps/parallel groups, a batched
+   * `bd show <step-id>...` for gate badging, and `bd mol progress <id>` for
+   * the progress header.
+   *
+   * The gate-show batch and progress read are each best-effort — a step's
+   * own `dependencies[]` is where a step's open gate is discoverable at all
+   * (verified live against bd 1.2.2, this bead, 2026-08-25: `mol show
+   * --parallel`'s own top-level `dependencies` array can never carry a gate
+   * edge, since `loadTemplateSubgraph` in beads' own `cmd/bd/template.go`
+   * drops any dependency whose other end — a gate here — is not already
+   * inside the molecule subgraph; a plain `bd show <step-id>... --json`
+   * batch call, by contrast, already returns each step's own dependency
+   * rows with the gate's fields inlined, no `--include-dependents` needed)
+   * — so either failing degrades only that part of `MolDetail` (no gate
+   * badges, or `progress: null`) rather than blanking the step list, the
+   * same per-call convention `molSnapshot` uses for a broken molecule's
+   * progress read. Only `bd mol show` itself — a real "this id doesn't
+   * exist" case — propagates.
+   */
+  async showMolecule(id: string): Promise<MolDetail> {
+    const rawShow = await this.bd.json<unknown>(['mol', 'show', id, '--parallel']);
+    const detail = toMolDetail(rawShow);
+
+    const stepIds = detail.steps.map((step) => step.issue.id);
+    if (stepIds.length > 0) {
+      try {
+        const rawSteps = await this.bd.json<unknown>(['show', ...stepIds]);
+        detail.steps = withGateBadges(detail.steps, gatesByStepId(rawSteps));
+      } catch {
+        // Gate badging is best-effort; the step list parsed above still renders.
+      }
+    }
+
+    try {
+      detail.progress = await this.molProgress(id);
+    } catch {
+      // Progress read failed; steps/parallel groups above still render.
+    }
+
+    return detail;
   }
 
   /**
