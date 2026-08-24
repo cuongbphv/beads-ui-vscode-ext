@@ -88,6 +88,12 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "beadsDashboard.createBead",
+        "title": "Create Issue…",
+        "category": "Beads",
+        "icon": "$(add)"
+      },
+      {
         "command": "beadsDashboard.refresh",
         "title": "Refresh",
         "category": "Beads",
@@ -161,9 +167,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "beadsDashboard.refresh",
+          "command": "beadsDashboard.createBead",
           "when": "view == beadsDashboard.tree",
           "group": "navigation@2"
+        },
+        {
+          "command": "beadsDashboard.refresh",
+          "when": "view == beadsDashboard.tree",
+          "group": "navigation@3"
         },
         {
           "command": "beadsDashboard.showOutput",
