@@ -296,3 +296,15 @@ export function typesOf(beads: Bead[]): string[] {
   for (const bead of beads) if (bead.issue_type) seen.add(bead.issue_type);
   return [...seen].sort((a, b) => a.localeCompare(b));
 }
+
+/**
+ * How many molecule-root issues are still active — the Overview stat card's
+ * count. `issue_type === 'molecule'` is a fixed engineering type (like the
+ * `'epic'` check in `groupByEpic`), not a user-extensible status, so it is
+ * safe to compare literally; "still active" is not, so it goes through
+ * `index.isDone` rather than any hardcoded status name. Free: molecule roots
+ * already ride along in `snapshot.beads`, no extra `bd` read.
+ */
+export function activeMoleculeCount(beads: Bead[], index: StatusIndex): number {
+  return beads.filter((bead) => bead.issue_type === 'molecule' && !index.isDone(bead.status)).length;
+}

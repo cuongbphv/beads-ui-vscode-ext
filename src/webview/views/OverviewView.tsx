@@ -4,10 +4,10 @@
  * Stat cards, six charts, and the two lists that answer the only questions
  * worth asking on arrival — what can I start, and what is stuck.
  */
-import { AlertTriangle, CheckCircle2, CircleDot, Clock, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleDot, Clock, FlaskConical, Zap } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 
-import { StatusIndex } from '../../shared/model';
+import { activeMoleculeCount, StatusIndex } from '../../shared/model';
 import type { Bead, DashboardSnapshot } from '../../shared/types';
 import { BeadCard } from '../components/bead-card';
 import {
@@ -58,13 +58,17 @@ export function OverviewView({
   const burnUp = useMemo(() => burnUpDensity(beads, index), [beads, index]);
   const workload = useMemo(() => workloadDensity(beads, index), [beads, index]);
 
+  // Molecule roots ride along in `snapshot.beads` already — no extra `bd`
+  // read, just a filter over data we already fetched for the other cards.
+  const activeMolecules = useMemo(() => activeMoleculeCount(beads, index), [beads, index]);
+
   return (
     <div className="@container h-full overflow-y-auto px-3 py-3">
-      {/* 1 → 2 → 5 columns by *container* width: a webview panel's width has
+      {/* 1 → 2 → 6 columns by *container* width: a webview panel's width has
           nothing to do with the viewport's. */}
       <section
         aria-label="Project statistics"
-        className="grid grid-cols-1 gap-2 @md:grid-cols-2 @3xl:grid-cols-5"
+        className="grid grid-cols-1 gap-2 @md:grid-cols-2 @3xl:grid-cols-6"
       >
         <StatCard
           icon={<CircleDot className="size-4" />}
@@ -99,6 +103,12 @@ export function OverviewView({
           value={stats.closed_issues}
           hint={`${percentDone(stats.closed_issues, stats.total_issues)}% of all issues`}
           tone="success"
+        />
+        <StatCard
+          icon={<FlaskConical className="size-4" />}
+          label="Molecules"
+          value={activeMolecules}
+          hint="active"
         />
       </section>
 
