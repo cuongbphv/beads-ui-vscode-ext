@@ -21,7 +21,7 @@
  */
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import path from 'node:path';
@@ -32,6 +32,7 @@ import { BdMutations } from '../extension/bd/mutations';
 import { BdQueries } from '../extension/bd/queries';
 import { PARENT_CHILD, toCategory } from '../shared/types';
 import type { Bead } from '../shared/types';
+import { removeScratchDirBestEffort } from './support/scratch-cleanup';
 
 /**
  * This file's own timeout, not the suite's.
@@ -419,13 +420,23 @@ describe('dependency edges (mutating: runs against an isolated scratch `bd` proj
   });
 
   afterAll(async () => {
-    // maxRetries/retryDelay: measured by hand — the embedded Dolt engine can
-    // still hold a file lock for a moment after the `bd` process that opened
-    // it has exited, which turns an immediate `rm` into a transient Windows
-    // EBUSY. Retrying a few times over ~3s clears it without leaving the
-    // scratch directory behind.
-    await rm(scratchDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
-  });
+    // The embedded Dolt engine can still hold a file lock for a moment
+    // after the `bd` process that opened it has exited, which turns an
+    // immediate `rm` into a transient Windows EBUSY. `fs.rm`'s own
+    // maxRetries/retryDelay retry that with a linear backoff (worst case
+    // retryDelay * maxRetries * (maxRetries + 1) / 2 ms — ~48s at these
+    // values), which is a much bigger budget than the ~3s this hook used to
+    // give it. Under heavy concurrent load — many scratch bd/Dolt projects
+    // spinning up at once across parallel bead-fleet batch runs — even that
+    // budget has been observed to run out (beads-ui-vscode-ext-iy3): every
+    // assertion in this suite had already passed, but the bare `rm` still
+    // threw and failed the whole run. removeScratchDirBestEffort keeps the
+    // retry (the mkdtemp+bd-init isolation itself is untouched — this is
+    // only the cleanup step afterwards) but warns instead of throwing if
+    // the directory is still locked once the budget is exhausted, so a
+    // transient Windows lock can no longer turn an all-green suite red.
+    await removeScratchDirBestEffort(scratchDir, { maxRetries: 15, retryDelay: 400 });
+  }, 60_000);
 
   /** Raw `bd --json`, scoped to the isolated scratch project rather than this file's shared `CWD`. */
   async function scratchJson<T>(args: string[]): Promise<T> {
