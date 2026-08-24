@@ -907,3 +907,43 @@ describe('BdQueries.doltStatus', () => {
     }
   });
 });
+
+describe('BdQueries.eventsTail', () => {
+  it('sends --since and --limit as separate flags, exactly as ChangeProbeStrategy needs', async () => {
+    const fake = new FakeBd();
+
+    await queries(fake).eventsTail(7, 50);
+
+    expect(fake.argv[0]).toEqual(['events', 'tail', '--since', '7', '--limit', '50']);
+  });
+
+  it('reads a keyed {events: [...]} payload and reports the highest seq seen', async () => {
+    const fake = new FakeBd();
+    fake.responses = { events: { events: [{ seq: 3 }, { seq: 9 }, { seq: 5 }] } };
+
+    const page = await queries(fake).eventsTail(0, 10);
+
+    expect(page.events).toHaveLength(3);
+    expect(page.latestSeq).toBe(9);
+  });
+
+  it('falls back to sinceSeq as latestSeq when the page is empty', async () => {
+    const fake = new FakeBd();
+    fake.responses = { events: { events: [] } };
+
+    const page = await queries(fake).eventsTail(12, 10);
+
+    expect(page.events).toEqual([]);
+    expect(page.latestSeq).toBe(12);
+  });
+
+  it('also accepts a bare array, like several other bd commands', async () => {
+    const fake = new FakeBd();
+    fake.responses = { events: [{ seq: 4 }] };
+
+    const page = await queries(fake).eventsTail(0, 10);
+
+    expect(page.events).toEqual([{ seq: 4 }]);
+    expect(page.latestSeq).toBe(4);
+  });
+});

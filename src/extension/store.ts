@@ -12,7 +12,8 @@ import type { RpcError } from '../shared/protocol';
 import { BdService, BdError } from './bd/BdService';
 import { BdQueries } from './bd/queries';
 import { BdMutations } from './bd/mutations';
-import { Debouncer, PollGate, effectivePollSeconds, pollingEnabled } from './poll-gate';
+import { ChangeProbeStrategy } from './bd/change-probe';
+import { Debouncer, effectivePollSeconds, pollingEnabled } from './poll-gate';
 
 export interface StoreState {
   snapshot?: DashboardSnapshot;
@@ -90,8 +91,11 @@ export class BeadsStore implements vscode.Disposable {
 
   /** How many views are currently on screen. Polling runs only above zero. */
   private observers = 0;
-  /** Fingerprint bookkeeping — the part worth testing without an editor. */
-  private readonly gate = new PollGate(FULL_RESYNC_TICKS);
+  /**
+   * The change probe: decides whether a tick is news, and owns the 12-tick
+   * full-resync backstop. See `src/extension/bd/change-probe.ts`.
+   */
+  private readonly changeProbe: ChangeProbeStrategy;
 
   /**
    * Whether the `.beads/last-touched` watcher has fired at least once.
@@ -121,6 +125,7 @@ export class BeadsStore implements vscode.Disposable {
     });
     this.queries = new BdQueries(this.bd);
     this.mutations = new BdMutations(this.bd);
+    this.changeProbe = new ChangeProbeStrategy(this.queries, FULL_RESYNC_TICKS);
 
     // Any write we make invalidates the cache immediately — this is the
     // "refresh after mutation" half of DEC-004.
@@ -224,7 +229,7 @@ export class BeadsStore implements vscode.Disposable {
         const snapshot = await this.queries.snapshot(limit);
         // The data is now current by definition; let the next probe re-establish
         // the fingerprint instead of guessing it from these rows.
-        this.gate.reset();
+        this.changeProbe.reset();
         return this.setState({ snapshot, loading: false, error: undefined });
       } catch (error) {
         const rpcError = toRpcError(error);
@@ -251,20 +256,19 @@ export class BeadsStore implements vscode.Disposable {
    * One cycle of the change probe.
    *
    * Public for the unit suite, which drives it directly rather than waiting on a
-   * timer.
+   * timer. Delegates the "is this news?" decision to `changeProbe` (see
+   * `src/extension/bd/change-probe.ts`) — that object owns the fingerprint
+   * bookkeeping and the 12-tick full-resync backstop; this method's own job is
+   * unchanged from before extraction: skip while a refresh is already in
+   * flight, and never let a failed probe blank the board or spam the log.
    */
   async tick(): Promise<void> {
     // A refresh already in flight will answer the same question, and its
     // completion resets the fingerprint.
     if (this.pending) return;
 
-    if (this.gate.dueForResync()) {
-      await this.refresh();
-      return;
-    }
-
     try {
-      if (this.gate.changed(await this.queries.watermark())) await this.refresh();
+      if (await this.changeProbe.shouldRefresh()) await this.refresh();
     } catch (error) {
       // A probe that fails is not news: `refresh()` owns error reporting, and a
       // transient failure must not blank the board or spam the log every tick.

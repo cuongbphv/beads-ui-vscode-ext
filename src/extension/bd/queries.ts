@@ -45,6 +45,16 @@ interface RawHistoryCommit {
   Issue?: Partial<Bead>;
 }
 
+/**
+ * One page of the dormant `events tail` probe. See `BdQueries.eventsTail`
+ * and `ChangeProbeStrategy` (`./change-probe.ts`) for why this exists.
+ */
+export interface EventsTailPage {
+  events: Array<{ seq?: number }>;
+  /** Highest `seq` seen in this page, or the caller's `sinceSeq` if the page was empty. */
+  latestSeq: number;
+}
+
 /** bd wraps several payloads in a keyed object rather than returning a bare array. */
 function pickArray<T>(payload: unknown, ...keys: string[]): T[] {
   if (Array.isArray(payload)) return payload as T[];
@@ -303,6 +313,38 @@ export class BdQueries {
     );
     const newest = rows[0];
     return newest ? `${newest.id}@${newest.updated_at ?? ''}` : '';
+  }
+
+  /**
+   * `bd events tail --since <sinceSeq> --limit <limit>` — the dormant
+   * fast-path probe for `ChangeProbeStrategy` (`./change-probe.ts`).
+   *
+   * [Unverified/speculative] `events` is not a real `bd` subcommand on any
+   * version this extension has been measured against: bd 1.2.2 answers
+   * `Error: unknown command "events" for "bd"` (exit 1, confirmed by running
+   * it directly). This method exists only so the strategy has a concrete
+   * argv to call if a future `bd` ships a `--json` change journal. The
+   * response shape assumed here — a keyed `{events: [...]}` payload (falling
+   * back to a bare array, the same duality `pickArray` already handles for
+   * other bd commands) of rows carrying a numeric `seq` — is a guess, not a
+   * verified contract, and will need re-checking against whatever a real
+   * `bd events tail --json` actually returns before this path can ever fire.
+   */
+  async eventsTail(sinceSeq: number, limit: number): Promise<EventsTailPage> {
+    const raw = await this.bd.json<unknown>([
+      'events',
+      'tail',
+      '--since',
+      String(sinceSeq),
+      '--limit',
+      String(limit),
+    ]);
+    const events = pickArray<{ seq?: number }>(raw, 'events');
+    const latestSeq = events.reduce(
+      (max, event) => (typeof event.seq === 'number' && event.seq > max ? event.seq : max),
+      sinceSeq,
+    );
+    return { events, latestSeq };
   }
 
   /**
