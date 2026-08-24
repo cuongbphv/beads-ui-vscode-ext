@@ -13,6 +13,10 @@ describe('MUTATING_METHODS', () => {
   it('excludes getHistory — it is a read, deriving events from bd history without writing anything', () => {
     expect(MUTATING_METHODS.has('getHistory')).toBe(false);
   });
+
+  it('includes updateText, so the host refetches and broadcasts after a text field update', () => {
+    expect(MUTATING_METHODS.has('updateText')).toBe(true);
+  });
 });
 
 describe('resolveDashboardTab', () => {

@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RouterHost } from '../extension/panel/router';
 import type { BeadsStore } from '../extension/store';
 import type { TranscriptBackfill } from '../shared/fleet';
-import type { CreateBeadParams, RpcRequest } from '../shared/protocol';
+import type { CreateBeadParams, RpcRequest, TextField } from '../shared/protocol';
 
 vi.mock('vscode', () => ({
   env: { clipboard: { writeText: vi.fn() } },
@@ -34,6 +34,10 @@ class FakeMutations {
   async create(input: CreateBeadParams): Promise<{ id: string }> {
     this.calls.push({ method: 'create', args: [input] });
     return { id: 'bd-new-1' };
+  }
+
+  async updateText(id: string, field: TextField, text: string): Promise<void> {
+    this.calls.push({ method: 'updateText', args: [id, field, text] });
   }
 }
 
@@ -144,6 +148,70 @@ describe('router appendNotes', () => {
       makeStore(mutations),
       host,
       request('appendNotes', { id: 'bd-1', text: '' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router updateText', () => {
+  it('calls mutations.updateText with the exact narrowed args and returns ok', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('updateText', { id: 'bd-1', field: 'description', text: 'Updated description.' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([
+      { method: 'updateText', args: ['bd-1', 'description', 'Updated description.'] },
+    ]);
+  });
+
+  it('allows an empty text for notes — bd\'s documented "clear"', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('updateText', { id: 'bd-1', field: 'notes', text: '' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'updateText', args: ['bd-1', 'notes', ''] }]);
+  });
+
+  it('rejects an empty text for field "title" before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('updateText', { id: 'bd-1', field: 'title', text: '' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a field outside the allowlist before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('updateText', { id: 'bd-1', field: 'assignee', text: 'ana' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+
+  it('rejects a missing id before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('updateText', { field: 'notes', text: 'x' }),
     );
 
     expect(response.ok).toBe(false);

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { narrowCreateParams, requireDueDate, requireTargetId } from '../extension/panel/param-validation';
+import {
+  narrowCreateParams,
+  narrowUpdateTextParams,
+  requireDueDate,
+  requireTargetId,
+  requireTextField,
+} from '../extension/panel/param-validation';
+import type { TextField } from '../shared/protocol';
 
 describe('requireDueDate (router param narrowing)', () => {
   it('accepts a well-formed YYYY-MM-DD date', () => {
@@ -48,6 +55,64 @@ describe('requireTargetId (router param narrowing)', () => {
     expect(() => requireTargetId('', 'targetId')).toThrow();
     expect(() => requireTargetId(undefined, 'targetId')).toThrow();
     expect(() => requireTargetId(123, 'targetId')).toThrow();
+  });
+});
+
+describe('requireTextField (router param narrowing)', () => {
+  it('accepts each of the five allowlisted fields', () => {
+    const fields: TextField[] = ['title', 'description', 'design', 'acceptance', 'notes'];
+    for (const field of fields) {
+      expect(requireTextField(field, 'field')).toBe(field);
+    }
+  });
+
+  it('rejects a value outside the allowlist and names the parameter in the error', () => {
+    expect(() => requireTextField('assignee', 'field')).toThrow(/"field"/);
+    expect(() => requireTextField('status', 'field')).toThrow(/"field"/);
+  });
+
+  it('rejects a non-string value, including undefined', () => {
+    expect(() => requireTextField(undefined, 'field')).toThrow();
+    expect(() => requireTextField(42, 'field')).toThrow();
+  });
+});
+
+describe('narrowUpdateTextParams (router param narrowing)', () => {
+  it('narrows a well-formed request for each field', () => {
+    expect(narrowUpdateTextParams({ id: 'bd-1', field: 'description', text: 'It polls too eagerly.' })).toEqual({
+      id: 'bd-1',
+      field: 'description',
+      text: 'It polls too eagerly.',
+    });
+  });
+
+  it('rejects an empty text for field "title"', () => {
+    expect(() => narrowUpdateTextParams({ id: 'bd-1', field: 'title', text: '' })).toThrow(/"text"/);
+  });
+
+  it('rejects a whitespace-only text for field "title"', () => {
+    expect(() => narrowUpdateTextParams({ id: 'bd-1', field: 'title', text: '   ' })).toThrow(/"text"/);
+  });
+
+  it('accepts an empty text for description, design, acceptance and notes — bd\'s documented "clear"', () => {
+    for (const field of ['description', 'design', 'acceptance', 'notes'] as TextField[]) {
+      expect(narrowUpdateTextParams({ id: 'bd-1', field, text: '' })).toEqual({ id: 'bd-1', field, text: '' });
+    }
+  });
+
+  it('rejects a field outside the allowlist', () => {
+    expect(() => narrowUpdateTextParams({ id: 'bd-1', field: 'assignee', text: 'x' })).toThrow(/"field"/);
+  });
+
+  it('rejects a missing or blank id', () => {
+    expect(() => narrowUpdateTextParams({ field: 'title', text: 'ok' })).toThrow(/"id"/);
+    expect(() => narrowUpdateTextParams({ id: '', field: 'title', text: 'ok' })).toThrow(/"id"/);
+    expect(() => narrowUpdateTextParams({ id: '   ', field: 'title', text: 'ok' })).toThrow(/"id"/);
+  });
+
+  it('rejects a missing or non-string text', () => {
+    expect(() => narrowUpdateTextParams({ id: 'bd-1', field: 'notes' })).toThrow(/"text"/);
+    expect(() => narrowUpdateTextParams({ id: 'bd-1', field: 'notes', text: 42 })).toThrow(/"text"/);
   });
 });
 

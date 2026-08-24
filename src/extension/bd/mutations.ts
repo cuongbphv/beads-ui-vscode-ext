@@ -2,15 +2,25 @@
  * Every write the extension performs against beads.
  *
  * The scope is deliberately narrow — create, status, priority, assignee, due, estimate,
- * close — which is the "view + quick actions + create" contract. Deleting and
- * reparenting issues stay in the `bd` CLI where the user can see exactly what they ran.
+ * close, comment/notes, text fields (title/description/design/acceptance/notes), claim
+ * and gate resolution — which is the "view + quick actions + create" contract. Deleting
+ * and reparenting issues stay in the `bd` CLI where the user can see exactly what they ran.
  *
  * Nothing here runs `bd init`, `bd dolt push` or `bd dolt pull`: syncing is the
  * user's decision, never a side effect of clicking a card.
  */
-import type { CreateBeadParams } from '../../shared/protocol';
+import type { CreateBeadParams, TextField } from '../../shared/protocol';
 import type { Priority } from '../../shared/types';
 import type { BdService } from './BdService';
+
+/** `updateText`'s field-to-flag mapping — CLI shape, not beads vocabulary. */
+const TEXT_FLAGS: Record<TextField, string> = {
+  title: '--title',
+  description: '--description',
+  design: '--design',
+  acceptance: '--acceptance',
+  notes: '--notes',
+};
 
 /** Fires after any successful write so views can refetch. */
 export type MutationListener = (changedIds: string[]) => void;
@@ -101,6 +111,16 @@ export class BdMutations {
    */
   async setEstimate(id: string, minutes: number): Promise<void> {
     await this.run(['update', id, '--estimate', String(Math.round(minutes))], id);
+  }
+
+  /**
+   * Replace one text-shaped field wholesale. The router narrows `field`
+   * against the allowlist and rejects an empty `text` for `title` before
+   * this is ever called, so this trusts the caller and just maps `field`
+   * to its flag via `TEXT_FLAGS`.
+   */
+  async updateText(id: string, field: TextField, text: string): Promise<void> {
+    await this.run(['update', id, TEXT_FLAGS[field], text], id);
   }
 
   /**

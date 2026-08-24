@@ -7,7 +7,7 @@
  * file imports nothing at runtime — no `vscode`, no `react` — and never
  * will; the one `import type` below is erased at compile time.
  */
-import type { CreateBeadParams } from '../../shared/protocol';
+import type { CreateBeadParams, TextField } from '../../shared/protocol';
 
 const DUE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -44,6 +44,49 @@ export function requireTargetId(value: unknown, field: string): string {
     throw new Error(`Invalid parameter "${field}": expected only letters, digits, ':', '.', '_', '-'.`);
   }
   return value;
+}
+
+/**
+ * `updateText`'s allowlist of settable fields. This is CLI shape, not beads
+ * vocabulary — the fixed set of dedicated `bd update` flags — so hardcoding
+ * it here (unlike `type`/`priority`/`status` elsewhere in this file) is
+ * correct: there is no runtime source of truth to defer to.
+ */
+const TEXT_FIELDS: readonly TextField[] = ['title', 'description', 'design', 'acceptance', 'notes'];
+
+export function requireTextField(value: unknown, field: string): TextField {
+  if (typeof value === 'string' && (TEXT_FIELDS as readonly string[]).includes(value)) {
+    return value as TextField;
+  }
+  throw new Error(`Invalid parameter "${field}": expected one of ${TEXT_FIELDS.join(', ')}.`);
+}
+
+export interface UpdateTextParams {
+  id: string;
+  field: TextField;
+  text: string;
+}
+
+/**
+ * Narrows the params for `updateText` into the exact shape
+ * `BdMutations.updateText` builds an argv from.
+ *
+ * `id` reuses `requireTargetId`'s non-blank check. `text` must be a string;
+ * it is rejected only when blank AND `field === 'title'` — an empty title
+ * is nonsensical and bd will not accept one, but the other four fields
+ * accept `''` as bd's documented way to clear them, so this deliberately
+ * does not go through `requireString`-style blank rejection for those.
+ */
+export function narrowUpdateTextParams(params: Record<string, unknown>): UpdateTextParams {
+  const id = requireTargetId(params.id, 'id');
+  const field = requireTextField(params.field, 'field');
+  if (typeof params.text !== 'string') {
+    throw new Error('Missing required parameter "text".');
+  }
+  if (field === 'title' && params.text.trim() === '') {
+    throw new Error('Invalid parameter "text": title must not be empty.');
+  }
+  return { id, field, text: params.text };
 }
 
 /**

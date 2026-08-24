@@ -17,7 +17,7 @@ import {
 import { toPriority } from '../../shared/types';
 import type { BeadsStore } from '../store';
 import { toRpcError } from '../store';
-import { narrowCreateParams, requireDueDate, requireTargetId } from './param-validation';
+import { narrowCreateParams, narrowUpdateTextParams, requireDueDate, requireTargetId } from './param-validation';
 
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
@@ -134,6 +134,15 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'appendNotes':
       await mutations.appendNotes(id(), requireString(params.text, 'text'));
       return { ok: true };
+
+    case 'updateText': {
+      // narrowUpdateTextParams throws before any argv is built when the
+      // field is outside the allowlist, the id is blank, or an empty text
+      // reaches the one field (title) that must not accept one.
+      const narrowed = narrowUpdateTextParams(params);
+      await mutations.updateText(narrowed.id, narrowed.field, narrowed.text);
+      return { ok: true };
+    }
 
     case 'createBead':
       // narrowCreateParams throws before any argv is built when the shape is

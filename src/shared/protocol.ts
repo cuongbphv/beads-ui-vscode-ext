@@ -15,6 +15,15 @@ import type {
 } from './types';
 
 /**
+ * The text-shaped fields `bd update` can set with a single dedicated flag
+ * (`--title`, `--description`, `--design`, `--acceptance`, `--notes`).
+ * Hardcoded here deliberately: unlike status/type/priority this is not
+ * beads' user-extensible vocabulary, it is CLI shape — the fixed set of
+ * flags `bd update` exposes for whole-field text replacement.
+ */
+export type TextField = 'title' | 'description' | 'design' | 'acceptance' | 'notes';
+
+/**
  * Params for `createBead`, shared by the router's narrowing helper and
  * `BdMutations.create` so the narrowed shape and the argv builder cannot
  * drift apart.
@@ -122,6 +131,16 @@ export interface RpcMethods {
     params: { id: string; text: string };
     result: { ok: true };
   };
+  /**
+   * Replace one text-shaped field wholesale (`bd update <id> --<field> <text>`).
+   * `title` rejects an empty `text` — an empty title is nonsensical and bd
+   * itself will not accept one; the other four fields accept `''`, which is
+   * bd's documented way to clear them.
+   */
+  updateText: {
+    params: { id: string; field: TextField; text: string };
+    result: { ok: true };
+  };
   /** Create an issue (`bd create <title> --silent`); resolves with the new id. */
   createBead: {
     params: CreateBeadParams;
@@ -167,6 +186,7 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'closeBead',
   'addComment',
   'appendNotes',
+  'updateText',
   'createBead',
 ]);
 

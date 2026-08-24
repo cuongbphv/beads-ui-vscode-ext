@@ -530,3 +530,56 @@ describe('BdMutations comment and notes writes', () => {
     expect(changed).toEqual([['bd-a1']]);
   });
 });
+
+describe('BdMutations.updateText', () => {
+  function mutations(fake: FakeBd): BdMutations {
+    return new BdMutations(fake as unknown as BdService);
+  }
+
+  it('sets the title with --title', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).updateText('bd-a1', 'title', 'New title');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--title', 'New title']]);
+  });
+
+  it('sets the description with --description', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).updateText('bd-a1', 'description', 'New description.');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--description', 'New description.']]);
+  });
+
+  it('sets the design with --design', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).updateText('bd-a1', 'design', 'New design.');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--design', 'New design.']]);
+  });
+
+  it('sets the acceptance criteria with --acceptance', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).updateText('bd-a1', 'acceptance', 'New acceptance.');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--acceptance', 'New acceptance.']]);
+  });
+
+  it('sets notes with --notes', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).updateText('bd-a1', 'notes', 'New notes.');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--notes', 'New notes.']]);
+  });
+
+  it('clears a clearable field with an empty string', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).updateText('bd-a1', 'notes', '');
+    expect(fake.argv).toEqual([['update', 'bd-a1', '--notes', '']]);
+  });
+
+  it('notifies listeners with the changed id after a successful update', async () => {
+    const fake = new FakeBd();
+    const changed: string[][] = [];
+    const bd = mutations(fake);
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.updateText('bd-a1', 'description', 'Updated.');
+
+    expect(changed).toEqual([['bd-a1']]);
+  });
+});
