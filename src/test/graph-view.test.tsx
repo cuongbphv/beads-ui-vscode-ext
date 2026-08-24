@@ -13,6 +13,44 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 
+interface AddDependencyCall {
+  id: string;
+  dependsOn: string;
+  type?: string;
+}
+
+const rpc = vi.hoisted(() => ({
+  addDependencyCalls: new Array<AddDependencyCall>(),
+  /** Resolves immediately unless a test overrides this with a rejecting promise. */
+  addDependencyResult: (): Promise<{ ok: true }> => Promise.resolve({ ok: true }),
+}));
+
+vi.mock('../webview/bridge/rpc', () => ({
+  call: (method: string, params: unknown) => {
+    if (method === 'addDependency') {
+      rpc.addDependencyCalls.push(params as AddDependencyCall);
+      return rpc.addDependencyResult();
+    }
+    return Promise.resolve({});
+  },
+  asRpcError: (error: unknown) => ({ kind: 'unknown', message: String(error) }),
+}));
+
+interface Notified {
+  text: string;
+  tone: string;
+}
+
+const toast = vi.hoisted(() => ({ messages: new Array<Notified>() }));
+
+vi.mock('../webview/components/toast', () => ({
+  useToast: () => ({
+    notify: (text: string, tone = 'info') => {
+      toast.messages.push({ text, tone });
+    },
+  }),
+}));
+
 let mountedRoot: ReturnType<typeof createRoot> | undefined;
 let container: HTMLDivElement | undefined;
 
@@ -28,6 +66,9 @@ afterEach(async () => {
   }
   document.body.replaceChildren();
   container = undefined;
+  rpc.addDependencyCalls.length = 0;
+  rpc.addDependencyResult = () => Promise.resolve({ ok: true });
+  toast.messages.length = 0;
 });
 
 function bead(partial: Partial<Bead> & Pick<Bead, 'id'>): Bead {
@@ -274,6 +315,110 @@ describe('GraphView', () => {
       expect(root.querySelector<HTMLButtonElement>('button[title="Reset layout"]')?.disabled).toBe(
         true,
       );
+    });
+  });
+
+  describe('link mode', () => {
+    async function arm(root: HTMLDivElement): Promise<void> {
+      const linkButton = root.querySelector<HTMLButtonElement>('button[title="Link two issues"]');
+      await act(async () => linkButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    }
+
+    function kindButton(root: HTMLDivElement, kind: string): HTMLButtonElement | undefined {
+      const dialog = root.querySelector('[role="dialog"]');
+      return Array.from(dialog?.querySelectorAll('button') ?? []).find(
+        (button) => button.textContent === kind,
+      );
+    }
+
+    it('toggles armed state via the Link toolbar button', async () => {
+      const root = await mount();
+      const linkButton = root.querySelector<HTMLButtonElement>('button[title="Link two issues"]');
+      expect(linkButton?.getAttribute('aria-pressed')).toBe('false');
+
+      await arm(root);
+
+      const armedButton = root.querySelector<HTMLButtonElement>('button[title="Cancel linking issues"]');
+      expect(armedButton?.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('renders a ring highlight on the first node clicked as the link source', async () => {
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(nodeA?.getAttribute('aria-label')).toContain('(link source)');
+      expect(nodeA?.querySelector('rect[stroke="var(--color-accent)"]')).not.toBeNull();
+    });
+
+    it('calls addDependency with the source, target, and chosen kind on a source-then-target click sequence', async () => {
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await act(async () => nodeB?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      const blocksButton = kindButton(root, 'blocks');
+      expect(blocksButton).not.toBeUndefined();
+
+      await act(async () => blocksButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(rpc.addDependencyCalls).toEqual([{ id: 'a', dependsOn: 'b', type: 'blocks' }]);
+    });
+
+    it('disarms on Escape, clearing the source selection and closing an open popover', async () => {
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await act(async () => nodeB?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      expect(root.querySelector('[role="dialog"]')).not.toBeNull();
+
+      await act(async () =>
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+      );
+
+      expect(root.querySelector('[role="dialog"]')).toBeNull();
+      expect(root.querySelector('[aria-label^="a:"]')?.getAttribute('aria-label')).not.toContain(
+        '(link source)',
+      );
+      expect(root.querySelector('button[title="Link two issues"]')).not.toBeNull();
+      expect(rpc.addDependencyCalls).toHaveLength(0);
+    });
+
+    it('does not select the bead in the detail pane while armed', async () => {
+      const onSelect = vi.fn();
+      const root = await mount({ onSelect });
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('renders a cycle-rejection RpcError as a toast, the same path every other mutating RPC uses', async () => {
+      rpc.addDependencyResult = () => Promise.reject(new Error('would create a cycle'));
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await act(async () => nodeB?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      const blocksButton = kindButton(root, 'blocks');
+      await act(async () => blocksButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(toast.messages).toEqual([{ text: 'Error: would create a cycle', tone: 'error' }]);
+      // The popover closes regardless of outcome, per the "always closes" contract.
+      expect(root.querySelector('[role="dialog"]')).toBeNull();
     });
   });
 });
