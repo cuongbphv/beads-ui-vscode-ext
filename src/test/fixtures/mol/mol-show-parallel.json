@@ -1,0 +1,226 @@
+{
+  "bonded_from": null,
+  "dependencies": [
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-yh9",
+      "issue_id": "bd-mol-fixtures-scratch-mol-w0q",
+      "metadata": "{}",
+      "type": "parent-child"
+    },
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-hqf",
+      "issue_id": "bd-mol-fixtures-scratch-mol-w0q",
+      "metadata": "{}",
+      "type": "blocks"
+    },
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-25d",
+      "issue_id": "bd-mol-fixtures-scratch-mol-w0q",
+      "metadata": "{}",
+      "type": "blocks"
+    },
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-yh9",
+      "issue_id": "bd-mol-fixtures-scratch-mol-hqf",
+      "metadata": "{}",
+      "type": "parent-child"
+    },
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-7ps",
+      "issue_id": "bd-mol-fixtures-scratch-mol-hqf",
+      "metadata": "{}",
+      "type": "blocks"
+    },
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-yh9",
+      "issue_id": "bd-mol-fixtures-scratch-mol-7ps",
+      "metadata": "{}",
+      "type": "parent-child"
+    },
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-7ps",
+      "issue_id": "bd-mol-fixtures-scratch-mol-25d",
+      "metadata": "{}",
+      "type": "blocks"
+    },
+    {
+      "created_at": "2026-08-24T22:06:49Z",
+      "created_by": "CuongBPV",
+      "depends_on_id": "bd-mol-fixtures-scratch-mol-yh9",
+      "issue_id": "bd-mol-fixtures-scratch-mol-25d",
+      "metadata": "{}",
+      "type": "parent-child"
+    }
+  ],
+  "is_compound": false,
+  "issues": [
+    {
+      "created_at": "2026-08-24T15:06:49Z",
+      "description": "Minimal fixture-capture workflow for the beads-ui vscode extension tests.",
+      "id": "bd-mol-fixtures-scratch-mol-yh9",
+      "issue_type": "molecule",
+      "priority": 2,
+      "status": "open",
+      "title": "fixdemo",
+      "updated_at": "2026-08-24T15:06:49Z"
+    },
+    {
+      "created_at": "2026-08-24T15:06:49Z",
+      "description": "Human review of auth.",
+      "id": "bd-mol-fixtures-scratch-mol-w0q",
+      "issue_type": "task",
+      "priority": 2,
+      "status": "open",
+      "title": "Review auth",
+      "updated_at": "2026-08-24T15:06:49Z"
+    },
+    {
+      "created_at": "2026-08-24T15:06:49Z",
+      "description": "Build part B of auth.",
+      "id": "bd-mol-fixtures-scratch-mol-hqf",
+      "issue_type": "task",
+      "priority": 2,
+      "status": "open",
+      "title": "Implement auth part B",
+      "updated_at": "2026-08-24T15:06:49Z"
+    },
+    {
+      "assignee": "CuongBPV",
+      "close_reason": "Closed",
+      "closed_at": "2026-08-24T15:07:30Z",
+      "created_at": "2026-08-24T15:06:49Z",
+      "description": "Sketch the auth feature.",
+      "id": "bd-mol-fixtures-scratch-mol-7ps",
+      "issue_type": "task",
+      "priority": 2,
+      "started_at": "2026-08-24T15:07:29Z",
+      "status": "closed",
+      "title": "Design auth",
+      "updated_at": "2026-08-24T15:07:30Z"
+    },
+    {
+      "assignee": "CuongBPV",
+      "created_at": "2026-08-24T15:06:49Z",
+      "description": "Build part A of auth.",
+      "id": "bd-mol-fixtures-scratch-mol-25d",
+      "issue_type": "task",
+      "priority": 2,
+      "started_at": "2026-08-24T15:07:31Z",
+      "status": "in_progress",
+      "title": "Implement auth part A",
+      "updated_at": "2026-08-24T15:07:31Z"
+    }
+  ],
+  "parallel": {
+    "molecule_id": "bd-mol-fixtures-scratch-mol-yh9",
+    "parallel_groups": {
+      "group-1": [
+        "bd-mol-fixtures-scratch-mol-yh9",
+        "bd-mol-fixtures-scratch-mol-hqf",
+        "bd-mol-fixtures-scratch-mol-25d",
+        "bd-mol-fixtures-scratch-mol-7ps"
+      ]
+    },
+    "ready_steps": 3,
+    "steps": {
+      "bd-mol-fixtures-scratch-mol-25d": {
+        "blocked_by": [],
+        "blocks": [
+          "bd-mol-fixtures-scratch-mol-w0q"
+        ],
+        "can_parallel": [
+          "bd-mol-fixtures-scratch-mol-7ps",
+          "bd-mol-fixtures-scratch-mol-hqf",
+          "bd-mol-fixtures-scratch-mol-yh9"
+        ],
+        "is_ready": true,
+        "parallel_group": "group-1",
+        "status": "in_progress",
+        "step_id": "bd-mol-fixtures-scratch-mol-25d"
+      },
+      "bd-mol-fixtures-scratch-mol-7ps": {
+        "blocked_by": [],
+        "blocks": [
+          "bd-mol-fixtures-scratch-mol-25d",
+          "bd-mol-fixtures-scratch-mol-hqf"
+        ],
+        "can_parallel": [
+          "bd-mol-fixtures-scratch-mol-25d",
+          "bd-mol-fixtures-scratch-mol-hqf",
+          "bd-mol-fixtures-scratch-mol-yh9"
+        ],
+        "is_ready": false,
+        "parallel_group": "group-1",
+        "status": "closed",
+        "step_id": "bd-mol-fixtures-scratch-mol-7ps"
+      },
+      "bd-mol-fixtures-scratch-mol-hqf": {
+        "blocked_by": [],
+        "blocks": [
+          "bd-mol-fixtures-scratch-mol-w0q"
+        ],
+        "can_parallel": [
+          "bd-mol-fixtures-scratch-mol-25d",
+          "bd-mol-fixtures-scratch-mol-7ps",
+          "bd-mol-fixtures-scratch-mol-yh9"
+        ],
+        "is_ready": true,
+        "parallel_group": "group-1",
+        "status": "open",
+        "step_id": "bd-mol-fixtures-scratch-mol-hqf"
+      },
+      "bd-mol-fixtures-scratch-mol-w0q": {
+        "blocked_by": [
+          "bd-mol-fixtures-scratch-mol-25d",
+          "bd-mol-fixtures-scratch-mol-hqf"
+        ],
+        "blocks": [],
+        "can_parallel": null,
+        "is_ready": false,
+        "parallel_group": "",
+        "status": "open",
+        "step_id": "bd-mol-fixtures-scratch-mol-w0q"
+      },
+      "bd-mol-fixtures-scratch-mol-yh9": {
+        "blocked_by": [],
+        "blocks": [],
+        "can_parallel": [
+          "bd-mol-fixtures-scratch-mol-25d",
+          "bd-mol-fixtures-scratch-mol-7ps",
+          "bd-mol-fixtures-scratch-mol-hqf"
+        ],
+        "is_ready": true,
+        "parallel_group": "group-1",
+        "status": "open",
+        "step_id": "bd-mol-fixtures-scratch-mol-yh9"
+      }
+    },
+    "total_steps": 5
+  },
+  "root": {
+    "created_at": "2026-08-24T15:06:49Z",
+    "description": "Minimal fixture-capture workflow for the beads-ui vscode extension tests.",
+    "id": "bd-mol-fixtures-scratch-mol-yh9",
+    "issue_type": "molecule",
+    "priority": 2,
+    "status": "open",
+    "title": "fixdemo",
+    "updated_at": "2026-08-24T15:06:49Z"
+  },
+  "schema_version": 1,
+  "variables": null
+}

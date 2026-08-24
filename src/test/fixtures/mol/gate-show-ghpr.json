@@ -1,0 +1,15 @@
+{
+  "await_id": "42",
+  "await_type": "gh:pr",
+  "created_at": "2026-08-24T15:07:47Z",
+  "created_by": "CuongBPV",
+  "description": "Ad-hoc gate blocking bd-mol-fixtures-scratch-mol-25d\n\nReason: Wait PR 42",
+  "id": "bd-mol-fixtures-scratch-d33",
+  "issue_type": "gate",
+  "owner": "CuongBPV@fpt.com",
+  "priority": 2,
+  "schema_version": 1,
+  "status": "open",
+  "title": "Gate: gh:pr 42",
+  "updated_at": "2026-08-24T15:07:47Z"
+}

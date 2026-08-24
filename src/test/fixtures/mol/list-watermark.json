@@ -1,0 +1,44 @@
+[
+  {
+    "id": "bd-mol-fixtures-scratch-mol-25d",
+    "title": "Implement auth part A",
+    "description": "Build part A of auth.",
+    "status": "in_progress",
+    "priority": 2,
+    "issue_type": "task",
+    "assignee": "CuongBPV",
+    "created_at": "2026-08-24T15:06:49Z",
+    "updated_at": "2026-08-24T15:07:31Z",
+    "started_at": "2026-08-24T15:07:31Z",
+    "dependencies": [
+      {
+        "issue_id": "bd-mol-fixtures-scratch-mol-25d",
+        "depends_on_id": "bd-mol-fixtures-scratch-d33",
+        "type": "blocks",
+        "created_at": "2026-08-24T22:07:46Z",
+        "created_by": "CuongBPV",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "bd-mol-fixtures-scratch-mol-25d",
+        "depends_on_id": "bd-mol-fixtures-scratch-mol-7ps",
+        "type": "blocks",
+        "created_at": "2026-08-24T22:06:49Z",
+        "created_by": "CuongBPV",
+        "metadata": "{}"
+      },
+      {
+        "issue_id": "bd-mol-fixtures-scratch-mol-25d",
+        "depends_on_id": "bd-mol-fixtures-scratch-mol-yh9",
+        "type": "parent-child",
+        "created_at": "2026-08-24T22:06:49Z",
+        "created_by": "CuongBPV",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 2,
+    "dependent_count": 1,
+    "comment_count": 0,
+    "parent": "bd-mol-fixtures-scratch-mol-yh9"
+  }
+]
