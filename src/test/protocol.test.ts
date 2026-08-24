@@ -38,6 +38,10 @@ describe('MUTATING_METHODS', () => {
     expect(MUTATING_METHODS.has('addDependency')).toBe(true);
     expect(MUTATING_METHODS.has('removeDependency')).toBe(true);
   });
+
+  it('includes resolveGate, so the host refetches and broadcasts after a gate is resolved', () => {
+    expect(MUTATING_METHODS.has('resolveGate')).toBe(true);
+  });
 });
 
 describe('resolveDashboardTab', () => {

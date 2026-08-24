@@ -292,6 +292,27 @@ export function narrowReopenParams(params: Record<string, unknown>): ReopenParam
   return narrowed;
 }
 
+export interface ResolveGateParams {
+  id: string;
+  reason?: string;
+}
+
+/**
+ * Narrows the params for `resolveGate` into the exact shape
+ * `BdMutations.resolveGate` builds an argv from. Same shape and rules as
+ * `narrowReopenParams` (non-blank `id`, optional free-form `reason`) — kept
+ * as its own function/type rather than reused so `resolveGate`'s router
+ * case and tests read on their own, matching this file's one-narrower-per-
+ * method convention.
+ */
+export function narrowResolveGateParams(params: Record<string, unknown>): ResolveGateParams {
+  const id = requireString(params.id, 'id');
+  const reason = optionalString(params.reason, 'reason');
+  const narrowed: ResolveGateParams = { id };
+  if (reason !== undefined) narrowed.reason = reason;
+  return narrowed;
+}
+
 /**
  * `undefined` means "not provided"; anything else must be a string. A blank
  * string narrows to `undefined` too, so the argv builder never emits a flag

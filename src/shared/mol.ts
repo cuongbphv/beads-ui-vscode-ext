@@ -24,6 +24,7 @@
  * `queries.ts`'s existing `pickArray` convention for the same reason: a
  * partial/odd payload should degrade a card, not crash the tab.
  */
+import { formatDurationMs } from './lease';
 import type { Bead, BdGate, GateAwaitType } from './types';
 
 /** The four step states bd 1.2.2 has ever been observed to report. */
@@ -312,6 +313,27 @@ export function estimateEtaMs(root: Bead, progress: MolProgress, nowMs: number):
 
   const remaining = progress.total - progress.completed;
   return remaining / ratePerMs;
+}
+
+/**
+ * A short, human-readable description of what a gate is waiting on, for the
+ * gate card on the Molecules tab. `await_id` is only ever present for
+ * `gh:pr`/`gh:run`/`bead` gates and `timeout` only for `timer` gates
+ * (`fixtures/mol/README.md` #4) — this never fabricates either when absent,
+ * and the timer's Go-nanosecond `timeout` is converted to milliseconds
+ * before going through the same `formatDurationMs` the lease/ETA badges use,
+ * never shown as a raw nanosecond count.
+ */
+export function formatGateAwait(gate: Pick<BdGate, 'await_type' | 'await_id' | 'timeout'>): string {
+  const type = gate.await_type;
+  if (type === 'human') return 'Waiting on a person';
+  if (type === 'timer') {
+    return typeof gate.timeout === 'number' ? `Timer · ${formatDurationMs(gate.timeout / 1_000_000)}` : 'Timer';
+  }
+  if (type === 'gh:pr') return gate.await_id ? `GitHub PR #${gate.await_id}` : 'GitHub PR';
+  if (type === 'gh:run') return gate.await_id ? `GitHub run ${gate.await_id}` : 'GitHub run';
+  if (type === 'bead') return gate.await_id ? `Bead ${gate.await_id}` : 'Bead';
+  return type;
 }
 
 /** One molecule as it appears in the Molecules tab's list. */

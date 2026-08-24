@@ -7,6 +7,7 @@ import type { Bead } from '../shared/types';
 
 import {
   estimateEtaMs,
+  formatGateAwait,
   gatesByStepId,
   normalizeStepStatus,
   stepStateOf,
@@ -325,6 +326,27 @@ describe('estimateEtaMs', () => {
     const started = new Date(NOW + 3_600_000).toISOString();
     expect(() => estimateEtaMs(root({ started_at: started }), progress(), NOW)).not.toThrow();
     expect(estimateEtaMs(root({ started_at: started }), progress(), NOW)).toBeUndefined();
+  });
+});
+
+describe('formatGateAwait', () => {
+  it('describes a human gate without fabricating an await_id/timeout it never carries', () => {
+    expect(formatGateAwait({ await_type: 'human' })).toBe('Waiting on a person');
+  });
+
+  it('formats a timer gate\'s nanosecond timeout as a short duration, never the raw number', () => {
+    // 7_200_000_000_000ns = 2h, the exact value in fixtures/mol/gate-list.json.
+    expect(formatGateAwait({ await_type: 'timer', timeout: 7_200_000_000_000 })).toBe('Timer · 2h 0m');
+    expect(formatGateAwait({ await_type: 'timer' })).toBe('Timer');
+  });
+
+  it('surfaces await_id for gh:pr/gh:run/bead gates, falling back to a bare label when absent', () => {
+    expect(formatGateAwait({ await_type: 'gh:pr', await_id: '42' })).toBe('GitHub PR #42');
+    expect(formatGateAwait({ await_type: 'gh:pr' })).toBe('GitHub PR');
+    expect(formatGateAwait({ await_type: 'gh:run', await_id: '9' })).toBe('GitHub run 9');
+    expect(formatGateAwait({ await_type: 'gh:run' })).toBe('GitHub run');
+    expect(formatGateAwait({ await_type: 'bead', await_id: 'rig:bd-9' })).toBe('Bead rig:bd-9');
+    expect(formatGateAwait({ await_type: 'bead' })).toBe('Bead');
   });
 });
 

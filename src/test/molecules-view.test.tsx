@@ -20,13 +20,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { toMolProgress, toMolWisp, type MolDetail, type MolListItem, type MolSnapshot } from '../shared/mol';
 import type { HostEvent } from '../shared/protocol';
-import type { Bead } from '../shared/types';
+import type { Bead, BdGate } from '../shared/types';
 // Static JSON imports (`resolveJsonModule`), not `node:fs` + `import.meta.url`:
 // this file is a `.tsx` test, so it is typechecked under
 // `tsconfig.webview.json`, which declares `types: []` (no ambient `node`
 // globals) — unlike the plain-node `mol-fixtures.test.ts`/`mol-model.test.ts`
 // suites that read these same files with `readFileSync`. Both routes load the
 // identical, real bd 1.2.2 capture on disk.
+import gateListFixture from './fixtures/mol/gate-list.json';
 import listTypeMoleculeFixture from './fixtures/mol/list-type-molecule.json';
 import molProgressFixture from './fixtures/mol/mol-progress.json';
 import molShowParallelFixture from './fixtures/mol/mol-show-parallel.json';
@@ -82,6 +83,7 @@ const wispRows = (wispListFixture as unknown as { wisps: unknown[] }).wisps.map(
 const staleRow = (
   molStaleFixture as unknown as { stale_molecules: Array<{ id: string; title: string }> }
 ).stale_molecules[0];
+const gateFixtures = gateListFixture as unknown as BdGate[];
 
 function populatedSnapshot(overrides: Partial<MolSnapshot> = {}): MolSnapshot {
   const healthy: MolListItem = { root: rootBead, progress: healthyProgress, stale: false, degraded: false };
@@ -264,6 +266,44 @@ describe('MoleculesView', () => {
 
     expect(onSelect).toHaveBeenCalledWith(stepIssues[1].id);
     expect(onSelect).not.toHaveBeenCalledWith(rootBead.id);
+  });
+
+  it('renders gate cards at the top of the view from snapshot.gates, with zero new RPC calls beyond getMolSnapshot', async () => {
+    const el = await mount();
+    await resolveOldest(populatedSnapshot({ gates: gateFixtures }));
+
+    // Real fixture: one human, one timer, one gh:pr gate — see gate-list.json.
+    const section = el.querySelector('section[aria-label^="Gates ("]');
+    expect(section?.getAttribute('aria-label')).toBe('Gates (3)');
+    expect(el.textContent).toContain('Waiting on a person');
+    // Only the one getMolSnapshot round trip fired — gate cards cost no new reads.
+    expect(rpc.calls).toEqual([{ method: 'getMolSnapshot', params: undefined }]);
+
+    const humanCard = section?.querySelector('article[aria-label^="bd-mol-fixtures-scratch-wb6"]');
+    const timerCard = section?.querySelector('article[aria-label^="bd-mol-fixtures-scratch-qpb"]');
+    expect(humanCard?.querySelector('button')?.textContent).toContain('Resolve');
+    expect(timerCard?.querySelector('button')).toBeNull();
+  });
+
+  it('renders no gate section when snapshot.gates is empty, even with molecules present', async () => {
+    const el = await mount();
+    await resolveOldest(populatedSnapshot({ gates: [] }));
+
+    expect(el.querySelector('section[aria-label^="Gates ("]')).toBeNull();
+  });
+
+  it('does not show the full "No molecules" empty state when gates exist but there are zero molecules', async () => {
+    const el = await mount();
+    await resolveOldest({
+      molecules: [],
+      wisps: [],
+      gates: gateFixtures,
+      fetchedAt: new Date().toISOString(),
+      degraded: false,
+    });
+
+    expect(el.textContent).not.toContain('No molecules in this project');
+    expect(el.querySelector('section[aria-label^="Gates ("]')).not.toBeNull();
   });
 
   it('closes the detail section when its close button is clicked', async () => {

@@ -24,6 +24,7 @@ import {
   narrowDependencyParams,
   narrowLabelParams,
   narrowReopenParams,
+  narrowResolveGateParams,
   narrowUpdateTextParams,
   requireDueDate,
   requireTargetId,
@@ -237,6 +238,19 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
 
     case 'showMolecule':
       return queries.showMolecule(id());
+
+    case 'resolveGate': {
+      // narrowResolveGateParams throws before any argv is built when id is
+      // blank; reason is an optional free-form string, same shape as
+      // reopenBead's. The webview only ever sends this for a human-type
+      // gate (see the doc comment on RpcMethods.resolveGate) but the router
+      // does not re-check await_type here — bd's own `gate resolve` does
+      // not distinguish gate types either, so there is nothing to narrow
+      // against beyond the id/reason shape.
+      const narrowed = narrowResolveGateParams(params);
+      await mutations.resolveGate(narrowed.id, narrowed.reason);
+      return { ok: true };
+    }
 
     case 'getSyncStatus':
       // Read-only: reports what `bd dolt status` says and nothing more. Never

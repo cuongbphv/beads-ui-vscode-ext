@@ -7,6 +7,7 @@ import {
   narrowDependencyParams,
   narrowLabelParams,
   narrowReopenParams,
+  narrowResolveGateParams,
   narrowUpdateTextParams,
   requireDepType,
   requireDueDate,
@@ -295,6 +296,33 @@ describe('narrowReopenParams (router param narrowing)', () => {
 
   it('rejects a non-string reason', () => {
     expect(() => narrowReopenParams({ id: 'bd-1', reason: 42 })).toThrow(/"reason"/);
+  });
+});
+
+describe('narrowResolveGateParams (router param narrowing)', () => {
+  it('narrows a well-formed id/reason request', () => {
+    expect(narrowResolveGateParams({ id: 'gate-1', reason: 'approved in review' })).toEqual({
+      id: 'gate-1',
+      reason: 'approved in review',
+    });
+  });
+
+  it('narrows to id only when reason is absent', () => {
+    expect(narrowResolveGateParams({ id: 'gate-1' })).toEqual({ id: 'gate-1' });
+  });
+
+  it('treats a blank reason as absent rather than an empty-string flag', () => {
+    expect(narrowResolveGateParams({ id: 'gate-1', reason: '   ' })).toEqual({ id: 'gate-1' });
+  });
+
+  it('rejects a missing or blank id', () => {
+    expect(() => narrowResolveGateParams({ reason: 'x' })).toThrow(/"id"/);
+    expect(() => narrowResolveGateParams({ id: '', reason: 'x' })).toThrow(/"id"/);
+    expect(() => narrowResolveGateParams({ id: '   ' })).toThrow(/"id"/);
+  });
+
+  it('rejects a non-string reason', () => {
+    expect(() => narrowResolveGateParams({ id: 'gate-1', reason: 42 })).toThrow(/"reason"/);
   });
 });
 

@@ -13,6 +13,7 @@ import { AlertCircle, FlaskConical } from 'lucide-react';
 import { useCallback, useState, type ReactNode } from 'react';
 
 import type { Bead } from '../../shared/types';
+import { GatesSection } from '../components/mol/gate-card';
 import { MoleculeCard } from '../components/mol/molecule-card';
 import { MoleculeDetail } from '../components/mol/molecule-detail';
 import { EmptyState, Skeleton } from '../components/primitives';
@@ -60,7 +61,7 @@ export function MoleculesView({
     );
   }
 
-  if (snapshot.molecules.length === 0) {
+  if (snapshot.molecules.length === 0 && snapshot.gates.length === 0) {
     return (
       <EmptyState
         icon={<FlaskConical className="size-10" />}
@@ -74,6 +75,8 @@ export function MoleculesView({
 
   return (
     <div className="@container h-full overflow-y-auto p-3">
+      <GatesSection gates={snapshot.gates} />
+
       {snapshot.degraded ? (
         <div
           role="status"

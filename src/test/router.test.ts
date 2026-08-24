@@ -67,6 +67,10 @@ class FakeMutations {
   async reopen(id: string, reason?: string): Promise<void> {
     this.calls.push({ method: 'reopen', args: [id, reason] });
   }
+
+  async resolveGate(id: string, reason?: string): Promise<void> {
+    this.calls.push({ method: 'resolveGate', args: [id, reason] });
+  }
 }
 
 /** Records every call so a test can assert on the argv-shaped params. */
@@ -670,6 +674,51 @@ describe('router reopenBead', () => {
       makeStore(mutations),
       host,
       request('reopenBead', { reason: 'oops' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router resolveGate', () => {
+  it('calls mutations.resolveGate with id only when reason is omitted', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('resolveGate', { id: 'gate-1' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'resolveGate', args: ['gate-1', undefined] }]);
+  });
+
+  it('calls mutations.resolveGate with the exact narrowed reason', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('resolveGate', { id: 'gate-1', reason: 'approved in review' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'resolveGate', args: ['gate-1', 'approved in review'] }]);
+  });
+
+  it('trims whitespace from reason the same way narrowReopenParams does, and drops a blank one', async () => {
+    const mutations = new FakeMutations();
+    await handleRequest(makeStore(mutations), host, request('resolveGate', { id: 'gate-1', reason: '   ' }));
+
+    expect(mutations.calls).toEqual([{ method: 'resolveGate', args: ['gate-1', undefined] }]);
+  });
+
+  it('rejects a missing id before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('resolveGate', { reason: 'approved' }),
     );
 
     expect(response.ok).toBe(false);

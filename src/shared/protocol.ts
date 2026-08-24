@@ -283,6 +283,25 @@ export interface RpcMethods {
     result: MolDetail;
   };
   /**
+   * Resolve a human gate (`bd gate resolve <id> [--reason <reason>]`),
+   * delegating to the existing `BdMutations.resolveGate` (already used by
+   * the `beadsDashboard.resolveGate` command). Mutating — see
+   * {@link MUTATING_METHODS} — so the host refetches and broadcasts,
+   * repainting the gate card list and every other view for free. The
+   * webview only ever calls this for `await_type === 'human'` gates: bd's
+   * own `bd gate create --help` documents `human` as the one type that
+   * "requires manual bd gate resolve" — timer/gh:run/gh:pr/bead gates clear
+   * themselves (a timeout elapses, a workflow finishes, a PR merges, a bead
+   * closes). `bd gate resolve` itself does not refuse a non-human gate id
+   * (it is "equivalent to bd close", per `bd gate resolve --help`), so this
+   * is a UI-level policy choice, not a CLI-enforced one — never widen this
+   * to non-human gates without re-reading that comment.
+   */
+  resolveGate: {
+    params: { id: string; reason?: string };
+    result: { ok: true };
+  };
+  /**
    * Read-only Dolt sync/engine status (`bd dolt status --json`), for the
    * header's sync chip. Fetched on demand — piggybacked on the manual
    * Refresh button, never on a poll tick — and never runs `bd dolt push` or
@@ -349,6 +368,7 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'deferBead',
   'undeferBead',
   'reopenBead',
+  'resolveGate',
 ]);
 
 export interface RpcRequest<M extends RpcMethodName = RpcMethodName> {
