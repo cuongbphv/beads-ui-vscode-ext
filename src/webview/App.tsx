@@ -176,6 +176,13 @@ export function App(): ReactNode {
   const beads = snapshot?.beads ?? [];
   const selected = focusedId ? beads.find((bead) => bead.id === focusedId) : undefined;
   const blockedIds = useMemo(() => new Set(snapshot?.blockedIds ?? []), [snapshot?.blockedIds]);
+  // Full-id lookup the Fleet tab uses to pair a worker's claimed bead with its
+  // lease fields (beads-ui-vscode-ext-ayq.1). Keyed off the snapshot so it is
+  // rebuilt exactly when the issue list is.
+  const beadsById = useMemo(
+    () => new Map((snapshot?.beads ?? []).map((bead) => [bead.id, bead])),
+    [snapshot?.beads],
+  );
 
   return (
     <ToastProvider>
@@ -305,6 +312,7 @@ export function App(): ReactNode {
                 onDetailWidthChange={setFleetDetailWidth}
                 statusFilter={fleetStatusFilter}
                 onStatusFilterChange={setFleetStatusFilter}
+                beadsById={beadsById}
               />
             )}
           </div>

@@ -24,6 +24,7 @@ import { Bot, ScrollText, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { FLEET_STATUS_FILTERS, type FleetStatusFilter } from '../../shared/fleet-filter';
+import type { Bead } from '../../shared/types';
 import { Transcript } from '../components/fleet/transcript';
 import { WorkerList } from '../components/fleet/worker-list';
 import { EmptyState, Select, Skeleton } from '../components/primitives';
@@ -54,6 +55,7 @@ export function FleetView({
   onDetailWidthChange,
   statusFilter,
   onStatusFilterChange,
+  beadsById,
 }: {
   /** Persisted width (px) for the transcript side panel; see `App.tsx`'s `fleetDetailWidth`. */
   detailWidth: number;
@@ -61,6 +63,8 @@ export function FleetView({
   /** Persisted worker status filter; see `App.tsx`'s `fleetStatusFilter`. */
   statusFilter: FleetStatusFilter;
   onStatusFilterChange: (filter: FleetStatusFilter) => void;
+  /** Issues by full id, for the worker rows' lease badges (beads-ui-vscode-ext-ayq.1). */
+  beadsById: ReadonlyMap<string, Bead>;
 }): ReactNode {
   const { snapshot, loading } = useFleet();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
@@ -149,6 +153,7 @@ export function FleetView({
                 selectedTarget={selectedTarget}
                 onSelectTarget={setSelectedTarget}
                 statusFilter={statusFilter}
+                beadsById={beadsById}
               />
             </div>
 

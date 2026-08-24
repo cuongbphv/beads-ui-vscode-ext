@@ -134,6 +134,40 @@ describe('BdQueries.list', () => {
     expect(fake.argv[0]).toContain('--limit');
     expect(fake.argv[0][fake.argv[0].indexOf('--limit') + 1]).toBe('2000');
   });
+
+  it('leaves absent lease fields undefined — never epoch/empty defaults (beads-ui-vscode-ext-ayq.1)', async () => {
+    const fake = new FakeBd();
+    // The shape every sampled issue on this machine had: no lease fields at all.
+    fake.responses = { list: { issues: [{ id: 'a', title: 't', status: 'open', priority: 2, issue_type: 'task' }] } };
+
+    const [bead] = await queries(fake).list({});
+
+    expect(bead.lease_expires_at).toBeUndefined();
+    expect(bead.heartbeat_at).toBeUndefined();
+    expect(bead.lease_granted_node).toBeUndefined();
+  });
+
+  it('passes lease fields through untouched when bd reports an active lease', async () => {
+    const fake = new FakeBd();
+    fake.responses = {
+      list: {
+        issues: [
+          {
+            id: 'a',
+            lease_expires_at: '2026-08-24T12:05:00Z',
+            heartbeat_at: '2026-08-24T12:01:00Z',
+            lease_granted_node: 'node-a',
+          },
+        ],
+      },
+    };
+
+    const [bead] = await queries(fake).list({});
+
+    expect(bead.lease_expires_at).toBe('2026-08-24T12:05:00Z');
+    expect(bead.heartbeat_at).toBe('2026-08-24T12:01:00Z');
+    expect(bead.lease_granted_node).toBe('node-a');
+  });
 });
 
 describe('BdQueries.watermark', () => {

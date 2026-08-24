@@ -108,6 +108,7 @@ async function mount(
         onDetailWidthChange: options.onDetailWidthChange ?? (() => {}),
         statusFilter: options.statusFilter ?? 'all',
         onStatusFilterChange: options.onStatusFilterChange ?? (() => {}),
+        beadsById: new Map(),
       }),
     ),
   );

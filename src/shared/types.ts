@@ -135,6 +135,17 @@ export interface Bead {
   source_system?: string;
   /** Arbitrary project metadata, as raw JSON. */
   metadata?: unknown;
+  /**
+   * When the current claim's lease expires. Hydrated from bd's ephemeral,
+   * node-local leases table (`omitempty`), so it is ABSENT on any issue with
+   * no active lease on this node — the common case. Absence means "no lease",
+   * never "expired at epoch zero"; see `shared/lease.ts`.
+   */
+  lease_expires_at?: string;
+  /** Last heartbeat from the lease owner. Same optionality as `lease_expires_at`. */
+  heartbeat_at?: string;
+  /** The replica that granted the lease. Empty/absent means provenance unknown. */
+  lease_granted_node?: string;
   /** Persistent context marker rather than a work item. */
   pinned?: boolean;
   /** Not synced via git. */
