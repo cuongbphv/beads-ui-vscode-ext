@@ -75,7 +75,7 @@ function findButtonByText(root: HTMLElement, text: string): HTMLButtonElement | 
 
 /** A StatCard tile with an onClick renders as `role="button"`, not a `<button>` element. */
 function findTileByLabel(root: HTMLElement, label: string): HTMLElement | undefined {
-  return [...root.querySelectorAll('[role="button"]')].find((el) => el.textContent?.includes(label));
+  return [...root.querySelectorAll<HTMLElement>('[role="button"]')].find((el) => el.textContent?.includes(label));
 }
 
 async function flush(): Promise<void> {
