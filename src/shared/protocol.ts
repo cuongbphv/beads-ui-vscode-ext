@@ -354,9 +354,9 @@ export type HostEvent =
       degraded?: boolean;
     };
 
-export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'fleet';
+export type DashboardTab = 'overview' | 'roadmap' | 'board' | 'fleet' | 'molecules';
 
-export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board', 'fleet'];
+export const DASHBOARD_TABS: DashboardTab[] = ['overview', 'roadmap', 'board', 'fleet', 'molecules'];
 
 /**
  * `beadsDashboard.defaultTab` is user-authored config that outlives the

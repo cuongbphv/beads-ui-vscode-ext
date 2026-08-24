@@ -198,6 +198,37 @@ export function toStaleIds(raw: unknown): string[] {
   return rows.map((row) => str(row.id)).filter((id) => id !== '');
 }
 
+/**
+ * A rough, client-side ETA for a molecule's remaining steps.
+ *
+ * bd 1.2.2 emits no rate/ETA fields anywhere in `mol progress` output
+ * (fixtures/mol/README.md #1), so this is a heuristic derived from data we
+ * already have: the completion rate implied by `progress.completed` steps
+ * finished since the root's own `started_at` (falling back to
+ * `created_at`), projected across the steps left. It is deliberately not
+ * presented as a bd-reported figure — callers should label it as an
+ * estimate (e.g. "~2h left").
+ *
+ * Returns `undefined` whenever there isn't enough signal to guess from: no
+ * steps completed yet, nothing left to do, or a missing/unparseable start
+ * time. Never throws.
+ */
+export function estimateEtaMs(root: Bead, progress: MolProgress, nowMs: number): number | undefined {
+  if (progress.completed <= 0 || progress.total <= progress.completed) return undefined;
+
+  const startedAt = Date.parse(root.started_at ?? root.created_at ?? '');
+  if (Number.isNaN(startedAt)) return undefined;
+
+  const elapsedMs = nowMs - startedAt;
+  if (elapsedMs <= 0) return undefined;
+
+  const ratePerMs = progress.completed / elapsedMs;
+  if (ratePerMs <= 0) return undefined;
+
+  const remaining = progress.total - progress.completed;
+  return remaining / ratePerMs;
+}
+
 /** One molecule as it appears in the Molecules tab's list. */
 export interface MolListItem {
   root: Bead;

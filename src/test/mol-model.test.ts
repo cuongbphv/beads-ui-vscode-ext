@@ -3,13 +3,17 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import type { Bead } from '../shared/types';
+
 import {
+  estimateEtaMs,
   normalizeStepStatus,
   stepStateOf,
   toMolDetail,
   toMolProgress,
   toMolWisp,
   toStaleIds,
+  type MolProgress,
 } from '../shared/mol';
 
 /**
@@ -163,6 +167,62 @@ describe('stepStateOf', () => {
   it('degrades an unrecognised raw status to pending rather than throwing — no invented "blocked" state', () => {
     expect(stepStateOf('some-future-status', false, false)).toBe('pending');
     expect(stepStateOf(undefined, false, false)).toBe('pending');
+  });
+});
+
+describe('estimateEtaMs', () => {
+  const NOW = Date.parse('2026-08-24T18:00:00.000Z');
+
+  function root(overrides: Partial<Bead> = {}): Bead {
+    return {
+      id: 'bd-mol-fixtures-scratch-mol-yh9',
+      title: 'fixdemo',
+      status: 'open',
+      priority: 2,
+      issue_type: 'molecule',
+      ...overrides,
+    };
+  }
+
+  function progress(overrides: Partial<MolProgress> = {}): MolProgress {
+    return { molecule_id: 'mol-1', molecule_title: 'mol', total: 4, completed: 1, in_progress: 1, percent: 25, ...overrides };
+  }
+
+  it('projects the observed completion rate across the remaining steps', () => {
+    // Started 1h ago, 1 of 4 steps done -> rate = 1/hour -> 3 remain -> ~3h.
+    const started = new Date(NOW - 3_600_000).toISOString();
+    const ms = estimateEtaMs(root({ started_at: started }), progress({ completed: 1, total: 4 }), NOW);
+    expect(ms).toBeCloseTo(3 * 3_600_000, -2);
+  });
+
+  it('falls back to created_at when started_at is absent', () => {
+    const created = new Date(NOW - 3_600_000).toISOString();
+    const ms = estimateEtaMs(root({ started_at: undefined, created_at: created }), progress(), NOW);
+    expect(ms).toBeCloseTo(3 * 3_600_000, -2);
+  });
+
+  it('returns undefined when nothing has completed yet — no rate to project', () => {
+    const started = new Date(NOW - 3_600_000).toISOString();
+    expect(estimateEtaMs(root({ started_at: started }), progress({ completed: 0 }), NOW)).toBeUndefined();
+  });
+
+  it('returns undefined once every step is done — nothing left to project', () => {
+    const started = new Date(NOW - 3_600_000).toISOString();
+    expect(
+      estimateEtaMs(root({ started_at: started }), progress({ completed: 4, total: 4 }), NOW),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when there is no parseable start time at all', () => {
+    expect(
+      estimateEtaMs(root({ started_at: undefined, created_at: undefined }), progress(), NOW),
+    ).toBeUndefined();
+  });
+
+  it('never throws on a start time in the future (clock skew / bad data)', () => {
+    const started = new Date(NOW + 3_600_000).toISOString();
+    expect(() => estimateEtaMs(root({ started_at: started }), progress(), NOW)).not.toThrow();
+    expect(estimateEtaMs(root({ started_at: started }), progress(), NOW)).toBeUndefined();
   });
 });
 

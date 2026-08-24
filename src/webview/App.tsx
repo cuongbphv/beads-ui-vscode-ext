@@ -4,7 +4,16 @@
  * The detail pane docks beside the content when the container is wide and takes
  * the whole panel when it is not — same component, no duplicate markup.
  */
-import { AlertCircle, Bot, LayoutDashboard, Map as MapIcon, Plus, RefreshCw, Columns3 } from 'lucide-react';
+import {
+  AlertCircle,
+  Bot,
+  LayoutDashboard,
+  Map as MapIcon,
+  Plus,
+  RefreshCw,
+  Columns3,
+  FlaskConical,
+} from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -45,6 +54,7 @@ import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
 import { FleetView } from './views/FleetView';
+import { MoleculesView } from './views/MoleculesView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
@@ -70,6 +80,7 @@ const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
   roadmap: { label: 'Roadmap', icon: <MapIcon aria-hidden="true" className="size-4" /> },
   board: { label: 'Board', icon: <Columns3 aria-hidden="true" className="size-4" /> },
   fleet: { label: 'Fleet', icon: <Bot aria-hidden="true" className="size-4" /> },
+  molecules: { label: 'Molecules', icon: <FlaskConical aria-hidden="true" className="size-4" /> },
 };
 
 export function App(): ReactNode {
@@ -351,7 +362,7 @@ export function App(): ReactNode {
                 swimlanes={boardSwimlanes}
                 onSwimlanesChange={setBoardSwimlanes}
               />
-            ) : (
+            ) : tab === 'fleet' ? (
               <FleetView
                 detailWidth={fleetDetailWidth}
                 onDetailWidthChange={setFleetDetailWidth}
@@ -359,6 +370,8 @@ export function App(): ReactNode {
                 onStatusFilterChange={setFleetStatusFilter}
                 beadsById={beadsById}
               />
+            ) : (
+              <MoleculesView beadsById={beadsById} onSelect={onSelect} selectedId={focusedId} />
             )}
           </div>
 
