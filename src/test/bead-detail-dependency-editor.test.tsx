@@ -5,7 +5,8 @@
  * select + `IssuePicker`) calls `addDependency`, optimistically shows the new
  * edge, and rolls back with a toast on RPC error — including the cycle
  * rejection bd itself surfaces as an ordinary `RpcError`. The per-row × on
- * `EdgeList` / "Blocked by" rows calls `removeDependency`. A self-edge is
+ * `EdgeList` — and, since bead 72m.5 merged it into the "Blocked by" chain,
+ * on a depth-1 `BlockerRow` too — calls `removeDependency`. A self-edge is
  * rejected client-side: the picker never offers the issue's own id, so no
  * RPC is ever sent for one.
  *
@@ -227,7 +228,7 @@ describe('Add-link control', () => {
     if (!option) throw new Error('option not found');
     await act(async () => option.click());
 
-    expect(edgeRowLabels(root, 'Depends on')).toEqual(['taskbd-2Target issue']);
+    expect(edgeRowLabels(root, 'Blocks')).toEqual(['taskbd-2Target issue']);
 
     await act(async () => {
       rpc.calls[0].reject({ kind: 'bd-error', message: 'bd refused: would create a dependency cycle' });
@@ -235,7 +236,7 @@ describe('Add-link control', () => {
     });
 
     // Rolled back — the edge is gone again.
-    expect(edgeRowLabels(root, 'Depends on')).toEqual([]);
+    expect(edgeRowLabels(root, 'Blocks')).toEqual([]);
     expect(toast.notify).toHaveBeenCalledWith(
       'bd refused: would create a dependency cycle',
       'error',
@@ -276,12 +277,12 @@ describe('Add-link control', () => {
 });
 
 describe('Removing a dependency edge', () => {
-  it('shows a × on each Depends-on row that calls removeDependency and removes the row optimistically', async () => {
+  it('shows a × on each Blocks row that calls removeDependency and removes the row optimistically', async () => {
     const other = bead({ id: 'bd-2', title: 'Target issue' });
     const subject = bead({ dependencies: [{ depends_on_id: 'bd-2', type: 'blocks' }] });
     const root = await mount(subject, [subject, other]);
 
-    expect(edgeRowLabels(root, 'Depends on')).toEqual(['taskbd-2Target issue']);
+    expect(edgeRowLabels(root, 'Blocks')).toEqual(['taskbd-2Target issue']);
     const removeButton = root.querySelector<HTMLButtonElement>(
       'button[aria-label="Remove link to bd-2"]',
     );
@@ -289,7 +290,7 @@ describe('Removing a dependency edge', () => {
 
     await act(async () => removeButton.click());
 
-    expect(edgeRowLabels(root, 'Depends on')).toEqual([]);
+    expect(edgeRowLabels(root, 'Blocks')).toEqual([]);
     expect(rpc.calls).toHaveLength(1);
     expect(rpc.calls[0].method).toBe('removeDependency');
     expect(rpc.calls[0].params).toEqual({ id: 'bd-1', dependsOn: 'bd-2' });
@@ -305,14 +306,14 @@ describe('Removing a dependency edge', () => {
     if (!removeButton) throw new Error('remove button not found');
 
     await act(async () => removeButton.click());
-    expect(edgeRowLabels(root, 'Depends on')).toEqual([]);
+    expect(edgeRowLabels(root, 'Blocks')).toEqual([]);
 
     await act(async () => {
       rpc.calls[0].reject({ kind: 'bd-error', message: 'bd refused the write' });
       await Promise.resolve();
     });
 
-    expect(edgeRowLabels(root, 'Depends on')).toEqual(['taskbd-2Target issue']);
+    expect(edgeRowLabels(root, 'Blocks')).toEqual(['taskbd-2Target issue']);
     expect(toast.notify).toHaveBeenCalledWith('bd refused the write', 'error');
   });
 

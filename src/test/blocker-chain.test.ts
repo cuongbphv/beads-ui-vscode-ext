@@ -1,5 +1,5 @@
 /**
- * Blocker-chain analysis: the pure DFS behind the detail pane's "Why blocked"
+ * Blocker-chain analysis: the pure DFS behind the detail pane's "Blocked by"
  * section. Everything here runs against an in-memory bead list — no bd, no RPC.
  */
 import { describe, expect, it } from 'vitest';

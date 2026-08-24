@@ -104,10 +104,12 @@ export function BeadDetail({
    */
   const [depOverrides, setDepOverrides] = useState<Record<string, BeadDependency[]>>({});
   /**
-   * Optimistic override for the separate `blocked_by` id list ("Blocked by"
-   * section) — a different bd data source from `dependencies`, but the same
-   * relationship, so removing an edge updates both overrides together (see
-   * `removeDependencyEdge`).
+   * Optimistic override for the separate `blocked_by` id list — a different
+   * bd data source from `dependencies`, but the same relationship, so
+   * removing an edge updates both overrides together (see
+   * `removeDependencyEdge`). Merged into the "Blocked by" section alongside
+   * the transitive chain below; any id here the chain does not cover still
+   * gets a depth-1 row so the merge never drops data.
    */
   const [blockedByOverride, setBlockedByOverride] = useState<Record<string, string[]>>({});
   const [linkOpen, setLinkOpen] = useState(false);
@@ -453,8 +455,27 @@ export function BeadDetail({
   const beadWithCurrentEdges: Bead = { ...bead, dependencies: currentDependencies };
   const blocks = edgesOfKind(beadWithCurrentEdges, 'blocks');
   // Why is this blocked, transitively? Only open blockers count — a done bead
-  // still shows its (historic) edges below, but no longer blocks anything.
+  // no longer blocks anything, so the whole "Blocked by" section (chain and
+  // all) is hidden for it below rather than showing stale history.
   const blockerChain = done ? undefined : buildBlockerChain(bead, beads, index);
+  // `currentBlockedBy` is a second bd data source for the same relationship
+  // as the chain's depth-1 rows (see the `blockedByOverride` comment above).
+  // Any id it carries that the chain does not already cover — e.g. the
+  // blocker bead is absent from the loaded set — still gets a depth-1 row so
+  // consolidating both into one section never drops data.
+  const chainIds = new Set((blockerChain?.nodes ?? []).map((node) => node.id));
+  const extraBlockedByNodes: BlockerNode[] = currentBlockedBy
+    .filter((id) => !chainIds.has(id))
+    .map((id) => ({
+      id,
+      bead: beads.find((candidate) => candidate.id === id),
+      depth: 1,
+      cycle: false,
+      truncated: false,
+    }));
+  const blockedByNodes: BlockerNode[] = done
+    ? []
+    : [...(blockerChain?.nodes ?? []), ...extraBlockedByNodes];
   const related = edgesOfKind(beadWithCurrentEdges, 'related');
   const discovered = edgesOfKind(beadWithCurrentEdges, 'discovered-from');
   const statusDef = index.def(bead.status);
@@ -935,10 +956,10 @@ export function BeadDetail({
           </Section>
         ) : null}
 
-        {blockerChain && blockerChain.nodes.length > 0 ? (
-          <Section title="Why blocked" icon={<Lock aria-hidden="true" className="size-3" />}>
+        {blockedByNodes.length > 0 ? (
+          <Section title="Blocked by" icon={<Lock aria-hidden="true" className="size-3" />}>
             <ul className="grid gap-1">
-              {blockerChain.nodes.map((node, position) => (
+              {blockedByNodes.map((node, position) => (
                 <BlockerRow
                   // The same blocker can legitimately appear on several paths
                   // (a diamond), so the id alone is not a stable key.
@@ -947,10 +968,14 @@ export function BeadDetail({
                   beads={beads}
                   onSelect={onSelect}
                   index={index}
+                  // Only a depth-1 (direct) blocker is on this bead's own
+                  // dependency list — a transitive one belongs to some other
+                  // bead's list, so it cannot be removed from here.
+                  onRemove={(id) => void removeDependencyEdge(id)}
                 />
               ))}
             </ul>
-            {blockerChain.hasCycle ? (
+            {blockerChain?.hasCycle ? (
               <p className="text-warning mt-1 flex items-center gap-1 text-xs">
                 <AlertTriangle aria-hidden="true" className="size-3" />
                 Dependency cycle detected — these issues block each other.
@@ -960,17 +985,7 @@ export function BeadDetail({
         ) : null}
 
         <EdgeList
-          title="Blocked by"
-          icon={<Lock aria-hidden="true" className="size-3" />}
-          edges={currentBlockedBy.map((id) => ({ id }))}
-          beads={beads}
-          onSelect={onSelect}
-          index={index}
-          onRemove={(id) => void removeDependencyEdge(id)}
-        />
-
-        <EdgeList
-          title="Depends on"
+          title="Blocks"
           edges={blocks}
           beads={beads}
           onSelect={onSelect}
@@ -1685,20 +1700,27 @@ function CommentRow({ comment }: { comment: BeadComment }): ReactNode {
 }
 
 /**
- * One row of the "Why blocked" chain: an ordinary link row, indented by how
+ * One row of the "Blocked by" chain: an ordinary link row, indented by how
  * far the blocker sits from the inspected bead, with a chip when the edge
  * closes a cycle and an ellipsis when the walk was depth-capped there.
+ *
+ * The × removal button only ever renders for a depth-1 (direct) row: a
+ * deeper blocker is on some other bead's dependency list, not this one's, so
+ * there is nothing here to remove it from.
  */
 function BlockerRow({
   node,
   beads,
   onSelect,
   index,
+  onRemove,
 }: {
   node: BlockerNode;
   beads: Bead[];
   onSelect: (id: string) => void;
   index: StatusIndex;
+  /** Called with the blocker's id when its × is clicked; ignored below depth 1. */
+  onRemove?: (id: string) => void;
 }): ReactNode {
   return (
     <li
@@ -1720,6 +1742,16 @@ function BlockerRow({
         <span title="Chain continues; too deep to show" className="text-fg-muted shrink-0 text-xs">
           …
         </span>
+      ) : null}
+      {node.depth === 1 && onRemove ? (
+        <button
+          type="button"
+          aria-label={`Remove link to ${node.id}`}
+          onClick={() => onRemove(node.id)}
+          className="text-fg-muted hover:text-danger shrink-0 p-0.5"
+        >
+          <X aria-hidden="true" className="size-3" />
+        </button>
       ) : null}
     </li>
   );

@@ -4,7 +4,7 @@
  * Overview already flags every blocked bead (`BeadCard`'s lock icon); this
  * adds only the *direct* (depth-1) blocker's title next to it — never the
  * full transitive chain, which stays exclusive to the detail pane's
- * "Why blocked" section (bead 72m.5).
+ * "Blocked by" section (bead 72m.5).
  *
  * Per-row cost is O(direct edges), not O(graph): reuse a `BlockerChain`
  * already computed for this bead elsewhere in the same render when the
