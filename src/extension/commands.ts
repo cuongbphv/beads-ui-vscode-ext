@@ -153,6 +153,21 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       await guard(() => store.mutations.close(id, reason), output);
     }),
 
+    register('beadsDashboard.reopenBead', async (target: BeadNode | string) => {
+      const id = resolveId(target);
+      if (!id) return;
+
+      const reason = await vscode.window.showInputBox({
+        title: `Reopen ${id}`,
+        prompt: 'Reason (optional). Press Escape to cancel.',
+        placeHolder: 'e.g. regression found',
+      });
+      // Escape cancels; an empty string is a deliberate "no reason".
+      if (reason === undefined) return;
+
+      await guard(() => store.mutations.reopen(id, reason), output);
+    }),
+
     register('beadsDashboard.resolveGate', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;

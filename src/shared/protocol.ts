@@ -210,6 +210,35 @@ export interface RpcMethods {
     params: { id: string; label: string };
     result: { ok: true };
   };
+  /**
+   * Defer an issue (`bd defer <id> --until <until> --reason <reason>`),
+   * confirmed against `bd defer --help` on the installed CLI. `until` is
+   * NOT a `YYYY-MM-DD` date like `setDue`'s `date` — bd's `--until` takes a
+   * free-form relative expression (`tomorrow`, `+1h`, `next monday`), so the
+   * router only checks it is a non-blank string when present and leaves the
+   * CLI as the authority on whether the expression parses. Both flags are
+   * omitted from the argv, not passed blank, when absent.
+   */
+  deferBead: {
+    params: { id: string; until?: string; reason?: string };
+    result: { ok: true };
+  };
+  /**
+   * Undefer an issue (`bd undefer <id>`). `bd undefer --help` confirms this
+   * command takes no flags beyond the globals — no `--reason`.
+   */
+  undeferBead: {
+    params: { id: string };
+    result: { ok: true };
+  };
+  /**
+   * Reopen a closed issue (`bd reopen <id> --reason <reason>`). `-r`/
+   * `--reason` confirmed against `bd reopen --help` on the installed CLI.
+   */
+  reopenBead: {
+    params: { id: string; reason?: string };
+    result: { ok: true };
+  };
   /** Start receiving `fleetChanged` events. Non-mutating: it observes the fleet, it does not run one. */
   subscribeFleet: {
     params: undefined;
@@ -306,6 +335,9 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'removeDependency',
   'addLabel',
   'removeLabel',
+  'deferBead',
+  'undeferBead',
+  'reopenBead',
 ]);
 
 export interface RpcRequest<M extends RpcMethodName = RpcMethodName> {

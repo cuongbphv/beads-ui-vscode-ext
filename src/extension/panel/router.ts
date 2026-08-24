@@ -20,8 +20,10 @@ import { toRpcError } from '../store';
 import {
   narrowAddDependencyParams,
   narrowCreateParams,
+  narrowDeferParams,
   narrowDependencyParams,
   narrowLabelParams,
+  narrowReopenParams,
   narrowUpdateTextParams,
   requireDueDate,
   requireTargetId,
@@ -189,6 +191,29 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       // Same narrowing as addLabel.
       const narrowed = narrowLabelParams(params);
       await mutations.removeLabel(narrowed.id, narrowed.label);
+      return { ok: true };
+    }
+
+    case 'deferBead': {
+      // narrowDeferParams throws before any argv is built when id is blank;
+      // until/reason pass through as free-form optional strings — until is
+      // NOT a YYYY-MM-DD date (bd's --until takes relative expressions like
+      // "tomorrow"/"+1h"), so this deliberately does not reuse requireDueDate.
+      const narrowed = narrowDeferParams(params);
+      await mutations.defer(narrowed.id, narrowed.until, narrowed.reason);
+      return { ok: true };
+    }
+
+    case 'undeferBead':
+      // bd undefer takes no flags beyond the target id — nothing else to narrow.
+      await mutations.undefer(id());
+      return { ok: true };
+
+    case 'reopenBead': {
+      // narrowReopenParams throws before any argv is built when id is blank;
+      // reason is an optional free-form string, same shape as close's reason.
+      const narrowed = narrowReopenParams(params);
+      await mutations.reopen(narrowed.id, narrowed.reason);
       return { ok: true };
     }
 

@@ -55,6 +55,18 @@ class FakeMutations {
   async removeLabel(id: string, label: string): Promise<void> {
     this.calls.push({ method: 'removeLabel', args: [id, label] });
   }
+
+  async defer(id: string, until?: string, reason?: string): Promise<void> {
+    this.calls.push({ method: 'defer', args: [id, until, reason] });
+  }
+
+  async undefer(id: string): Promise<void> {
+    this.calls.push({ method: 'undefer', args: [id] });
+  }
+
+  async reopen(id: string, reason?: string): Promise<void> {
+    this.calls.push({ method: 'reopen', args: [id, reason] });
+  }
 }
 
 /** Records every call so a test can assert on the argv-shaped params. */
@@ -523,6 +535,129 @@ describe('router removeLabel', () => {
       makeStore(mutations),
       host,
       request('removeLabel', { id: 'bd-1' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router deferBead', () => {
+  it('calls mutations.defer with id only when until/reason are omitted', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('deferBead', { id: 'bd-1' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'defer', args: ['bd-1', undefined, undefined] }]);
+  });
+
+  it('calls mutations.defer with the exact narrowed until/reason', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('deferBead', { id: 'bd-1', until: 'tomorrow', reason: 'waiting on API access' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([
+      { method: 'defer', args: ['bd-1', 'tomorrow', 'waiting on API access'] },
+    ]);
+  });
+
+  it('accepts a free-form relative "until" expression, unlike setDue\'s strict YYYY-MM-DD', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('deferBead', { id: 'bd-1', until: '+1h' }),
+    );
+
+    expect(response.ok).toBe(true);
+    expect(mutations.calls).toEqual([{ method: 'defer', args: ['bd-1', '+1h', undefined] }]);
+  });
+
+  it('narrows a blank until/reason to undefined rather than passing an empty string', async () => {
+    const mutations = new FakeMutations();
+    await handleRequest(
+      makeStore(mutations),
+      host,
+      request('deferBead', { id: 'bd-1', until: '   ', reason: '' }),
+    );
+
+    expect(mutations.calls).toEqual([{ method: 'defer', args: ['bd-1', undefined, undefined] }]);
+  });
+
+  it('rejects a missing id before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('deferBead', { until: 'tomorrow' }),
+    );
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router undeferBead', () => {
+  it('calls mutations.undefer with just the id and returns ok', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('undeferBead', { id: 'bd-1' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'undefer', args: ['bd-1'] }]);
+  });
+
+  it('rejects a missing id before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(makeStore(mutations), host, request('undeferBead', {}));
+
+    expect(response.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router reopenBead', () => {
+  it('calls mutations.reopen with id only when reason is omitted', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('reopenBead', { id: 'bd-1' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'reopen', args: ['bd-1', undefined] }]);
+  });
+
+  it('calls mutations.reopen with the exact narrowed reason', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('reopenBead', { id: 'bd-1', reason: 'regression found' }),
+    );
+
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'reopen', args: ['bd-1', 'regression found'] }]);
+  });
+
+  it('rejects a missing id before the mutation is ever called', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(
+      makeStore(mutations),
+      host,
+      request('reopenBead', { reason: 'oops' }),
     );
 
     expect(response.ok).toBe(false);

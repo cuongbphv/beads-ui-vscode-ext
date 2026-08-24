@@ -207,6 +207,44 @@ export class BdMutations {
     await this.run(['update', id, '--remove-label', label], id);
   }
 
+  /**
+   * Defer an issue (`bd defer <id>`, plus `--until`/`--reason` when given).
+   * Measured against `bd defer --help` on the installed CLI: `--until`
+   * takes a free-form relative expression (`tomorrow`, `+1h`, `next
+   * monday`), not a strict date, and its `--reason` flag has no short form
+   * (unlike `reopen`'s `-r`). The router narrows both to "absent, or a
+   * non-blank string" before this is ever called, so neither flag is ever
+   * emitted blank.
+   */
+  async defer(id: string, until?: string, reason?: string): Promise<void> {
+    const args = ['defer', id];
+    if (until?.trim()) args.push('--until', until.trim());
+    if (reason?.trim()) args.push('--reason', reason.trim());
+    await this.run(args, id);
+  }
+
+  /**
+   * Undefer an issue (`bd undefer <id>`). `bd undefer --help` (measured on
+   * the installed CLI) confirms this command takes no flags beyond the
+   * globals — there is no `--reason` to pass, unlike `defer`/`reopen`.
+   */
+  async undefer(id: string): Promise<void> {
+    await this.run(['undefer', id], id);
+  }
+
+  /**
+   * Reopen a closed issue (`bd reopen <id>`, plus `-r`/`--reason` when
+   * given). `-r`/`--reason` confirmed against `bd reopen --help` on the
+   * installed CLI — unlike `defer`, `reopen`'s reason flag does have a short
+   * form, but the long form is used here for consistency with the other
+   * mutations in this file.
+   */
+  async reopen(id: string, reason?: string): Promise<void> {
+    const args = ['reopen', id];
+    if (reason?.trim()) args.push('--reason', reason.trim());
+    await this.run(args, id);
+  }
+
   private async run(args: string[], ...changedIds: string[]): Promise<void> {
     await this.bd.exec(args);
     this.notify(changedIds);

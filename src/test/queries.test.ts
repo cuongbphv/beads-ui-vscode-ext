@@ -670,6 +670,81 @@ describe('BdMutations label writes', () => {
   });
 });
 
+describe('BdMutations defer/undefer/reopen writes', () => {
+  function mutations(fake: FakeBd): BdMutations {
+    return new BdMutations(fake as unknown as BdService);
+  }
+
+  it('defers with just the id when until/reason are omitted', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).defer('bd-a1');
+    expect(fake.argv).toEqual([['defer', 'bd-a1']]);
+  });
+
+  it('defers with --until and --reason when both are given', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).defer('bd-a1', 'tomorrow', 'waiting on API access');
+    expect(fake.argv).toEqual([
+      ['defer', 'bd-a1', '--until', 'tomorrow', '--reason', 'waiting on API access'],
+    ]);
+  });
+
+  it('defers with only --until when reason is omitted', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).defer('bd-a1', '+1h');
+    expect(fake.argv).toEqual([['defer', 'bd-a1', '--until', '+1h']]);
+  });
+
+  it('defers with only --reason when until is omitted', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).defer('bd-a1', undefined, 'blocked externally');
+    expect(fake.argv).toEqual([['defer', 'bd-a1', '--reason', 'blocked externally']]);
+  });
+
+  it('trims until/reason and omits either flag entirely when it trims to blank', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).defer('bd-a1', '  tomorrow  ', '   ');
+    expect(fake.argv).toEqual([['defer', 'bd-a1', '--until', 'tomorrow']]);
+  });
+
+  it('undefers with just the id — bd undefer takes no flags', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).undefer('bd-a1');
+    expect(fake.argv).toEqual([['undefer', 'bd-a1']]);
+  });
+
+  it('reopens with just the id when reason is omitted', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).reopen('bd-a1');
+    expect(fake.argv).toEqual([['reopen', 'bd-a1']]);
+  });
+
+  it('reopens with --reason when given', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).reopen('bd-a1', 'regression found');
+    expect(fake.argv).toEqual([['reopen', 'bd-a1', '--reason', 'regression found']]);
+  });
+
+  it('omits an empty/whitespace-only reopen reason instead of passing a blank flag', async () => {
+    const fake = new FakeBd();
+    await mutations(fake).reopen('bd-a1', '   ');
+    expect(fake.argv).toEqual([['reopen', 'bd-a1']]);
+  });
+
+  it('notifies listeners with the changed id after each of defer/undefer/reopen', async () => {
+    const fake = new FakeBd();
+    const bd = mutations(fake);
+    const changed: string[][] = [];
+    bd.onChanged((ids) => changed.push(ids));
+
+    await bd.defer('bd-a1', 'tomorrow');
+    await bd.undefer('bd-a1');
+    await bd.reopen('bd-a1');
+
+    expect(changed).toEqual([['bd-a1'], ['bd-a1'], ['bd-a1']]);
+  });
+});
+
 /**
  * `FakeBd` above keys canned responses by `args[0]` only, which is fine when
  * every fixture in a describe block hits a distinct top-level command. Every

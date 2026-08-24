@@ -141,6 +141,12 @@
         "icon": "$(pass)"
       },
       {
+        "command": "beadsDashboard.reopenBead",
+        "title": "Reopen Issue…",
+        "category": "Beads",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "beadsDashboard.copyId",
         "title": "Copy Issue ID",
         "category": "Beads",
@@ -214,6 +220,11 @@
           "group": "2_close@1"
         },
         {
+          "command": "beadsDashboard.reopenBead",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem == beadClosed",
+          "group": "2_close@1"
+        },
+        {
           "command": "beadsDashboard.copyId",
           "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "9_copy@1"
@@ -247,6 +258,10 @@
         },
         {
           "command": "beadsDashboard.closeBead",
+          "when": "false"
+        },
+        {
+          "command": "beadsDashboard.reopenBead",
           "when": "false"
         },
         {

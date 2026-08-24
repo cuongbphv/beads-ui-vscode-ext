@@ -22,6 +22,7 @@ import {
   Pencil,
   Pin,
   Plus,
+  RotateCcw,
   Snowflake,
   StickyNote,
   Timer,
@@ -85,6 +86,14 @@ export function BeadDetail({
   const [labelOverrides, setLabelOverrides] = useState<Record<string, string[]>>({});
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
+  /**
+   * Defer composer draft. `deferOpen` is only ever shown when `bead.defer_until`
+   * is unset — see the render below — so this never has to coexist with the
+   * Undefer button.
+   */
+  const [deferOpen, setDeferOpen] = useState(false);
+  const [deferUntilDraft, setDeferUntilDraft] = useState('');
+  const [deferReasonDraft, setDeferReasonDraft] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const {
     events: historyEvents,
@@ -102,6 +111,9 @@ export function BeadDetail({
     setNoteDraft('');
     setNoteOpen(false);
     setTitleEditing(false);
+    setDeferOpen(false);
+    setDeferUntilDraft('');
+    setDeferReasonDraft('');
     // A different issue means a different history; collapsing it back means
     // the next fetch only happens if the user actually asks for it again,
     // rather than silently following the selection around.
@@ -216,6 +228,38 @@ export function BeadDetail({
       setNoteDraft('');
       setNoteOpen(false);
     }
+  }
+
+  /**
+   * Defers the issue via the dedicated `bd defer` command (not `bd update
+   * --status`). `until` accepts bd's free-form relative expressions
+   * (`tomorrow`, `+1h`, `next monday`), not a strict date, so this is a
+   * plain text field rather than a date picker; both it and `reason` are
+   * sent as `undefined` rather than an empty string when left blank, so
+   * `bd defer` sees neither flag at all.
+   */
+  async function submitDefer(): Promise<void> {
+    const until = deferUntilDraft.trim() || undefined;
+    const reason = deferReasonDraft.trim() || undefined;
+    const ok = await mutate(
+      () => call('deferBead', { id: bead.id, until, reason }),
+      `${bead.id} deferred`,
+    );
+    if (ok) {
+      setDeferUntilDraft('');
+      setDeferReasonDraft('');
+      setDeferOpen(false);
+    }
+  }
+
+  /** Restores the issue from the icebox via the dedicated `bd undefer` command. */
+  async function undeferBead(): Promise<void> {
+    await mutate(() => call('undeferBead', { id: bead.id }), `${bead.id} undeferred`);
+  }
+
+  /** Reopens a done issue via the dedicated `bd reopen` command (not `bd update --status`). */
+  async function reopenBead(): Promise<void> {
+    await mutate(() => call('reopenBead', { id: bead.id }), `${bead.id} reopened`);
   }
 
   /**
@@ -545,6 +589,100 @@ export function BeadDetail({
               Close issue
             </Button>
           ) : null}
+
+          {/*
+            Reopen is toggled on `index.isDone(bead.status)` — the runtime
+            vocabulary check — never on a hardcoded status string, per
+            CLAUDE.md's rule against hardcoding beads vocabulary.
+          */}
+          {done ? (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              className="mt-1 justify-center"
+              onClick={() => void reopenBead()}
+            >
+              <RotateCcw aria-hidden="true" className="size-3.5" />
+              Reopen
+            </Button>
+          ) : null}
+
+          {/*
+            Defer/Undefer toggle on `bead.defer_until` (whether the issue is
+            currently deferred), independent of `done` — an issue can be
+            deferred and later closed or reopened without ever being undeferred.
+          */}
+          <div className="@container">
+            {bead.defer_until ? (
+              <Button variant="ghost" disabled={busy} onClick={() => void undeferBead()}>
+                <Snowflake aria-hidden="true" className="size-3.5" />
+                Undefer
+              </Button>
+            ) : deferOpen ? (
+              <div
+                className="border-border grid gap-1.5 rounded-md border p-2"
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape') return;
+                  // Abandon the composer without also closing the pane, which
+                  // is what the window-level Escape handler would otherwise
+                  // do. No explicit `.blur()` here — the same reasoning as the
+                  // title/note composers: this closure's `deferUntilDraft` /
+                  // `deferReasonDraft` are already the values being reverted,
+                  // so there is no stale-closure risk to guard against, and an
+                  // explicit blur would only re-fire this same handler.
+                  event.stopPropagation();
+                  setDeferUntilDraft('');
+                  setDeferReasonDraft('');
+                  setDeferOpen(false);
+                }}
+              >
+                <label htmlFor="defer-until" className="text-fg-muted text-xs">
+                  Defer until
+                </label>
+                <input
+                  id="defer-until"
+                  autoFocus
+                  disabled={busy}
+                  value={deferUntilDraft}
+                  placeholder="tomorrow, +1h, next monday…"
+                  onChange={(event) => setDeferUntilDraft(event.target.value)}
+                  className="bg-input-bg border-input-border text-fg min-w-0 rounded-md border px-2 py-1 text-sm"
+                />
+                <label htmlFor="defer-reason" className="text-fg-muted text-xs">
+                  Reason (optional)
+                </label>
+                <input
+                  id="defer-reason"
+                  disabled={busy}
+                  value={deferReasonDraft}
+                  placeholder="e.g. waiting on API access"
+                  onChange={(event) => setDeferReasonDraft(event.target.value)}
+                  className="bg-input-bg border-input-border text-fg min-w-0 rounded-md border px-2 py-1 text-sm"
+                />
+                <div className="flex flex-col gap-1.5 @xs:flex-row @xs:items-center @xs:justify-end">
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      setDeferUntilDraft('');
+                      setDeferReasonDraft('');
+                      setDeferOpen(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button variant="primary" disabled={busy} onClick={() => void submitDefer()}>
+                    Defer
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="ghost" disabled={busy} onClick={() => setDeferOpen(true)}>
+                <Snowflake aria-hidden="true" className="size-3.5" />
+                Defer…
+              </Button>
+            )}
+          </div>
         </section>
 
         <EditableText

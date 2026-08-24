@@ -247,12 +247,59 @@ export function narrowCreateParams(params: Record<string, unknown>): CreateBeadP
   return narrowed;
 }
 
+export interface DeferParams {
+  id: string;
+  until?: string;
+  reason?: string;
+}
+
+/**
+ * Narrows the params for `deferBead` into the exact shape
+ * `BdMutations.defer` builds an argv from.
+ *
+ * `until` is deliberately NOT run through `requireDueDate`: measured against
+ * `bd defer --help` on the installed CLI, `--until` accepts a free-form
+ * relative expression (`tomorrow`, `+1h`, `next monday`), not a `YYYY-MM-DD`
+ * date, so only its shape (absent, or a non-blank string) is checked here —
+ * the CLI stays the authority on whether the expression parses.
+ */
+export function narrowDeferParams(params: Record<string, unknown>): DeferParams {
+  const id = requireString(params.id, 'id');
+  const until = optionalString(params.until, 'until');
+  const reason = optionalString(params.reason, 'reason');
+  const narrowed: DeferParams = { id };
+  if (until !== undefined) narrowed.until = until;
+  if (reason !== undefined) narrowed.reason = reason;
+  return narrowed;
+}
+
+export interface ReopenParams {
+  id: string;
+  reason?: string;
+}
+
+/**
+ * Narrows the params for `reopenBead` into the exact shape
+ * `BdMutations.reopen` builds an argv from. `reason` has no allowlist to
+ * check against — same reasoning as `close`'s `reason` elsewhere — so only
+ * its shape (absent, or a non-blank string) is enforced.
+ */
+export function narrowReopenParams(params: Record<string, unknown>): ReopenParams {
+  const id = requireString(params.id, 'id');
+  const reason = optionalString(params.reason, 'reason');
+  const narrowed: ReopenParams = { id };
+  if (reason !== undefined) narrowed.reason = reason;
+  return narrowed;
+}
+
 /**
  * `undefined` means "not provided"; anything else must be a string. A blank
  * string narrows to `undefined` too, so the argv builder never emits a flag
- * with an empty value.
+ * with an empty value. Exported so `narrowDeferParams`/`narrowReopenParams`
+ * below can reuse it for `until`/`reason` — neither of those is beads
+ * vocabulary or a fixed CLI shape, just an optional free-form string.
  */
-function optionalString(value: unknown, field: string): string | undefined {
+export function optionalString(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'string') {
     throw new Error(`Invalid parameter "${field}": expected a string.`);

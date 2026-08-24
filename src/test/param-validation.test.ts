@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   narrowAddDependencyParams,
   narrowCreateParams,
+  narrowDeferParams,
   narrowDependencyParams,
   narrowLabelParams,
+  narrowReopenParams,
   narrowUpdateTextParams,
   requireDepType,
   requireDueDate,
@@ -229,6 +231,70 @@ describe('narrowLabelParams (router param narrowing)', () => {
     expect(() => narrowLabelParams({ id: 'bd-1', label: '' })).toThrow(/"label"/);
     expect(() => narrowLabelParams({ id: 'bd-1', label: '   ' })).toThrow(/"label"/);
     expect(() => narrowLabelParams({ id: 'bd-1', label: 42 })).toThrow(/"label"/);
+  });
+});
+
+describe('narrowDeferParams (router param narrowing)', () => {
+  it('narrows a well-formed id/until/reason request', () => {
+    expect(narrowDeferParams({ id: 'bd-1', until: 'tomorrow', reason: 'waiting on API access' })).toEqual({
+      id: 'bd-1',
+      until: 'tomorrow',
+      reason: 'waiting on API access',
+    });
+  });
+
+  it('narrows to id only when until/reason are absent', () => {
+    expect(narrowDeferParams({ id: 'bd-1' })).toEqual({ id: 'bd-1' });
+  });
+
+  it('accepts a free-form relative "until" expression — bd defer --until is not a YYYY-MM-DD date', () => {
+    expect(narrowDeferParams({ id: 'bd-1', until: '+1h' })).toEqual({ id: 'bd-1', until: '+1h' });
+    expect(narrowDeferParams({ id: 'bd-1', until: 'next monday' })).toEqual({
+      id: 'bd-1',
+      until: 'next monday',
+    });
+  });
+
+  it('treats a blank until/reason as absent rather than an empty-string flag', () => {
+    expect(narrowDeferParams({ id: 'bd-1', until: '   ', reason: '' })).toEqual({ id: 'bd-1' });
+  });
+
+  it('rejects a missing or blank id', () => {
+    expect(() => narrowDeferParams({ until: 'tomorrow' })).toThrow(/"id"/);
+    expect(() => narrowDeferParams({ id: '', until: 'tomorrow' })).toThrow(/"id"/);
+    expect(() => narrowDeferParams({ id: '   ' })).toThrow(/"id"/);
+  });
+
+  it('rejects a non-string until/reason', () => {
+    expect(() => narrowDeferParams({ id: 'bd-1', until: 42 })).toThrow(/"until"/);
+    expect(() => narrowDeferParams({ id: 'bd-1', reason: 42 })).toThrow(/"reason"/);
+  });
+});
+
+describe('narrowReopenParams (router param narrowing)', () => {
+  it('narrows a well-formed id/reason request', () => {
+    expect(narrowReopenParams({ id: 'bd-1', reason: 'regression found' })).toEqual({
+      id: 'bd-1',
+      reason: 'regression found',
+    });
+  });
+
+  it('narrows to id only when reason is absent', () => {
+    expect(narrowReopenParams({ id: 'bd-1' })).toEqual({ id: 'bd-1' });
+  });
+
+  it('treats a blank reason as absent rather than an empty-string flag', () => {
+    expect(narrowReopenParams({ id: 'bd-1', reason: '   ' })).toEqual({ id: 'bd-1' });
+  });
+
+  it('rejects a missing or blank id', () => {
+    expect(() => narrowReopenParams({ reason: 'x' })).toThrow(/"id"/);
+    expect(() => narrowReopenParams({ id: '', reason: 'x' })).toThrow(/"id"/);
+    expect(() => narrowReopenParams({ id: '   ' })).toThrow(/"id"/);
+  });
+
+  it('rejects a non-string reason', () => {
+    expect(() => narrowReopenParams({ id: 'bd-1', reason: 42 })).toThrow(/"reason"/);
   });
 });
 
