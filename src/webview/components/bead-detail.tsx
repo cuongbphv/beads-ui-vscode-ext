@@ -19,7 +19,9 @@ import {
   Link2,
   Lock,
   MessageSquare,
+  Pencil,
   Pin,
+  Plus,
   Snowflake,
   StickyNote,
   Timer,
@@ -31,6 +33,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { buildBlockerChain, type BlockerNode } from '../../shared/blocker-chain';
 import type { HistoryEvent } from '../../shared/history-diff';
 import { StatusIndex, edgesOfKind, parentIdOf } from '../../shared/model';
+import type { TextField } from '../../shared/protocol';
 import { formatDuration, spanOf } from '../../shared/schedule';
 import {
   PARENT_CHILD,
@@ -45,6 +48,7 @@ import { useBeadDetail } from '../hooks/use-bead-detail';
 import { useHistory } from '../hooks/use-history';
 import { labelChipStyle } from '../lib/label-color';
 import { absoluteTime, cn, relativeTime } from '../lib/utils';
+import { Markdown } from './markdown';
 import { Button, PriorityDot, Skeleton, StatusPill, TypeIcon } from './primitives';
 import { useToast } from './toast';
 
@@ -68,6 +72,8 @@ export function BeadDetail({
   const { bead, comments, loading } = useBeadDetail(summary, refreshKey);
   const [busy, setBusy] = useState(false);
   const [assignee, setAssignee] = useState(bead.assignee ?? '');
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(bead.title);
   const [commentDraft, setCommentDraft] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
@@ -79,6 +85,7 @@ export function BeadDetail({
   } = useHistory(bead.id, historyOpen, refreshKey);
 
   useEffect(() => setAssignee(bead.assignee ?? ''), [bead.id, bead.assignee]);
+  useEffect(() => setTitleDraft(bead.title), [bead.id, bead.title]);
 
   // Switching to a different issue abandons any in-progress draft — a comment
   // typed for one issue appearing under another would be a silent misfire.
@@ -86,6 +93,7 @@ export function BeadDetail({
     setCommentDraft('');
     setNoteDraft('');
     setNoteOpen(false);
+    setTitleEditing(false);
     // A different issue means a different history; collapsing it back means
     // the next fetch only happens if the user actually asks for it again,
     // rather than silently following the selection around.
@@ -162,6 +170,32 @@ export function BeadDetail({
     }
   }
 
+  /**
+   * Same shape as `commitAssignee`: a rejected title has to be put back by
+   * hand, and an empty title is nonsensical (bd itself refuses one), so an
+   * edit that trims to nothing is silently reverted rather than sent.
+   */
+  async function commitTitle(): Promise<void> {
+    const next = titleDraft.trim();
+    if (!next || next === bead.title) {
+      setTitleDraft(bead.title);
+      setTitleEditing(false);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await call('updateText', { id: bead.id, field: 'title', text: next });
+      notify(`${bead.id} renamed`);
+      setTitleEditing(false);
+    } catch (error) {
+      setTitleDraft(bead.title);
+      notify(asRpcError(error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const done = index.isDone(bead.status);
   const span = spanOf(bead, done, Date.now());
   const parentId = parentIdOf(bead);
@@ -205,7 +239,50 @@ export function BeadDetail({
             ) : null}
             {loading ? <Skeleton className="ml-auto h-3 w-16" /> : null}
           </div>
-          <h2 className="text-fg-strong text-lg leading-snug font-medium">{bead.title}</h2>
+          {titleEditing ? (
+            <input
+              autoFocus
+              aria-label="Edit title"
+              disabled={busy}
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={() => void commitTitle()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                  return;
+                }
+                if (event.key !== 'Escape') return;
+                // Abandon the edit without also closing the pane, which is
+                // what the window-level Escape handler would otherwise do.
+                // No explicit `.blur()` here (unlike the Enter branch above):
+                // `setTitleEditing(false)` unmounts this input on its own, and
+                // calling `.blur()` first would fire `onBlur` synchronously
+                // against this render's stale (pre-revert) `titleDraft`
+                // closure, re-committing the very text Escape is abandoning.
+                event.stopPropagation();
+                setTitleDraft(bead.title);
+                setTitleEditing(false);
+              }}
+              className="bg-input-bg border-input-border text-fg-strong w-full min-w-0 rounded-md border px-2 py-1 text-lg font-medium"
+            />
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-fg-strong text-lg leading-snug font-medium">{bead.title}</h2>
+              <button
+                type="button"
+                aria-label="Edit title"
+                disabled={busy}
+                onClick={() => {
+                  setTitleDraft(bead.title);
+                  setTitleEditing(true);
+                }}
+                className="text-fg-muted hover:text-fg shrink-0"
+              >
+                <Pencil aria-hidden="true" className="size-3" />
+              </button>
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -393,9 +470,36 @@ export function BeadDetail({
           ) : null}
         </section>
 
-        <LongText title="Description" text={bead.description} />
-        <LongText title="Design" text={bead.design} />
-        <LongText title="Acceptance criteria" text={bead.acceptance_criteria} />
+        <EditableText
+          key={`description-${bead.id}`}
+          title="Description"
+          text={bead.description}
+          field="description"
+          id={bead.id}
+          busy={busy}
+          mutate={mutate}
+          placeholder="Add description…"
+        />
+        <EditableText
+          key={`design-${bead.id}`}
+          title="Design"
+          text={bead.design}
+          field="design"
+          id={bead.id}
+          busy={busy}
+          mutate={mutate}
+          placeholder="Add design…"
+        />
+        <EditableText
+          key={`acceptance-${bead.id}`}
+          title="Acceptance criteria"
+          text={bead.acceptance_criteria}
+          field="acceptance"
+          id={bead.id}
+          busy={busy}
+          mutate={mutate}
+          placeholder="Add acceptance criteria…"
+        />
         <LongText title="Notes" text={bead.notes} />
 
         {/*
@@ -709,6 +813,171 @@ function LongText({ title, text }: { title: string; text?: string }): ReactNode 
     <Section title={title}>
       <p className="text-fg text-sm whitespace-pre-wrap">{text}</p>
     </Section>
+  );
+}
+
+/**
+ * The description/design/acceptance sections: a pencil swaps read-only text
+ * for a textarea with a Write/Preview toggle (Preview renders through the
+ * same `Markdown` component transcripts use), Ctrl/Cmd+Enter saves through
+ * `updateText`, Escape cancels without also closing the pane. Unlike
+ * `LongText`, an empty field still renders — a ghost "Add …" button — so
+ * there is always a way to give a field its first value, not only to edit
+ * one that already has text.
+ *
+ * Keyed by `${field}-${bead.id}` at the call site so switching issues
+ * remounts fresh, discarding any in-progress edit — the same rule the
+ * comment and note drafts already follow.
+ */
+function EditableText({
+  title,
+  text,
+  field,
+  id,
+  busy,
+  mutate,
+  placeholder,
+}: {
+  title: string;
+  text?: string;
+  field: Extract<TextField, 'description' | 'design' | 'acceptance'>;
+  id: string;
+  busy: boolean;
+  mutate: (action: () => Promise<unknown>, success: string) => Promise<boolean>;
+  placeholder: string;
+}): ReactNode {
+  const [editing, setEditing] = useState(false);
+  const [mode, setMode] = useState<'write' | 'preview'>('write');
+  const [draft, setDraft] = useState(text ?? '');
+
+  function startEdit(): void {
+    setDraft(text ?? '');
+    setMode('write');
+    setEditing(true);
+  }
+
+  function cancel(): void {
+    setDraft(text ?? '');
+    setMode('write');
+    setEditing(false);
+  }
+
+  async function save(): Promise<void> {
+    const next = draft;
+    if (next === (text ?? '')) {
+      setEditing(false);
+      return;
+    }
+    const ok = await mutate(
+      () => call('updateText', { id, field, text: next }),
+      `${id} ${title.toLowerCase()} updated`,
+    );
+    if (ok) setEditing(false);
+  }
+
+  if (!editing) {
+    const hasText = !!text?.trim();
+    return (
+      <section className="mt-4">
+        <h3 className="text-fg-muted mb-1 flex items-center justify-between gap-1 text-xs tracking-wide uppercase">
+          {title}
+          <button
+            type="button"
+            aria-label={`Edit ${title}`}
+            disabled={busy}
+            onClick={startEdit}
+            className="text-fg-muted hover:text-fg normal-case"
+          >
+            <Pencil aria-hidden="true" className="size-3" />
+          </button>
+        </h3>
+        {hasText ? (
+          <p className="text-fg text-sm whitespace-pre-wrap">{text}</p>
+        ) : (
+          <Button variant="ghost" disabled={busy} onClick={startEdit}>
+            <Plus aria-hidden="true" className="size-3.5" />
+            {placeholder}
+          </Button>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section
+      className="@container mt-4"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          // Abandon the edit without also closing the pane, which is what
+          // the window-level Escape handler would otherwise do.
+          event.stopPropagation();
+          cancel();
+          return;
+        }
+        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+          event.preventDefault();
+          void save();
+        }
+      }}
+    >
+      <div className="mb-1 flex items-center justify-between gap-1">
+        <h3 className="text-fg-muted text-xs tracking-wide uppercase">{title}</h3>
+        <div className="flex gap-2 text-xs">
+          <button
+            type="button"
+            aria-pressed={mode === 'write'}
+            disabled={busy}
+            onClick={() => setMode('write')}
+            className={mode === 'write' ? 'text-fg font-medium' : 'text-fg-muted hover:text-fg'}
+          >
+            Write
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'preview'}
+            disabled={busy}
+            onClick={() => setMode('preview')}
+            className={mode === 'preview' ? 'text-fg font-medium' : 'text-fg-muted hover:text-fg'}
+          >
+            Preview
+          </button>
+        </div>
+      </div>
+
+      {mode === 'write' ? (
+        <textarea
+          autoFocus
+          rows={5}
+          aria-label={`${title} draft`}
+          disabled={busy}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          className="bg-input-bg border-input-border text-fg min-w-0 w-full resize-y rounded-md border px-2 py-1 text-sm"
+        />
+      ) : (
+        <div className="border-border min-h-24 rounded-md border px-2 py-1.5">
+          {draft.trim() ? (
+            <Markdown source={draft} />
+          ) : (
+            <p className="text-fg-muted text-xs">Nothing to preview.</p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-1.5 flex flex-col gap-1.5 @xs:flex-row @xs:items-center @xs:justify-between">
+        <span className="text-fg-muted text-xs opacity-70">
+          Ctrl/Cmd+Enter to save. Escape cancels.
+        </span>
+        <div className="flex gap-1.5 @xs:self-end">
+          <Button variant="ghost" disabled={busy} onClick={cancel}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={busy} onClick={() => void save()}>
+            Save
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 
