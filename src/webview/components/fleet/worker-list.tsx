@@ -23,6 +23,7 @@
 import { Bot, GitBranch, User } from 'lucide-react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
+import { resolveBeadBySuffix } from '../../../shared/bead-id-match';
 import type { FleetSnapshot, FleetWorker } from '../../../shared/fleet';
 import { filterWorkersByStatus, type FleetStatusFilter } from '../../../shared/fleet-filter';
 import { sortByRecency } from '../../../shared/fleet-sort';
@@ -84,8 +85,11 @@ export function WorkerList({
   /**
    * The dashboard's issues keyed by full bead id (built once in `App.tsx`),
    * so a worker row can show its bead's claim-lease liveness
-   * (beads-ui-vscode-ext-ayq.1). Lookup is exact: a worker brief that named a
-   * short id simply finds no bead and renders no chip — never a wrong one.
+   * (beads-ui-vscode-ext-ayq.1). A worker brief that named a short id still
+   * resolves via unique-suffix match (beads-ui-vscode-ext-ayq.5,
+   * `resolveBeadBySuffix`): an exact full-id hit short-circuits, otherwise a
+   * short id must match exactly one bead in the map or no chip renders —
+   * never a guessed, possibly-wrong one.
    */
   beadsById: ReadonlyMap<string, Bead>;
 }): ReactNode {
@@ -154,8 +158,10 @@ export function WorkerList({
             <ul className="divide-border divide-y">
               {workers.map((worker) => {
                 const worktree = worker.worktreePath ? worktreeByPath.get(worker.worktreePath) : undefined;
-                // The bead this worker claims, when the dashboard knows it.
-                const bead = worker.beadId ? beadsById.get(worker.beadId) : undefined;
+                // The bead this worker claims, when the dashboard knows it —
+                // exact id or an unambiguous short-id suffix match, never a
+                // guess (beads-ui-vscode-ext-ayq.5).
+                const bead = worker.beadId ? resolveBeadBySuffix(worker.beadId, beadsById) : undefined;
                 const workerTarget = `agent:${worker.agentId}`;
                 const workerSelected = selectedTarget === workerTarget;
                 return (

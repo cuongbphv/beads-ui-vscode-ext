@@ -262,6 +262,101 @@ describe('WorkerList lease badge (beads-ui-vscode-ext-ayq.1)', () => {
   });
 });
 
+describe('WorkerList lease badge unique-suffix lookup (beads-ui-vscode-ext-ayq.5)', () => {
+  function leasedBead(overrides: Partial<Bead> = {}): Bead {
+    return {
+      id: 'proj-7pi',
+      title: 'Claimed work',
+      status: 'in_progress',
+      priority: 1,
+      issue_type: 'task',
+      ...overrides,
+    };
+  }
+
+  it('shows a lease chip when the worker names the exact full bead id', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [
+          worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: 'beads-ui-vscode-ext-19r.1' }),
+        ],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'beads-ui-vscode-ext-19r.1',
+            leasedBead({ id: 'beads-ui-vscode-ext-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).toContain('leased');
+  });
+
+  it('shows a lease chip when the worker names a short id that matches exactly one bead', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: '19r.1' })],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'beads-ui-vscode-ext-19r.1',
+            leasedBead({ id: 'beads-ui-vscode-ext-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).toContain('leased');
+  });
+
+  it('shows no chip when the short id suffix-matches two beads with different prefixes', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: '19r.1' })],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'proj-a-19r.1',
+            leasedBead({ id: 'proj-a-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+          [
+            'proj-b-19r.1',
+            leasedBead({ id: 'proj-b-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).not.toContain('leased');
+  });
+
+  it('shows no chip when the short id matches no bead at all', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: '19r.1' })],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'beads-ui-vscode-ext-7pi',
+            leasedBead({ id: 'beads-ui-vscode-ext-7pi', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).not.toContain('leased');
+  });
+});
+
 describe('WorkerList stale worktrees', () => {
   it('renders an orphan worktree under "Stale worktrees" with its diffstat', async () => {
     const el = await render(

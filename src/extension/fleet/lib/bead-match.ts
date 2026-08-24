@@ -7,26 +7,20 @@
  * *shortened* form of the full bead id (`wt-19r1` for bead
  * `beads-ui-vscode-ext-19r.1`), and the dot a short id carries is sometimes
  * dropped entirely from the directory name (`wt-19r1` on disk for bead
- * `19r.1`). So matching normalizes away `.` and `_` on both sides, then
- * requires the worktree's (`wt-`-stripped, normalized) name to be a suffix of
- * the normalized bead id — an exact match is just the suffix case where the
- * two strings are equal length.
+ * `19r.1`). Normalizing and suffix-matching that lives in
+ * `src/shared/bead-id-match.ts` (framework-free, shared with the webview's
+ * lease-badge lookup) so there is one normalizer, not two — this module
+ * only strips the worktree's `wt-` prefix before delegating.
  */
 
-function normalizeToken(value: string): string {
-  return value.toLowerCase().replace(/[._]/g, '');
-}
+import { isSuffixMatch } from '../../../shared/bead-id-match';
 
 /** True when worktree directory `worktreeDirName` plausibly names `beadId`. */
 export function worktreeNameMatchesBeadId(worktreeDirName: string, beadId: string): boolean {
   if (typeof worktreeDirName !== 'string' || typeof beadId !== 'string') return false;
 
   const stripped = worktreeDirName.replace(/^wt-/i, '');
-  const normWorktree = normalizeToken(stripped);
-  const normBead = normalizeToken(beadId);
-  if (!normWorktree || !normBead) return false;
-
-  return normBead === normWorktree || normBead.endsWith(normWorktree);
+  return isSuffixMatch(stripped, beadId);
 }
 
 function samePath(a: string, b: string): boolean {
