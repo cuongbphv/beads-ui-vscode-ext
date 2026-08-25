@@ -88,6 +88,13 @@ burn-up of everything closed so far:
 
 ![Overview tab: 46 issues, 15 ready, 4 blocked, 2 overdue, a 30% done donut, priority and issue-type breakdowns, a rising burn-up over six weeks, and workload per assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview.png)
 
+**Overview, sync status and health checks** — both the header's sync-status chip
+and the **Project health** drawer fetch nothing until you act: this is the chip
+right after a manual Refresh, and the drawer right after **Run checks**, not
+either one's default empty state:
+
+![Overview tab with the header's sync-status chip showing embedded mode after a manual refresh, and the Project health drawer expanded after Run checks showing Stale 2, Orphans 0, Lint 20 and Dep cycles 0](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview-health.png)
+
 **Roadmap** — a real timeline with today marked, each epic carrying its own
 progress count. Closed work is folded away behind a count you can click:
 
@@ -109,6 +116,16 @@ preferred spot, nudged with the arrow keys, or sent back with **Reset layout**; 
 issues are flagged red wherever they sit in the layout:
 
 ![Graph tab: a layered dependency DAG with several blocked issues outlined in red, zoom and reset-layout controls in the toolbar, and the sidebar's Gates(1) entry alongside it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
+
+**Molecules** — `bd mol` molecules as cards with live progress, and open gates
+surfaced right alongside them:
+
+![Molecules tab: a Gates (2) section listing two open human gates, and a molecule card for "ssepatch" showing 1/5 steps done (20%), an ETA, and its current step "Wire backoff into client"](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules.png)
+
+**Molecules, a step list expanded** — one molecule, five visually distinct step
+states: done, current, ready, pending and gated:
+
+![Molecule detail step list for "ssepatch" grouped into a parallel cluster: a Ready step tagged with a gate: human badge, a Done step struck through, another Ready step, and an In progress step, plus a Pending step outside the group blocked by one of the ready steps](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules-detail.png)
 
 **Fleet** — one orchestrator, one worker running against a real `wt-*` git
 worktree, streamed straight from the same JSONL transcript Claude Code itself
