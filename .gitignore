@@ -23,6 +23,7 @@ vitest-report.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+npm-ci.log
 
 # local env files
 .env*.local
