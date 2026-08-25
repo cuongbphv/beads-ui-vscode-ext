@@ -13,7 +13,7 @@
  * while one is outstanding just waits for it, matching the "coalesced to one
  * in-flight call" contract from the design plan.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { MolSnapshot } from '../../shared/mol';
 import type { RpcError } from '../../shared/protocol';
@@ -30,16 +30,28 @@ export function useMolecules(): MoleculesState {
   const [snapshot, setSnapshot] = useState<MolSnapshot>();
   const [error, setError] = useState<RpcError>();
   const [loading, setLoading] = useState(true);
-  const inFlight = useRef(false);
 
   useEffect(() => {
     let live = true;
+    // Coalescing flag, scoped to *this* effect instance only — never a ref.
+    // A ref would survive React StrictMode's dev-mode double-invoke of this
+    // effect (mount -> cleanup -> remount): the first (aborted) instance's
+    // in-flight call would still hold a shared ref's flag `true` while its
+    // own `live` closure goes `false` on cleanup, so the second (real, live)
+    // instance's own `fetchSnapshot` would see "already in flight" and no-op
+    // — stuck until some *unrelated* later `issuesChanged` event happens to
+    // arrive after the abandoned call's `.finally` clears the ref (see
+    // `useMolDetail`'s identical bug and full write-up, bead 9e9.5). Scoping
+    // the flag per-instance means each effect run only ever coalesces
+    // against its own in-flight call, never a different (possibly
+    // abandoned) one.
+    let inFlight = false;
 
     const fetchSnapshot = (): void => {
       // Coalesce: a refetch requested while one is already outstanding is a
       // no-op — the in-flight call will land with data at least as fresh.
-      if (inFlight.current) return;
-      inFlight.current = true;
+      if (inFlight) return;
+      inFlight = true;
       call('getMolSnapshot', undefined)
         .then((next) => {
           if (!live) return;
@@ -51,7 +63,7 @@ export function useMolecules(): MoleculesState {
           setError(asRpcError(cause));
         })
         .finally(() => {
-          inFlight.current = false;
+          inFlight = false;
           if (live) setLoading(false);
         });
     };

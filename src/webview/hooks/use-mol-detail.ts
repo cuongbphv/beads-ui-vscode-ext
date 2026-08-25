@@ -6,7 +6,7 @@
  * with a non-undefined id, same as `useMolecules`: a step is an ordinary
  * issue, so an agent claiming/closing one already moves the watermark.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { MolDetail } from '../../shared/mol';
 import type { RpcError } from '../../shared/protocol';
@@ -24,7 +24,6 @@ export function useMolDetail(id: string | undefined): MolDetailState {
   const [detail, setDetail] = useState<MolDetail>();
   const [error, setError] = useState<RpcError>();
   const [loading, setLoading] = useState(false);
-  const inFlight = useRef(false);
 
   useEffect(() => {
     if (!id) {
@@ -35,6 +34,18 @@ export function useMolDetail(id: string | undefined): MolDetailState {
     }
 
     let live = true;
+    // Coalescing flag, scoped to *this* effect instance only — never a ref.
+    // A ref would survive React StrictMode's dev-mode double-invoke of this
+    // effect (mount -> cleanup -> remount): the first (aborted) instance's
+    // in-flight call would still hold a shared ref's flag `true` while its
+    // own `live` closure goes `false` on cleanup, so the second (real, live)
+    // instance's own `fetchDetail` would see "already in flight" and no-op
+    // forever — the first call's `.then`/`.finally` would then drop the
+    // result (correctly, since its `live` is `false`) without anything left
+    // to ever call `setLoading(false)` for the live instance. Scoping the
+    // flag per-instance means each effect run only ever coalesces against
+    // its own in-flight call, never a different (possibly abandoned) one.
+    let inFlight = false;
     setDetail(undefined);
     setError(undefined);
     setLoading(true);
@@ -42,8 +53,8 @@ export function useMolDetail(id: string | undefined): MolDetailState {
     const fetchDetail = (): void => {
       // Coalesce: a refetch requested while one is already outstanding is a
       // no-op — the in-flight call will land with data at least as fresh.
-      if (inFlight.current) return;
-      inFlight.current = true;
+      if (inFlight) return;
+      inFlight = true;
       call('showMolecule', { id })
         .then((next) => {
           if (!live) return;
@@ -55,7 +66,7 @@ export function useMolDetail(id: string | undefined): MolDetailState {
           setError(asRpcError(cause));
         })
         .finally(() => {
-          inFlight.current = false;
+          inFlight = false;
           if (live) setLoading(false);
         });
     };

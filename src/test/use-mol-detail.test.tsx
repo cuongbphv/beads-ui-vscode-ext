@@ -6,7 +6,7 @@
  * one, coalesced to one in-flight call — same harness style as
  * `use-molecules.test.tsx`'s `Probe` component.
  */
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement, StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -198,5 +198,47 @@ describe('useMolDetail', () => {
     mounted = undefined;
 
     expect(() => pending?.resolve(makeDetail())).not.toThrow();
+  });
+
+  /**
+   * Regression for bead 9e9.5's RE-MEASURE hang. `<StrictMode>` in
+   * development-mode React double-invokes a mount effect (setup -> cleanup
+   * -> setup again) *synchronously within the same component instance* —
+   * same fiber, same `useRef` — before the first (throwaway) pass's
+   * `showMolecule` call has any chance to settle. This is NOT the same as a
+   * real unmount followed by a fresh mount (which would hand each instance
+   * its own independent `useRef` and never reproduce the bug at all — this
+   * was confirmed the hard way while writing this test, against the
+   * unfixed hook: an unmount+remount version of this test passed even
+   * without the fix). The old code coalesced fetches with a `useRef` flag
+   * shared across that double-invoke, so the second (real, live) pass's own
+   * fetch saw "already in flight" from the aborted first pass and no-op'd —
+   * nothing was ever left to call `setLoading(false)` once the abandoned
+   * call finally landed and its own `live` closure (captured by the first
+   * pass) correctly dropped the result. Rendering the probe inside a real
+   * `<StrictMode>` here reproduces that exact double-invoke without a
+   * browser, and asserts the live pass issues its own second call and that
+   * resolving *that* one (not the first, abandoned one) is what actually
+   * clears `loading`.
+   */
+  it('does not permanently stall loading when the mount effect runs twice for the same id (React StrictMode double-invoke)', async () => {
+    container = document.createElement('div');
+    document.body.append(container);
+    mounted = createRoot(container);
+    await act(async () =>
+      mounted?.render(createElement(StrictMode, null, createElement(Probe, { id: 'mol-1' }))),
+    );
+
+    // Both the throwaway first pass's call and the live second pass's own
+    // call are already outstanding by the time this `render` settles.
+    expect(rpc.pending).toHaveLength(2);
+    expect(hook().loading).toBe(true);
+
+    await resolveOldest(makeDetail()); // the throwaway first pass's call lands — must be ignored
+    expect(hook().loading).toBe(true); // still waiting on the live pass's own call
+
+    await resolveOldest(makeDetail({ parallelAvailable: true })); // the live pass's own call
+    expect(hook().loading).toBe(false); // proves no permanent stall
+    expect(hook().detail?.parallelAvailable).toBe(true);
   });
 });
