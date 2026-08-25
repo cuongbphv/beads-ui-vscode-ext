@@ -80,13 +80,13 @@ direct readers incompatible.
 ## See it in action
 
 Every shot below is a real editor against the same mid-flight demo project — five
-epics, 46 issues, four people and an agent. It is generated, not curated: `npm run
+epics, 54 issues, four people and an agent. It is generated, not curated: `npm run
 capture:demo` seeds it and re-takes every image.
 
 **Overview** — totals, status split, priority mix, workload per person, and a
 burn-up of everything closed so far:
 
-![Overview tab: 46 issues, 15 ready, 4 blocked, 2 overdue, a 30% done donut, priority and issue-type breakdowns, a rising burn-up over six weeks, and workload per assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview.png)
+![Overview tab: 54 issues, 18 ready, 7 blocked, 2 overdue, a 29% done donut, priority and issue-type breakdowns, a rising burn-up over seven weeks, and workload per assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview.png)
 
 **Overview, sync status and health checks** — both the header's sync-status chip
 and the **Project health** drawer fetch nothing until you act: this is the chip
@@ -98,12 +98,12 @@ either one's default empty state:
 **Roadmap** — a real timeline with today marked, each epic carrying its own
 progress count. Closed work is folded away behind a count you can click:
 
-![Roadmap tab: five epics as Gantt rows with per-task bars across nine weeks, a today line, and a "14 closed hidden — show" chip](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap.png)
+![Roadmap tab: five epics as Gantt rows with per-task bars across eleven weeks, a today line, and a "15 closed hidden — show" chip](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap.png)
 
 **Board** — columns derived from your status *categories* at runtime, so a custom
 status lands in the right column. Done starts folded:
 
-![Kanban board with Open 19, In Progress 9, On Hold 4 and a folded Done 14; cards carry type, id, title, labels, priority, due date and assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board.png)
+![Kanban board with Open 23, In Progress 10, On Hold 4 and a folded Done 15; cards carry type, id, title, labels, priority, due date and assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board.png)
 
 **Board, swimlanes on** — the same board, one toggle away from grouped by taxonomy
 label instead of one long column: `auto-ok`, `auto-partial` and `needs-human`, four
@@ -115,7 +115,7 @@ issues apiece in this project:
 preferred spot, nudged with the arrow keys, or sent back with **Reset layout**; blocked
 issues are flagged red wherever they sit in the layout:
 
-![Graph tab: a layered dependency DAG with several blocked issues outlined in red, zoom and reset-layout controls in the toolbar, and the sidebar's Gates(1) entry alongside it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
+![Graph tab: a layered dependency DAG with several blocked issues outlined in red, zoom and reset-layout controls in the toolbar, and the sidebar's Gates(2) entry alongside it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
 
 **Molecules** — `bd mol` molecules as cards with live progress, and open gates
 surfaced right alongside them:
@@ -125,7 +125,7 @@ surfaced right alongside them:
 **Molecules, a step list expanded** — one molecule, five visually distinct step
 states: done, current, ready, pending and gated:
 
-![Molecule detail step list for "ssepatch" grouped into a parallel cluster: a Ready step tagged with a gate: human badge, a Done step struck through, another Ready step, and an In progress step, plus a Pending step outside the group blocked by one of the ready steps](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules-detail.png)
+![Molecule detail step list for "ssepatch" grouped into a parallel cluster: a Ready step tagged with a gate: human badge, an In progress step, another Ready step, and a Done step struck through, plus a Pending step outside the group blocked by one of the ready steps](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules-detail.png)
 
 **Fleet** — one orchestrator, one worker running against a real `wt-*` git
 worktree, streamed straight from the same JSONL transcript Claude Code itself
@@ -144,12 +144,12 @@ block, and a `✓ PASSED` result, drawn as React elements, never
 assignee apply as you set them, and comments plus an append-only notes composer sit
 below the fields, present even with zero comments so far:
 
-![Detail pane for a feature showing status and priority selects, an assignee field that applies on Enter, estimate, due date, parent epic, dependencies, an Append note link, and a Comments (0) composer with a Ctrl/Cmd+Enter-to-submit textarea](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap-detail.png)
+![Detail pane for a blocked bug showing status and priority selects, an assignee field that applies on Enter, estimate, due date, parent epic, an Append note link, and what blocks it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap-detail.png)
 
 **Sidebar** — what needs you on top, then the plan. An open gate now outranks even
 your own assigned issues, since it blocks real work until someone clears it:
 
-![Sidebar with a Needs You section topped by a Gates(1) entry and a Resolve action, five issues assigned to you below it, then Epics & Milestones expanded to show child tasks with type icons and priorities; the status bar reads 16 ready and a shield icon with 1](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/sidebar-tree-expanded.png)
+![Sidebar with a Needs You section topped by a Gates(2) entry and a Resolve action, four issues assigned to you below it, then Epics & Milestones expanded to show child tasks with type icons and priorities; the status bar reads 17 ready and a shield icon with 2](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/sidebar-tree-expanded.png)
 
 ## Requirements
 
