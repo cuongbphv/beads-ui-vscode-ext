@@ -32,7 +32,11 @@ import { BdMutations } from '../extension/bd/mutations';
 import { BdQueries } from '../extension/bd/queries';
 import { PARENT_CHILD, toCategory } from '../shared/types';
 import type { Bead } from '../shared/types';
-import { fetchWithConsistencyRetry } from './support/dashboard-consistency';
+import {
+  fetchWithConsistencyRetry,
+  isDashboardConsistent,
+  isStatsConsistent,
+} from './support/dashboard-consistency';
 import { removeScratchDirBestEffort } from './support/scratch-cleanup';
 
 /**
@@ -223,11 +227,34 @@ describe('stats match the CLI', () => {
   });
 
   it('agrees with the issue list it will be shown next to', async () => {
-    const [stats, all, gates] = await Promise.all([
-      queries.stats(),
-      queries.list({ all: true }),
-      gateIssueCounts(),
-    ]);
+    // beads-ui-vscode-ext-3yq: `queries.stats()`, `queries.list({ all: true
+    // })`, and `gateIssueCounts()` are three independent `bd` calls against
+    // this repo's real, live board — the same race shape bead l2o fixed for
+    // the "dashboard snapshot" test above, structurally identical but with a
+    // genuinely different invariant (this fan-out has no ready/blocked ids to
+    // cross-check, and additionally compares closed-count totals, which
+    // `isDashboardConsistent` has no fields for). See `isStatsConsistent`'s
+    // own doc comment in `dashboard-consistency.ts` for why it is a separate
+    // check function rather than a reuse of `isDashboardConsistent`.
+    const { stats, all, gates } = await fetchWithConsistencyRetry(
+      async () => {
+        const [stats, all, gates] = await Promise.all([
+          queries.stats(),
+          queries.list({ all: true }),
+          gateIssueCounts(),
+        ]);
+        return { stats, all, gates };
+      },
+      ({ stats, all, gates }) => ({
+        allLength: all.length,
+        allClosedLength: all.filter((b) => b.status === 'closed').length,
+        gatesTotal: gates.total,
+        gatesClosed: gates.closed,
+        statsTotalIssues: stats.total_issues,
+        statsClosedIssues: stats.closed_issues,
+      }),
+      isStatsConsistent,
+    );
     // The dashboard prints both; a mismatch means one of them is lying. `all`
     // undercounts both totals by exactly the gate issues on the board — see
     // `gateIssueCounts`'s doc comment.
@@ -585,6 +612,7 @@ describe('dashboard snapshot', () => {
         readyIds: snapshot.readyIds,
         blockedIds: snapshot.blockedIds,
       }),
+      isDashboardConsistent,
     );
     const ids = new Set(snapshot.beads.map((b) => b.id));
 
