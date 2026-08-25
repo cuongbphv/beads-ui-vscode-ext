@@ -722,10 +722,18 @@ export function BeadDetail({
                 }
                 if (event.key !== 'Escape') return;
                 // Abandon the edit without also closing the pane, which is what
-                // the window-level Escape handler would otherwise do.
+                // the window-level Escape handler would otherwise do. No
+                // explicit `.blur()` here (unlike the Enter branch above):
+                // this field has no unmount/editing-toggle to hide it the way
+                // the title input does, so the revert below is the whole
+                // visual effect. Calling `.blur()` synchronously afterward
+                // would fire `onBlur`/`commitAssignee` against this handler's
+                // stale (pre-revert) `assignee` closure, re-sending the very
+                // draft Escape is abandoning; leaving focus in the field is
+                // harmless, since `commitAssignee` already no-ops once
+                // `assignee` matches `bead.assignee`.
                 event.stopPropagation();
                 setAssignee(bead.assignee ?? '');
-                event.currentTarget.blur();
               }}
               className="bg-input-bg border-input-border text-fg min-w-0 rounded-md border px-2 py-1 text-sm"
             />

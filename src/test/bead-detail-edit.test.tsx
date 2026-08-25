@@ -2,7 +2,8 @@
 
 /**
  * `EditableText` (description/design/acceptance) and the title inline editor
- * in the detail pane (bead li0.6).
+ * in the detail pane (bead li0.6), plus a stale-closure regression on the
+ * assignee field's Escape handler (bead li0.12).
  *
  * `LongText` used to return `null` for an empty field, hiding the only way
  * to give it a first value. These tests cover the replacement: an empty
@@ -336,5 +337,82 @@ describe('title inline edit', () => {
     expect(rpc.calls).toHaveLength(0);
     expect(onCloseSpy).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Wire up EditableText');
+  });
+});
+
+describe('assignee field Escape-cancel (regression, bead li0.12)', () => {
+  it('Escape reverts the draft and does not send it via setAssignee', async () => {
+    const onCloseSpy = vi.fn();
+    container = document.createElement('div');
+    document.body.append(container);
+    mountedRoot = createRoot(container);
+    const subject = bead({ assignee: 'ana' });
+    await act(async () =>
+      mountedRoot?.render(
+        createElement(BeadDetail, {
+          bead: subject,
+          beads: [subject],
+          index,
+          onClose: onCloseSpy,
+          onSelect: vi.fn(),
+          refreshKey: 0,
+        }),
+      ),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const input = container.querySelector<HTMLInputElement>('input[placeholder="unassigned"]');
+    if (!input) throw new Error('assignee input not found');
+    expect(input.value).toBe('ana');
+
+    await act(async () => typeInto(input, 'someone-else'));
+
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    // The displayed value reverts immediately...
+    expect(input.value).toBe('ana');
+    // ...and the abandoned draft is never sent through setAssignee, even
+    // though Escape does not blur the field (unlike the title editor, this
+    // input has no unmount to hide it, so no explicit `.blur()` call is made
+    // and a stale-closure commit would otherwise still fire synchronously).
+    expect(rpc.calls).toHaveLength(0);
+    expect(onCloseSpy).not.toHaveBeenCalled();
+
+    // A later, ordinary blur against the now-reverted value is still a no-op
+    // (commitAssignee's existing early return), confirming the field's
+    // commit-on-blur behavior for unchanged values is unaffected.
+    await act(async () => {
+      input.dispatchEvent(new Event('blur', { bubbles: true }));
+    });
+    expect(rpc.calls).toHaveLength(0);
+  });
+
+  it('commits normally on Enter (unaffected by the Escape fix)', async () => {
+    const root = await mount(bead({ assignee: 'ana' }));
+
+    const input = root.querySelector<HTMLInputElement>('input[placeholder="unassigned"]');
+    if (!input) throw new Error('assignee input not found');
+
+    // `.blur()` on the Enter branch is a jsdom no-op unless the element is
+    // actually focused first (unlike the title input, this one has no
+    // `autoFocus`).
+    input.focus();
+    await act(async () => typeInto(input, 'bob'));
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    expect(rpc.calls).toHaveLength(1);
+    expect(rpc.calls[0].method).toBe('setAssignee');
+    expect(rpc.calls[0].params).toEqual({ id: 'bd-1', assignee: 'bob' });
+
+    await act(async () => {
+      rpc.calls[0].resolve({ ok: true });
+      await Promise.resolve();
+    });
   });
 });
