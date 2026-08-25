@@ -217,33 +217,67 @@ export class BeadsStore implements vscode.Disposable {
     };
   }
 
+  /**
+   * A caller arrived while a fetch was already in flight (see `refresh()`).
+   * That fetch's underlying `bd` calls were launched before this caller
+   * showed up, so its answer can miss whatever this caller wanted reflected
+   * (e.g. its own just-completed mutation). Set inside `refresh()`, consumed
+   * once by the single loop at the bottom of it — never causes more than one
+   * extra fetch pass per flag set, and each pass can only set it again from
+   * a genuinely new external call, not from anything internal to the loop.
+   */
+  private refreshQueued = false;
+
   /** Refresh, coalescing concurrent callers onto one in-flight fetch. */
   async refresh(): Promise<StoreState> {
-    if (this.pending) return this.pending;
+    if (this.pending) {
+      this.refreshQueued = true;
+      return this.pending;
+    }
 
+    // Plain loop, not recursion into `refresh()`: everyone awaiting
+    // `this.pending` gets the *last* pass's result, and there is exactly one
+    // `loading: true` transition for the whole call, however many passes it
+    // takes — re-entering the public `refresh()` here would have re-fired
+    // `setState({loading: true})` on every trailing pass, which is what
+    // produced beads-ui-vscode-ext-9e9.9's sustained-render regression
+    // (reverted at e1ed87b): each pass's own two state flips (loading true,
+    // then false+data) kept the board re-laying-out for as long as new
+    // callers kept arriving. `this.pending` is cleared exactly once, here,
+    // inside the one function that sets it — clearing it in every awaiting
+    // caller instead would race: a caller's `finally` could fire after a
+    // *later* refresh cycle had already replaced `this.pending`, wiping out
+    // that newer cycle's in-flight marker and breaking its coalescing.
     this.setState({ ...this.state, loading: true, error: undefined });
-
     this.pending = (async () => {
-      try {
-        const limit = config().get<number>('issueLimit') ?? 2000;
-        const snapshot = await this.queries.snapshot(limit);
-        // The data is now current by definition; let the next probe re-establish
-        // the fingerprint instead of guessing it from these rows.
-        this.changeProbe.reset();
-        return this.setState({ snapshot, loading: false, error: undefined });
-      } catch (error) {
-        const rpcError = toRpcError(error);
-        this.output.appendLine(`refresh failed: ${rpcError.kind}: ${rpcError.message}`);
-        if (rpcError.detail) this.output.appendLine(rpcError.detail);
-        // Keep the last good snapshot on screen; a transient bd failure should
-        // not blank the board.
-        return this.setState({ ...this.state, loading: false, error: rpcError });
-      } finally {
-        this.pending = undefined;
-      }
+      let result: StoreState;
+      do {
+        this.refreshQueued = false;
+        result = await this.fetchOnce();
+      } while (this.refreshQueued);
+      this.pending = undefined;
+      return result;
     })();
 
     return this.pending;
+  }
+
+  private async fetchOnce(): Promise<StoreState> {
+    try {
+      const limit = config().get<number>('issueLimit') ?? 2000;
+      const snapshot = await this.queries.snapshot(limit);
+      // The data is now current by definition; let the next probe re-establish
+      // the fingerprint instead of guessing it from these rows.
+      this.changeProbe.reset();
+      return this.setState({ snapshot, loading: false, error: undefined });
+    } catch (error) {
+      const rpcError = toRpcError(error);
+      this.output.appendLine(`refresh failed: ${rpcError.kind}: ${rpcError.message}`);
+      if (rpcError.detail) this.output.appendLine(rpcError.detail);
+      // Keep the last good snapshot on screen; a transient bd failure should
+      // not blank the board.
+      return this.setState({ ...this.state, loading: false, error: rpcError });
+    }
   }
 
   private setState(next: StoreState): StoreState {
