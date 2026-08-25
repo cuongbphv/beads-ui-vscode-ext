@@ -111,6 +111,19 @@ async function mount(overrides: Partial<Parameters<typeof GraphView>[0]> = {}): 
   return container;
 }
 
+/**
+ * A primary-button press-and-release with no intervening move — the pointer
+ * sequence a real click, or a CDP/Playwright-driven synthetic mouse, produces.
+ * Deliberately does *not* dispatch a native `click` event: activation now
+ * fires off `pointerup` itself (beads-ui-vscode-ext-9e9.10), precisely
+ * because a synthetic mouse can be relied on for `pointerdown`/`pointerup`
+ * but not for the follow-on `click` a real browser synthesizes.
+ */
+async function clickNode(node: Element | null | undefined): Promise<void> {
+  await act(async () => node?.dispatchEvent(pointerEvent('pointerdown')));
+  await act(async () => node?.dispatchEvent(pointerEvent('pointerup')));
+}
+
 describe('GraphView', () => {
   it('renders a node for every bead in the visible (edge-bearing) set', async () => {
     const root = await mount();
@@ -125,15 +138,29 @@ describe('GraphView', () => {
     expect(root.querySelector('[aria-label^="lonely:"]')).toBeNull();
   });
 
-  it('calls onSelect with the bead id when a node is clicked', async () => {
+  it('calls onSelect with the bead id from pointerdown/pointerup alone, with no native click event required', async () => {
     const onSelect = vi.fn();
     const root = await mount({ onSelect });
 
     const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
     expect(node).not.toBeNull();
-    await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    // No `click` dispatch here — this is exactly the CDP/synthetic-mouse gap
+    // beads-ui-vscode-ext-9e9.10 found: pointerdown/pointerup fire but the
+    // browser never synthesizes the follow-on `click`.
+    await clickNode(node);
 
     expect(onSelect).toHaveBeenCalledWith('b');
+  });
+
+  it('does not double-activate when a native click event also follows the pointer sequence, as a real mouse produces', async () => {
+    const onSelect = vi.fn();
+    const root = await mount({ onSelect });
+
+    const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+    await clickNode(node);
+    await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it('calls onSelect with the bead id when Enter is pressed on a focused node', async () => {
@@ -195,7 +222,7 @@ describe('GraphView', () => {
       expect(transformOf(node!)).toEqual(start);
     });
 
-    it('suppresses the click that follows a drag past the threshold', async () => {
+    it('does not activate the node when the drag crossed the threshold', async () => {
       const onSelect = vi.fn();
       const root = await mount({ onSelect });
       const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
@@ -203,22 +230,30 @@ describe('GraphView', () => {
       await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
       await act(async () => node?.dispatchEvent(pointerEvent('pointermove', { clientX: 30 })));
       await act(async () => node?.dispatchEvent(pointerEvent('pointerup', { clientX: 30 })));
-      // The browser fires `click` right after `pointerup` on a real drag.
-      await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
       expect(onSelect).not.toHaveBeenCalled();
     });
 
-    it('still selects on a press-and-release that never crosses the threshold', async () => {
+    it('still activates on a press-and-release that never crosses the threshold', async () => {
       const onSelect = vi.fn();
       const root = await mount({ onSelect });
       const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
 
       await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
       await act(async () => node?.dispatchEvent(pointerEvent('pointerup', { clientX: 1 })));
-      await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
       expect(onSelect).toHaveBeenCalledWith('b');
+    });
+
+    it('does not activate the node when the pointer sequence is cancelled rather than released', async () => {
+      const onSelect = vi.fn();
+      const root = await mount({ onSelect });
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointercancel', { clientX: 0 })));
+
+      expect(onSelect).not.toHaveBeenCalled();
     });
 
     it('drops the in-progress drag when the browser takes the capture away', async () => {
@@ -347,7 +382,7 @@ describe('GraphView', () => {
       await arm(root);
 
       const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
-      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await clickNode(nodeA);
 
       expect(nodeA?.getAttribute('aria-label')).toContain('(link source)');
       expect(nodeA?.querySelector('rect[stroke="var(--color-accent)"]')).not.toBeNull();
@@ -359,8 +394,8 @@ describe('GraphView', () => {
 
       const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
       const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
-      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-      await act(async () => nodeB?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await clickNode(nodeA);
+      await clickNode(nodeB);
 
       const blocksButton = kindButton(root, 'blocks');
       expect(blocksButton).not.toBeUndefined();
@@ -376,8 +411,8 @@ describe('GraphView', () => {
 
       const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
       const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
-      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-      await act(async () => nodeB?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await clickNode(nodeA);
+      await clickNode(nodeB);
       expect(root.querySelector('[role="dialog"]')).not.toBeNull();
 
       await act(async () =>
@@ -398,7 +433,7 @@ describe('GraphView', () => {
       await arm(root);
 
       const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
-      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await clickNode(nodeA);
 
       expect(onSelect).not.toHaveBeenCalled();
     });
@@ -410,8 +445,8 @@ describe('GraphView', () => {
 
       const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
       const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
-      await act(async () => nodeA?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-      await act(async () => nodeB?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await clickNode(nodeA);
+      await clickNode(nodeB);
 
       const blocksButton = kindButton(root, 'blocks');
       await act(async () => blocksButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));

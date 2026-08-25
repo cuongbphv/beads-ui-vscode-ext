@@ -16,7 +16,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -114,9 +113,6 @@ export function GraphView({
   // a frame behind the render that set it or force a wasted extra render per
   // pixel dragged.
   const dragRef = useRef<DragState | null>(null);
-  // Set on pointerdown, cleared on release/cancel — a click immediately after
-  // a drag that crossed the threshold must not also select the node.
-  const suppressNextClickRef = useRef(false);
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
 
   const { notify } = useToast();
@@ -294,13 +290,26 @@ export function GraphView({
     moveNode(id, { x: drag.startX + deltaX, y: drag.startY + deltaY });
   };
 
+  // Activation lives here, off `pointerup`, rather than off the native
+  // `click` event React's `onClick` would otherwise wire up. `pointerup`
+  // fires for every pointer device — including a CDP/Playwright-driven
+  // synthetic mouse, which reliably delivers `pointerdown`/`pointerup` but
+  // never the follow-on `click` a real browser synthesizes (the gap behind
+  // beads-ui-vscode-ext-9e9.10). By the time `endDrag` runs it already knows
+  // `drag.moved`, so it can tell a genuine click from a drag release just as
+  // well as `onClick` could — and doing it here removes the dependency on
+  // `click` firing at all, for every pointer device, not only real mice.
+  // `pointercancel` (an aborted gesture — OS chrome, a stolen capture) must
+  // not activate, so this only fires for an actual `pointerup`.
   const endDrag = (event: ReactPointerEvent<SVGGElement>, id: string): void => {
     const drag = dragRef.current;
     if (!drag || drag.id !== id) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    if (drag.moved) suppressNextClickRef.current = true;
+    if (!drag.moved && event.type === 'pointerup' && event.button === 0) {
+      activateNode(id, event.currentTarget);
+    }
     dragRef.current = null;
     setDraggingId(undefined);
   };
@@ -314,14 +323,6 @@ export function GraphView({
       dragRef.current = null;
       setDraggingId(undefined);
     }
-  };
-
-  const onNodeClick = (event: ReactMouseEvent<SVGGElement>, id: string): void => {
-    if (suppressNextClickRef.current) {
-      suppressNextClickRef.current = false;
-      return;
-    }
-    activateNode(id, event.currentTarget);
   };
 
   const onNodeKeyDown = (event: ReactKeyboardEvent<SVGGElement>, id: string): void => {
@@ -502,7 +503,6 @@ export function GraphView({
                     onPointerUp={(event) => endDrag(event, node.id)}
                     onPointerCancel={(event) => endDrag(event, node.id)}
                     onLostPointerCapture={() => onNodeLostPointerCapture(node.id)}
-                    onClick={(event) => onNodeClick(event, node.id)}
                     onKeyDown={(event) => onNodeKeyDown(event, node.id)}
                   >
                     {isLinkSource ? (
