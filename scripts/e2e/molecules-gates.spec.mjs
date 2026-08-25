@@ -72,6 +72,12 @@ import { cleanEnv, scrubProcessEnv } from '../lib/clean-env.mjs';
 
 // Read before scrubbing, which removes every VSCODE_* variable.
 const testVersion = process.env.VSCODE_TEST_VERSION ?? '1.105.0';
+// Every `bd` subprocess this script spawns inherits `process.env` — set the
+// per-process telemetry opt-out once, here, before any of them run. This is
+// `BD_DISABLE_METRICS` (the env override `beads/cmd/bd/metrics.go`'s
+// `metricsEnvOverride` reads), a one-off, process-scoped opt-out — not `bd
+// metrics off`, which would rewrite the user's real global config on disk.
+process.env.BD_DISABLE_METRICS = '1';
 scrubProcessEnv();
 
 const execFileAsync = promisify(execFile);
@@ -157,6 +163,19 @@ async function main() {
 
   console.log('› creating an isolated scratch bd project');
   const scratchRoot = await mkdtemp(join(tmpdir(), 'beads-ui-e2e-molecules-'));
+
+  // Outer safety net around the whole scratch-project lifecycle: `bd init`,
+  // the fixture seeding below, `downloadAndUnzipVSCode`, or `_electron.launch`
+  // itself can all throw before the main try/finally below is ever entered —
+  // without this, a throw on that path leaks `scratchRoot` (and, once
+  // created, `profileDir`/`extensionsDir`) into the OS temp directory
+  // forever, since the existing try/finally's own cleanup would never run.
+  // `profileDir`/`extensionsDir`/`app` are hoisted so the `finally` below can
+  // clean up whichever of them actually got created before the throw.
+  let profileDir;
+  let extensionsDir;
+  let app;
+  try {
   await execBd(scratchRoot, ['init', '--non-interactive', '--skip-hooks', '--skip-agents']);
 
   /** Creates an epic + N task children (parent-child), returns { epicId, stepIds (in title order) }. */
@@ -271,7 +290,7 @@ async function main() {
   console.log(`› resolving VS Code ${testVersion}`);
   const executablePath = await downloadAndUnzipVSCode(testVersion);
 
-  const profileDir = await mkdtemp(join(tmpdir(), 'beads-ui-molecules-profile-'));
+  profileDir = await mkdtemp(join(tmpdir(), 'beads-ui-molecules-profile-'));
   const theme = process.env.BEADS_TEST_THEME ?? 'Default Dark Modern';
   await mkdir(join(profileDir, 'User'), { recursive: true });
   await writeFile(
@@ -279,10 +298,10 @@ async function main() {
     JSON.stringify({ 'workbench.colorTheme': theme, 'window.commandCenter': false }, null, 2),
     'utf8',
   );
-  const extensionsDir = await mkdtemp(join(tmpdir(), 'beads-ui-molecules-exts-'));
+  extensionsDir = await mkdtemp(join(tmpdir(), 'beads-ui-molecules-exts-'));
 
   console.log('› launching an isolated editor against the scratch project');
-  const app = await _electron.launch({
+  app = await _electron.launch({
     executablePath,
     timeout: LAUNCH_TIMEOUT,
     args: [
@@ -495,10 +514,21 @@ async function main() {
   } finally {
     await app.close().catch(() => {});
     await new Promise((resolve) => setTimeout(resolve, 1500));
-
+  }
+  } catch (error) {
+    // Reached only when the scratch-project setup above (bd init, the
+    // fixture seeding, downloadAndUnzipVSCode, or the editor launch itself)
+    // threw before the try/finally above was ever entered — that
+    // try/finally's own catch handles everything after that point and never
+    // rethrows here, so this never double-reports the same failure.
+    failures.push(`scratch-project setup threw before the editor launched: ${error.message}`);
+    console.error(error);
+  } finally {
+    // `profileDir`/`extensionsDir` are guarded because this outer finally
+    // also runs when setup threw before either one was ever created.
     const rmOptions = { recursive: true, force: true, maxRetries: 15, retryDelay: 500 };
-    await rm(profileDir, rmOptions).catch(() => {});
-    await rm(extensionsDir, rmOptions).catch(() => {});
+    if (profileDir) await rm(profileDir, rmOptions).catch(() => {});
+    if (extensionsDir) await rm(extensionsDir, rmOptions).catch(() => {});
     await rm(scratchRoot, rmOptions).catch(() => {});
 
     const scratchStillThere = await stat(scratchRoot)
