@@ -26,23 +26,52 @@
 
 ## What it does
 
-Beads Dashboard reads your local beads database through the `bd` CLI and renders it five ways:
+Beads Dashboard reads your local beads database through the `bd` CLI and renders it six ways:
 
-- **Overview** — totals, a status breakdown, epic progress, and the two lists that matter on
-  arrival: what is ready to start, and what is blocked.
-- **Roadmap** — Epic → Task drill-down with progress bars and per-epic counts.
+- **Overview** — totals, a status breakdown, epic progress, the two lists that matter on
+  arrival (what is ready to start, and what is blocked), and an on-demand **Project health**
+  drawer: press "Run checks" for stale/orphaned/lint/dependency-cycle tiles, each degrading on
+  its own instead of blanking the other three, with a drill-down into each check's findings.
+- **Roadmap** — Epic → Task drill-down with progress bars and per-epic counts. A shape toggle
+  swaps the same data into **Graph** view: an issue's blocked-by dependencies as a dependency
+  DAG, auto-laid-out, draggable node by node, and — in **Link mode** — click two nodes to add a
+  dependency edge between them (a rejected cycle surfaces as a toast, never a crash).
 - **Board** — a kanban board whose columns are derived from your project's status *categories* at
-  runtime. Drag a card to change its status, or toggle swimlanes to group the columns by
-  taxonomy label (`auto-ok` / `auto-partial` / `needs-human`).
-- **Graph** — an issue's blocked-by dependencies as a dependency DAG, auto-laid-out and
-  draggable node by node.
+  runtime. Drag a card to change its status, toggle swimlanes to group the columns by taxonomy
+  label (`auto-ok` / `auto-partial` / `needs-human`), or use a column's "+ Add issue" row to
+  create one directly in that status.
+- **Molecules** — a viewer onto `bd mol`: the running molecules as cards, a detail view with its
+  step list, parallel groups and gate badges, a wisp strip with a heuristic TTL countdown, and
+  gate cards with an inline Resolve action for gates a human can clear. View-only by design — no
+  pour/wisp/burn/squash/bond from the UI.
 - **Fleet** — which Claude Code sessions are running as orchestrators/workers against this
   workspace, the git worktrees they left behind, and (click a worker) its live transcript. See
   [Fleet monitor](#fleet-monitor) below.
 
+Every issue can be created, edited and linked without leaving the editor: a **Create Issue…**
+command (palette or the sidebar's plus-button), a full create form in the detail-pane slot, and
+board quick-add all produce a real issue; the detail pane's title, description and other text
+fields edit inline with a save/cancel affordance; labels add and remove as chips; dependencies
+add and remove from an issue picker or from Graph link mode; and **Defer / Undefer / Close /
+Reopen** cover the rest of an issue's lifecycle.
+
 Plus an **Epics & Tasks** sidebar with a "Needs You" section — open gates alongside your assigned
 issues, each with an inline Resolve action — and quick actions (status, priority, assignee, claim,
-close) available from the tree, the board and the detail pane.
+close, reopen) available from the tree, the board and the detail pane, all three converging on the
+same result. A board card and a Fleet worker row both carry a lease/claim liveness badge (live /
+stale heartbeat / expired) whenever `bd` reports lease data for a claim, and render nothing on the
+common case where it does not. A detail pane also shows a **blocker inspector** (the full
+transitive "Blocked by" chain, not just direct blockers) and a **Change history** timeline built by
+diffing consecutive `bd history` commits. Once a workspace grows past `beadsDashboard.issueLimit`,
+the board's search box falls back to a server-side `bd search` so issues outside the loaded window
+are still findable.
+
+A read-only **sync status** chip on the Overview header reports `bd dolt status` (mode, and
+ahead/behind counts when `bd` provides them) and offers a "copy suggested sync command" button —
+it copies the command to your clipboard and never runs `bd dolt push`/`pull` itself. An opt-in
+**notifications** setting can toast when a gate opens ("N gate(s) need you.") or, one step further,
+when an issue assigned to you becomes blocked — off by default, and each gate/issue notifies at
+most once per window session.
 
 Everything is read and written through `bd --json`. The extension never reads `.beads/issues.jsonl`
 or the Dolt files directly — that export has auto-refresh off by default, and upstream declares
@@ -149,11 +178,12 @@ Activity Bar.
 | Setting | Default | What it does |
 |---|---|---|
 | `beadsDashboard.bdPath` | `bd` | Path to the `bd` executable. |
-| `beadsDashboard.defaultTab` | `overview` | Tab the dashboard opens on. |
+| `beadsDashboard.defaultTab` | `overview` | Tab the dashboard opens on: `overview`, `roadmap`, `board`, `fleet` or `molecules`. |
 | `beadsDashboard.issueLimit` | `2000` | Issues loaded per refresh. |
 | `beadsDashboard.pollIntervalSeconds` | `5` | How often to check for changes made outside the editor. `0` disables it. |
 | `beadsDashboard.showClosed` | `true` | Include closed issues in the board and tree. |
 | `beadsDashboard.assignee` | `""` | Who you are, for **Needs You**. Empty means the identity `bd` itself would use. |
+| `beadsDashboard.notifications` | `off` | Toast when a gate opens or (one step further) when your own issue becomes blocked: `off`, `gates` or `gates-and-blocked`. Opt-in — it only evaluates snapshots the dashboard already fetched, never spawns `bd` on its own. |
 
 Changes made outside the editor — by an agent, a teammate, or your own terminal — show up on
 their own within a few seconds. That check is one `bd list --limit 1`, and the full reload only
@@ -166,9 +196,11 @@ extension spawn nothing you did not ask for.
 | Command | Where |
 |---|---|
 | `Beads: Open Dashboard` | Palette, view title |
+| `Beads: Create Issue…` | Palette, view title (the tree's plus-button) |
 | `Beads: Refresh` | Palette, view title |
 | `Beads: Show bd Output Log` | Palette — every argv and every failure lands here |
-| Change status / priority / assignee, Claim, Close, Copy ID | Tree context menu, detail pane |
+| Change status / priority / assignee, Claim, Close, Reopen, Copy ID | Tree context menu, detail pane |
+| `Beads: Resolve Gate…` | Inline on a "Needs You" gate row (the Molecules tab's gate cards resolve the same way from inside the webview, not through this command) |
 
 ## Fleet monitor
 
@@ -226,11 +258,12 @@ issue, so "where would I even start?" has an answer.
 - **Fleet monitor** — the worktrees and `work/bead-*` branches on disk, lined up against the beads
   they are carrying, so a stale one is visible, plus live transcript following per worker. See
   [Fleet monitor](#fleet-monitor) above. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
+- **Molecule progress** — a **Molecules** tab: `bd mol` molecules as cards, a step-list detail
+  view, a wisp strip with a TTL countdown, and gate cards you can resolve inline — see
+  [What it does](#what-it-does) above. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
 
 **Planned** — designed against the architecture that already exists:
 
-- **Molecule progress** — `bd mol` has no UI at all today. A progress strip for the running
-  molecule and the wisps about to expire. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
 - **A workflow that runs on pull requests** — nothing does today, because part of the suite drives
   a real `bd` binary. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 - **Windows, confirmed by someone on Windows** — the `.cmd` shim fallback and the Git-Bash paths are
@@ -240,9 +273,11 @@ issue, so "where would I even start?" has an answer.
 
 A `human` gate in beads is already a "wait for a person" primitive, which makes remote approval
 possible without changing beads core: an agent fleet stops on a gate, and whoever is on the hook
-sees it, reads the context, and resolves it — not necessarily at their desk. That would make this
-extension the in-editor half of something larger, with notifications when a gate opens or work goes
-blocked. Arguing with that direction is useful; open an issue and say so.
+sees it, reads the context, and resolves it — not necessarily at their desk. The opt-in
+`beadsDashboard.notifications` toast (see [Settings](#settings)) already covers "sees it" while the
+editor is open; the still-unbuilt half of this direction is resolving from *outside* the editor
+entirely — a phone notification, a Slack message — with no desk required at all. Arguing with that
+direction is useful; open an issue and say so.
 
 **Not planned:** orchestrating work. This is a viewer with quick actions — it shows what `bd` knows
 and writes back through `bd`. What runs next is `bd`'s business, and that of whatever drives it.
