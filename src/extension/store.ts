@@ -88,6 +88,23 @@ export class BeadsStore implements vscode.Disposable {
   private state: StoreState = { loading: false };
   private pollTimer: NodeJS.Timeout | undefined;
   private pending: Promise<StoreState> | undefined;
+  /**
+   * Set when `refresh()` is called while a fetch is already in flight.
+   *
+   * `BdService.exec()` spawns one subprocess per call with no queue (see
+   * BdService.ts): a poll tick's `queries.snapshot()` fan-out can still be
+   * running when a mutation's own write finishes and calls `notify()` ->
+   * `refresh()` (store.ts's mutation subscription, below). Coalescing that
+   * call onto the already-running fetch is right for "don't spawn a second
+   * identical fan-out", but that in-flight fetch was launched before the
+   * mutation landed, so its data can silently miss it — and with nothing
+   * else queued, the miss would stand until the next 12-tick resync
+   * backstop. This flag is how the in-flight fetch, once it finishes,
+   * knows to immediately run one more to pick up whatever arrived during
+   * it — the trailing edge of the coalescing window. See
+   * beads-ui-vscode-ext-9e9.9.
+   */
+  private refreshQueued = false;
 
   /** How many views are currently on screen. Polling runs only above zero. */
   private observers = 0;
@@ -217,9 +234,19 @@ export class BeadsStore implements vscode.Disposable {
     };
   }
 
-  /** Refresh, coalescing concurrent callers onto one in-flight fetch. */
+  /**
+   * Refresh, coalescing concurrent callers onto one in-flight fetch.
+   *
+   * A call that arrives while a fetch is already running is answered with
+   * that fetch's (possibly stale — see `refreshQueued`'s doc) result, but
+   * also marks that a trailing fetch is owed once it finishes, so whatever
+   * happened in between is never silently dropped.
+   */
   async refresh(): Promise<StoreState> {
-    if (this.pending) return this.pending;
+    if (this.pending) {
+      this.refreshQueued = true;
+      return this.pending;
+    }
 
     this.setState({ ...this.state, loading: true, error: undefined });
 
@@ -240,6 +267,14 @@ export class BeadsStore implements vscode.Disposable {
         return this.setState({ ...this.state, loading: false, error: rpcError });
       } finally {
         this.pending = undefined;
+        if (this.refreshQueued) {
+          this.refreshQueued = false;
+          // Fire-and-forget: this settles the trailing fetch's own promise
+          // and, via `setState`, broadcasts the result through `onDidChange`
+          // exactly like any other refresh — nobody here is waiting on it
+          // directly, they already got an answer above.
+          void this.refresh();
+        }
       }
     })();
 
