@@ -12,7 +12,8 @@ import type { RpcError } from '../shared/protocol';
 import { BdService, BdError } from './bd/BdService';
 import { BdQueries } from './bd/queries';
 import { BdMutations } from './bd/mutations';
-import { Debouncer, PollGate, effectivePollSeconds, pollingEnabled } from './poll-gate';
+import { ChangeProbeStrategy } from './bd/change-probe';
+import { Debouncer, effectivePollSeconds, pollingEnabled } from './poll-gate';
 
 export interface StoreState {
   snapshot?: DashboardSnapshot;
@@ -90,8 +91,11 @@ export class BeadsStore implements vscode.Disposable {
 
   /** How many views are currently on screen. Polling runs only above zero. */
   private observers = 0;
-  /** Fingerprint bookkeeping — the part worth testing without an editor. */
-  private readonly gate = new PollGate(FULL_RESYNC_TICKS);
+  /**
+   * The change probe: decides whether a tick is news, and owns the 12-tick
+   * full-resync backstop. See `src/extension/bd/change-probe.ts`.
+   */
+  private readonly changeProbe: ChangeProbeStrategy;
 
   /**
    * Whether the `.beads/last-touched` watcher has fired at least once.
@@ -121,6 +125,7 @@ export class BeadsStore implements vscode.Disposable {
     });
     this.queries = new BdQueries(this.bd);
     this.mutations = new BdMutations(this.bd);
+    this.changeProbe = new ChangeProbeStrategy(this.queries, FULL_RESYNC_TICKS);
 
     // Any write we make invalidates the cache immediately — this is the
     // "refresh after mutation" half of DEC-004.
@@ -212,33 +217,67 @@ export class BeadsStore implements vscode.Disposable {
     };
   }
 
+  /**
+   * A caller arrived while a fetch was already in flight (see `refresh()`).
+   * That fetch's underlying `bd` calls were launched before this caller
+   * showed up, so its answer can miss whatever this caller wanted reflected
+   * (e.g. its own just-completed mutation). Set inside `refresh()`, consumed
+   * once by the single loop at the bottom of it — never causes more than one
+   * extra fetch pass per flag set, and each pass can only set it again from
+   * a genuinely new external call, not from anything internal to the loop.
+   */
+  private refreshQueued = false;
+
   /** Refresh, coalescing concurrent callers onto one in-flight fetch. */
   async refresh(): Promise<StoreState> {
-    if (this.pending) return this.pending;
+    if (this.pending) {
+      this.refreshQueued = true;
+      return this.pending;
+    }
 
+    // Plain loop, not recursion into `refresh()`: everyone awaiting
+    // `this.pending` gets the *last* pass's result, and there is exactly one
+    // `loading: true` transition for the whole call, however many passes it
+    // takes — re-entering the public `refresh()` here would have re-fired
+    // `setState({loading: true})` on every trailing pass, which is what
+    // produced beads-ui-vscode-ext-9e9.9's sustained-render regression
+    // (reverted at e1ed87b): each pass's own two state flips (loading true,
+    // then false+data) kept the board re-laying-out for as long as new
+    // callers kept arriving. `this.pending` is cleared exactly once, here,
+    // inside the one function that sets it — clearing it in every awaiting
+    // caller instead would race: a caller's `finally` could fire after a
+    // *later* refresh cycle had already replaced `this.pending`, wiping out
+    // that newer cycle's in-flight marker and breaking its coalescing.
     this.setState({ ...this.state, loading: true, error: undefined });
-
     this.pending = (async () => {
-      try {
-        const limit = config().get<number>('issueLimit') ?? 2000;
-        const snapshot = await this.queries.snapshot(limit);
-        // The data is now current by definition; let the next probe re-establish
-        // the fingerprint instead of guessing it from these rows.
-        this.gate.reset();
-        return this.setState({ snapshot, loading: false, error: undefined });
-      } catch (error) {
-        const rpcError = toRpcError(error);
-        this.output.appendLine(`refresh failed: ${rpcError.kind}: ${rpcError.message}`);
-        if (rpcError.detail) this.output.appendLine(rpcError.detail);
-        // Keep the last good snapshot on screen; a transient bd failure should
-        // not blank the board.
-        return this.setState({ ...this.state, loading: false, error: rpcError });
-      } finally {
-        this.pending = undefined;
-      }
+      let result: StoreState;
+      do {
+        this.refreshQueued = false;
+        result = await this.fetchOnce();
+      } while (this.refreshQueued);
+      this.pending = undefined;
+      return result;
     })();
 
     return this.pending;
+  }
+
+  private async fetchOnce(): Promise<StoreState> {
+    try {
+      const limit = config().get<number>('issueLimit') ?? 2000;
+      const snapshot = await this.queries.snapshot(limit);
+      // The data is now current by definition; let the next probe re-establish
+      // the fingerprint instead of guessing it from these rows.
+      this.changeProbe.reset();
+      return this.setState({ snapshot, loading: false, error: undefined });
+    } catch (error) {
+      const rpcError = toRpcError(error);
+      this.output.appendLine(`refresh failed: ${rpcError.kind}: ${rpcError.message}`);
+      if (rpcError.detail) this.output.appendLine(rpcError.detail);
+      // Keep the last good snapshot on screen; a transient bd failure should
+      // not blank the board.
+      return this.setState({ ...this.state, loading: false, error: rpcError });
+    }
   }
 
   private setState(next: StoreState): StoreState {
@@ -251,20 +290,19 @@ export class BeadsStore implements vscode.Disposable {
    * One cycle of the change probe.
    *
    * Public for the unit suite, which drives it directly rather than waiting on a
-   * timer.
+   * timer. Delegates the "is this news?" decision to `changeProbe` (see
+   * `src/extension/bd/change-probe.ts`) — that object owns the fingerprint
+   * bookkeeping and the 12-tick full-resync backstop; this method's own job is
+   * unchanged from before extraction: skip while a refresh is already in
+   * flight, and never let a failed probe blank the board or spam the log.
    */
   async tick(): Promise<void> {
     // A refresh already in flight will answer the same question, and its
     // completion resets the fingerprint.
     if (this.pending) return;
 
-    if (this.gate.dueForResync()) {
-      await this.refresh();
-      return;
-    }
-
     try {
-      if (this.gate.changed(await this.queries.watermark())) await this.refresh();
+      if (await this.changeProbe.shouldRefresh()) await this.refresh();
     } catch (error) {
       // A probe that fails is not news: `refresh()` owns error reporting, and a
       // transient failure must not blank the board or spam the log every tick.

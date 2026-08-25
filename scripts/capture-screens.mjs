@@ -15,6 +15,13 @@
  * chart is 98% Done and the product photographs as finished. `--workspace`
  * exists so the README can show a project that is actually in flight —
  * see scripts/seed-demo-workspace.mjs.
+ *
+ * Two widgets fetch nothing until a user clicks something — the sync-status
+ * chip's Refresh action and the health scorecard drawer's "Run checks" — so
+ * this pipeline clicks them for real and waits for the result before
+ * shooting `overview-health.png`, rather than shipping their empty states.
+ * The Molecules tab gets its own real-data pass too, off the molecule
+ * `npm run demo:seed` pours (see scripts/lib/molecule-demo-seed.mjs).
  */
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -26,6 +33,7 @@ import { _electron } from 'playwright';
 
 import { cleanEnv, scrubProcessEnv } from './lib/clean-env.mjs';
 import { defaultDemoDir, DEMO_ID_PREFIX } from './lib/demo-workspace.mjs';
+import { FORMULA_NAME as MOLECULE_FORMULA_NAME } from './lib/molecule-demo-seed.mjs';
 
 const testVersion = process.env.VSCODE_TEST_VERSION ?? '1.105.0';
 scrubProcessEnv();
@@ -176,6 +184,36 @@ try {
     }
   }
 
+  // ── Overview: sync-status chip refreshed, health scorecard run ─────────────
+  // Both are fetch-on-demand by design (see sync-status-chip.tsx and
+  // health-scorecard.tsx's own doc comments) — no mount effect, no poll-tick
+  // subscription. A plain capture only ever shows the chip absent (nothing
+  // fetched yet) and the drawer's "No checks run yet" empty state. Trigger
+  // the real user actions and wait for them to settle before shooting, rather
+  // than documenting a state no one who has clicked anything ever sees. This
+  // runs after the unposed Overview/Roadmap/Board shots above so it never
+  // poses those.
+  await inner.locator('[role="tab"]:has-text("Overview")').first().click();
+  await window.waitForTimeout(400);
+
+  await inner.locator('button[title="Refresh from bd"]').first().click();
+  await inner.locator('[data-testid="sync-mode"]').first().waitFor({ timeout: 20_000 });
+
+  await inner.getByRole('button', { name: 'Project health' }).click();
+  await inner.getByRole('button', { name: 'Run checks', exact: true }).click();
+  await window.waitForTimeout(300);
+  // The button's own label is the settle signal: `HealthScorecard` renders
+  // "Running checks…" only while `loading` is true, "Run checks" once the
+  // call lands either way (success or error) — no report-shaped text to
+  // wait on that would break if every check comes back clean.
+  await inner.getByRole('button', { name: 'Run checks', exact: true }).waitFor({ timeout: 30_000 });
+  // The stat-tile grid renders as soon as the report lands, but the drawer
+  // sits below Overview's own (long) ready/blocked lists — without scrolling
+  // it into frame the shot would only ever catch the "Run checks · Checked…"
+  // row, not the populated tiles that are the whole point of this capture.
+  await inner.locator('section[aria-label="Project health"]').scrollIntoViewIfNeeded();
+  await shot(window, 'overview-health');
+
   // ── Graph: the dependency DAG, folded into Roadmap as a third shape ─────────
   // (Graph used to be its own top-level tab; it is now a `ShapeButton` inside
   // Roadmap alongside Timeline/List — see RoadmapView.tsx.)
@@ -220,6 +258,43 @@ try {
   await inner.getByRole('button', { name: /^Worker /i }).first().click();
   await window.waitForTimeout(600);
   await shot(window, 'fleet-transcript');
+
+  // ── Molecules: bd mol cards, gates, and a step list in 5 distinct states ───
+  // `npm run demo:seed` pours a real molecule via `bd mol distill`/`bd mol
+  // pour` (see scripts/lib/molecule-demo-seed.mjs) — same discovery path a
+  // real molecule uses, not a fixture the extension is told to trust. Against
+  // a workspace with no molecules (e.g. this repo's own tracker without
+  // `--demo`), the tab's own empty state is what gets shot instead, which is
+  // still the real, correct rendering for that project.
+  await inner.locator('[role="tab"]:has-text("Molecules")').first().click();
+  // `getMolSnapshot` fans out to several `bd mol`/`bd gate` reads (see its
+  // own doc comment in queries.ts) — slower than a tab switch, so a fixed
+  // wait here caught the tab mid-`Skeleton` on the first attempt. Wait for
+  // whichever real outcome actually lands: a molecule card, or (against a
+  // workspace with none, e.g. this repo's own tracker without `--demo`) the
+  // tab's own empty state — either is the real, correct rendering to shoot.
+  const moleculeCardLocator = inner.locator('article[role="button"]', {
+    hasText: MOLECULE_FORMULA_NAME,
+  });
+  await Promise.race([
+    moleculeCardLocator.first().waitFor({ timeout: 20_000 }),
+    inner.getByText('No molecules in this project').waitFor({ timeout: 20_000 }),
+  ]).catch(() => {});
+  await shot(window, 'molecules');
+
+  const moleculeCard = moleculeCardLocator.first();
+  if (await moleculeCard.count().catch(() => 0)) {
+    await moleculeCard.click();
+    // Same fetch-then-render gap as above, for `useMolDetail`'s `showMolecule`
+    // call — wait for an actual step row rather than a fixed timeout that
+    // would just as easily catch the step list's own loading `Skeleton`.
+    await inner
+      .locator(`section[aria-label="${MOLECULE_FORMULA_NAME} steps"] article`)
+      .first()
+      .waitFor({ timeout: 20_000 })
+      .catch(() => {});
+    await shot(window, 'molecules-detail');
+  }
 
   // ── Settings the extension contributes ─────────────────────────────────────
   await runCommand(window, 'Preferences: Open Settings (UI)');

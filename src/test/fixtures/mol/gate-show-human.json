@@ -1,0 +1,14 @@
+{
+  "await_type": "human",
+  "created_at": "2026-08-24T15:07:31Z",
+  "created_by": "CuongBPV",
+  "description": "Ad-hoc gate blocking bd-mol-fixtures-scratch-mol-w0q\n\nReason: Need design review",
+  "id": "bd-mol-fixtures-scratch-wb6",
+  "issue_type": "gate",
+  "owner": "CuongBPV@fpt.com",
+  "priority": 2,
+  "schema_version": 1,
+  "status": "open",
+  "title": "Gate: human",
+  "updated_at": "2026-08-24T15:07:31Z"
+}

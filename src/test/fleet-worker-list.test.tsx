@@ -12,6 +12,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { FleetSnapshot, FleetWorker, FleetWorktree } from '../shared/fleet';
 import type { FleetStatusFilter } from '../shared/fleet-filter';
+import type { Bead } from '../shared/types';
 import { WorkerList } from '../webview/components/fleet/worker-list';
 
 declare global {
@@ -40,6 +41,7 @@ async function render(
     selectedTarget?: string | null;
     onSelectTarget?: (targetId: string) => void;
     statusFilter?: FleetStatusFilter;
+    beadsById?: ReadonlyMap<string, Bead>;
   } = {},
 ): Promise<HTMLElement> {
   container = document.createElement('div');
@@ -52,6 +54,7 @@ async function render(
         selectedTarget: options.selectedTarget ?? null,
         onSelectTarget: options.onSelectTarget ?? (() => {}),
         statusFilter: options.statusFilter,
+        beadsById: options.beadsById ?? new Map(),
       }),
     ),
   );
@@ -185,6 +188,172 @@ describe('WorkerList orchestrators and workers', () => {
     const sections = el.querySelectorAll('section');
     // Two orchestrator sections; the third (stale) only appears with orphans.
     expect(sections).toHaveLength(2);
+  });
+});
+
+describe('WorkerList lease badge (beads-ui-vscode-ext-ayq.1)', () => {
+  function leasedBead(overrides: Partial<Bead> = {}): Bead {
+    return {
+      id: 'proj-7pi',
+      title: 'Claimed work',
+      status: 'in_progress',
+      priority: 1,
+      issue_type: 'task',
+      ...overrides,
+    };
+  }
+
+  it('shows a lease chip beside a worker whose bead carries a live lease', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: 'proj-7pi' })],
+      }),
+      {
+        beadsById: new Map([
+          ['proj-7pi', leasedBead({ lease_expires_at: '2999-01-01T00:00:00.000Z' })],
+        ]),
+      },
+    );
+
+    expect(el.textContent).toContain('leased');
+  });
+
+  it('shows an expired chip when the matched bead lease is long dead', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: 'proj-7pi' })],
+      }),
+      {
+        beadsById: new Map([
+          ['proj-7pi', leasedBead({ lease_expires_at: '2000-01-01T00:00:00.000Z' })],
+        ]),
+      },
+    );
+
+    expect(el.textContent).toContain('lease expired');
+  });
+
+  it('shows no chip when the matched bead has no lease fields — absence is none, not expired', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: 'proj-7pi' })],
+      }),
+      { beadsById: new Map([['proj-7pi', leasedBead()]]) },
+    );
+
+    expect(el.textContent).not.toContain('leased');
+    expect(el.textContent).not.toContain('lease expired');
+  });
+
+  it('renders the row unharmed when the worker bead id matches nothing in the map', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: 'proj-unknown' })],
+      }),
+      { beadsById: new Map() },
+    );
+
+    expect(el.querySelectorAll('li[role="button"]')).toHaveLength(1);
+    expect(el.textContent).not.toContain('leased');
+  });
+});
+
+describe('WorkerList lease badge unique-suffix lookup (beads-ui-vscode-ext-ayq.5)', () => {
+  function leasedBead(overrides: Partial<Bead> = {}): Bead {
+    return {
+      id: 'proj-7pi',
+      title: 'Claimed work',
+      status: 'in_progress',
+      priority: 1,
+      issue_type: 'task',
+      ...overrides,
+    };
+  }
+
+  it('shows a lease chip when the worker names the exact full bead id', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [
+          worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: 'beads-ui-vscode-ext-19r.1' }),
+        ],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'beads-ui-vscode-ext-19r.1',
+            leasedBead({ id: 'beads-ui-vscode-ext-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).toContain('leased');
+  });
+
+  it('shows a lease chip when the worker names a short id that matches exactly one bead', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: '19r.1' })],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'beads-ui-vscode-ext-19r.1',
+            leasedBead({ id: 'beads-ui-vscode-ext-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).toContain('leased');
+  });
+
+  it('shows no chip when the short id suffix-matches two beads with different prefixes', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: '19r.1' })],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'proj-a-19r.1',
+            leasedBead({ id: 'proj-a-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+          [
+            'proj-b-19r.1',
+            leasedBead({ id: 'proj-b-19r.1', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).not.toContain('leased');
+  });
+
+  it('shows no chip when the short id matches no bead at all', async () => {
+    const el = await render(
+      snapshot({
+        orchestrators: [{ sessionId: 'session-1', workerIds: ['agent-a'], lastActivityAt: null }],
+        workers: [worker({ agentId: 'agent-a', sessionId: 'session-1', beadId: '19r.1' })],
+      }),
+      {
+        beadsById: new Map([
+          [
+            'beads-ui-vscode-ext-7pi',
+            leasedBead({ id: 'beads-ui-vscode-ext-7pi', lease_expires_at: '2999-01-01T00:00:00.000Z' }),
+          ],
+        ]),
+      },
+    );
+
+    expect(el.textContent).not.toContain('leased');
   });
 });
 

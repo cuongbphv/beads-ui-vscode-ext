@@ -135,6 +135,17 @@ export interface Bead {
   source_system?: string;
   /** Arbitrary project metadata, as raw JSON. */
   metadata?: unknown;
+  /**
+   * When the current claim's lease expires. Hydrated from bd's ephemeral,
+   * node-local leases table (`omitempty`), so it is ABSENT on any issue with
+   * no active lease on this node — the common case. Absence means "no lease",
+   * never "expired at epoch zero"; see `shared/lease.ts`.
+   */
+  lease_expires_at?: string;
+  /** Last heartbeat from the lease owner. Same optionality as `lease_expires_at`. */
+  heartbeat_at?: string;
+  /** The replica that granted the lease. Empty/absent means provenance unknown. */
+  lease_granted_node?: string;
   /** Persistent context marker rather than a work item. */
   pinned?: boolean;
   /** Not synced via git. */
@@ -180,6 +191,22 @@ export interface BdGate {
   created_by?: string;
   updated_at?: string;
   await_type: GateAwaitType;
+  /**
+   * The thing being awaited, when `await_type` names one (`gh:pr` → the PR
+   * number as a string, e.g. `"42"`). `omitempty` on bd's side — absent for
+   * `await_type: 'human'` (verified against
+   * `src/test/fixtures/mol/gate-list.json`, bd 1.2.2). Never fabricated when
+   * absent.
+   */
+  await_id?: string;
+  /**
+   * Only present for `await_type: 'timer'`. A Go `time.Duration` serialised
+   * as nanoseconds (e.g. `7200000000000` for 2h) — a number, not a string.
+   * `omitempty` on bd's side — absent for every other `await_type` (verified
+   * against `src/test/fixtures/mol/gate-list.json` /
+   * `gate-show-timer.json`, bd 1.2.2). Never fabricated when absent.
+   */
+  timeout?: number;
 }
 
 /** A comment attached to an issue (`bd show --include-comments`). */
@@ -248,6 +275,43 @@ export interface BdContext {
   sync_remote?: string;
 }
 
+/**
+ * `bd dolt status --json` (read-only — never `dolt push`/`dolt pull`).
+ *
+ * Verified against a real embedded-mode project (bd, this repo, 2026-08-24):
+ * only `data_dir`, `data_dir_exists`, `mode`, `schema_version` and
+ * `server_running` are present — there is no `ahead`/`behind`/last-sync
+ * concept in this command's output for embedded mode. The CLI reference's
+ * description of local-server and externally-managed modes (PID, port,
+ * reachability, server version, database) is not itself a source of
+ * ahead/behind/last-sync fields either — nothing in bd's docs describes this
+ * command reporting a comparison against a remote. `ahead`/`behind`/
+ * `lastSyncAt` below are kept purely defensive, in case a future bd build
+ * adds them to a remote-mode payload; the parser never fabricates them, and
+ * the webview renders them only when actually present.
+ */
+export interface SyncStatus {
+  /** e.g. `"embedded"`, `"local-server"`, `"external"` — bd is the authority on the set. */
+  mode: string;
+  server_running: boolean;
+  data_dir?: string;
+  data_dir_exists?: boolean;
+  schema_version?: number;
+  /** Local-server / externally-managed modes (unverified shape — passed through as-is). */
+  pid?: number;
+  port?: number;
+  host?: string;
+  reachable?: boolean;
+  server_version?: string;
+  database?: string;
+  /** Unverified: no confirmed bd build emits these for `dolt status`. Render only if present. */
+  ahead?: number;
+  behind?: number;
+  lastSyncAt?: string;
+  /** True when bd's JSON could not be parsed into a usable shape; every other field is a safe fallback. */
+  degraded?: boolean;
+}
+
 /** Counters from `bd stats --json` (the `summary` object). */
 export interface BdStats {
   total_issues: number;
@@ -311,6 +375,60 @@ export interface DashboardSnapshot {
   gates: BdGate[];
   /** True when `beadsDashboard.issueLimit` truncated the list. */
   truncated: boolean;
+  fetchedAt: string;
+}
+
+/**
+ * One row of `bd lint --json`'s `results` array.
+ *
+ * Verified shape (bd 1.2.2, this repo, 2026-08-25):
+ * `{total, issues, results: [{id, title, type, missing: string[], warnings}]}`.
+ */
+export interface LintFinding {
+  id: string;
+  title: string;
+  type: string;
+  missing: string[];
+  warnings: number;
+}
+
+/**
+ * One health-scorecard check's result (bead beads-ui-vscode-ext-72m.2).
+ *
+ * Mirrors the degradation convention `MolListItem`/`MolSnapshot` established
+ * in `shared/mol.ts`: a failed read never throws past this shape, it flips
+ * `ok` to `false` and carries the message that explains why `items` is
+ * empty. One check failing must never blank the other three.
+ */
+export interface HealthCheck<T> {
+  ok: boolean;
+  items: T[];
+  error?: string;
+}
+
+/**
+ * `getHealthReport`'s result: one card per check, each independently
+ * degradable via {@link HealthCheck}.
+ *
+ * `cycles` is typed `unknown[]` — `bd dep cycles --json` returned `[]`
+ * against this project's own board (no cycles to sample), so the element
+ * shape when a cycle actually exists is [Unverified]; the UI renders each
+ * entry defensively rather than assuming a field name.
+ *
+ * `bd preflight` and `bd doctor` are deliberately excluded from this report:
+ * `preflight` executes the project's own build/lint/test commands and
+ * `doctor` calls out to GitHub to check for releases. Neither is a read-only
+ * project-health check, so neither belongs in a report fetched on a button
+ * click with no confirmation step. A "Run preflight…" escape hatch behind an
+ * explicit confirmation is a later, separate bead — do not fold either
+ * command into this RPC without re-reading this comment.
+ */
+export interface HealthReport {
+  stale: HealthCheck<Bead>;
+  orphans: HealthCheck<Bead>;
+  lint: HealthCheck<LintFinding>;
+  cycles: HealthCheck<unknown>;
+  staleDays: number;
   fetchedAt: string;
 }
 

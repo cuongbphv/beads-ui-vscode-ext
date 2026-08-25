@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { buildDemoJsonl, demoSummary, DEMO_ACTOR, DEMO_PREFIX } from './lib/demo-project.mjs';
 import { defaultDemoDir } from './lib/demo-workspace.mjs';
 import { seedFleetDemo } from './lib/fleet-demo-seed.mjs';
+import { seedMoleculeDemo } from './lib/molecule-demo-seed.mjs';
 
 const repoRoot = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'));
 
@@ -177,6 +178,13 @@ bd([
 console.log(`› seeding a Fleet worker + worktree`);
 const fleetWorktreePath = seedFleetDemo(outDir);
 console.log(`  worktree   ${fleetWorktreePath}`);
+
+// A Molecules-tab scenario: one poured molecule whose five steps span
+// done/current/ready/pending/gated, so the tab's card and step list both
+// photograph as a molecule mid-flight rather than an empty tab.
+console.log(`› seeding a molecule (bd mol distill/pour)`);
+const molecule = seedMoleculeDemo(bd);
+console.log(`  molecule   ${molecule.rootId} (gate ${molecule.gateId})`);
 
 const stats = JSON.parse(bd(['stats', '--json']));
 console.log('\n✔ demo workspace ready');

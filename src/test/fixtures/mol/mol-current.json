@@ -1,0 +1,94 @@
+[
+  {
+    "molecule_id": "bd-mol-fixtures-scratch-mol-yh9",
+    "molecule_title": "fixdemo",
+    "current_step": {
+      "id": "bd-mol-fixtures-scratch-mol-25d",
+      "title": "Implement auth part A",
+      "description": "Build part A of auth.",
+      "status": "in_progress",
+      "priority": 2,
+      "issue_type": "task",
+      "assignee": "CuongBPV",
+      "created_at": "2026-08-24T15:06:49Z",
+      "updated_at": "2026-08-24T15:07:31Z",
+      "started_at": "2026-08-24T15:07:31Z"
+    },
+    "next_step": {
+      "id": "bd-mol-fixtures-scratch-mol-hqf",
+      "title": "Implement auth part B",
+      "description": "Build part B of auth.",
+      "status": "open",
+      "priority": 2,
+      "issue_type": "task",
+      "created_at": "2026-08-24T15:06:49Z",
+      "updated_at": "2026-08-24T15:06:49Z"
+    },
+    "steps": [
+      {
+        "issue": {
+          "id": "bd-mol-fixtures-scratch-mol-7ps",
+          "title": "Design auth",
+          "description": "Sketch the auth feature.",
+          "status": "closed",
+          "priority": 2,
+          "issue_type": "task",
+          "assignee": "CuongBPV",
+          "created_at": "2026-08-24T15:06:49Z",
+          "updated_at": "2026-08-24T15:07:30Z",
+          "started_at": "2026-08-24T15:07:29Z",
+          "closed_at": "2026-08-24T15:07:30Z",
+          "close_reason": "Closed"
+        },
+        "status": "done",
+        "is_current": false
+      },
+      {
+        "issue": {
+          "id": "bd-mol-fixtures-scratch-mol-hqf",
+          "title": "Implement auth part B",
+          "description": "Build part B of auth.",
+          "status": "open",
+          "priority": 2,
+          "issue_type": "task",
+          "created_at": "2026-08-24T15:06:49Z",
+          "updated_at": "2026-08-24T15:06:49Z"
+        },
+        "status": "ready",
+        "is_current": false
+      },
+      {
+        "issue": {
+          "id": "bd-mol-fixtures-scratch-mol-25d",
+          "title": "Implement auth part A",
+          "description": "Build part A of auth.",
+          "status": "in_progress",
+          "priority": 2,
+          "issue_type": "task",
+          "assignee": "CuongBPV",
+          "created_at": "2026-08-24T15:06:49Z",
+          "updated_at": "2026-08-24T15:07:31Z",
+          "started_at": "2026-08-24T15:07:31Z"
+        },
+        "status": "current",
+        "is_current": true
+      },
+      {
+        "issue": {
+          "id": "bd-mol-fixtures-scratch-mol-w0q",
+          "title": "Review auth",
+          "description": "Human review of auth.",
+          "status": "open",
+          "priority": 2,
+          "issue_type": "task",
+          "created_at": "2026-08-24T15:06:49Z",
+          "updated_at": "2026-08-24T15:06:49Z"
+        },
+        "status": "pending",
+        "is_current": false
+      }
+    ],
+    "completed": 1,
+    "total": 4
+  }
+]

@@ -4,7 +4,16 @@
  * The detail pane docks beside the content when the container is wide and takes
  * the whole panel when it is not — same component, no duplicate markup.
  */
-import { AlertCircle, Bot, LayoutDashboard, Map as MapIcon, RefreshCw, Columns3 } from 'lucide-react';
+import {
+  AlertCircle,
+  Bot,
+  LayoutDashboard,
+  Map as MapIcon,
+  Plus,
+  RefreshCw,
+  Columns3,
+  FlaskConical,
+} from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -16,17 +25,21 @@ import {
 } from 'react';
 
 import type { FleetStatusFilter } from '../shared/fleet-filter';
-import type { BeadQuery } from '../shared/model';
+import { mergeSearchResults, type BeadQuery } from '../shared/model';
 import { DASHBOARD_TABS, type DashboardTab } from '../shared/protocol';
 import type { RoadmapSort } from '../shared/roadmap-sort';
 import type { StatusCategory } from '../shared/types';
+import { BeadCreate } from './components/bead-create';
 import { BeadDetail } from './components/bead-detail';
 import type { RoadmapZoom } from './components/gantt';
 import { Button, EmptyState, Skeleton } from './components/primitives';
 import { Splitter } from './components/splitter';
+import { SyncStatusChip } from './components/sync-status-chip';
 import { ToastProvider } from './components/toast';
 import { onHostEvent, persist, restore } from './bridge/rpc';
 import { useBeads } from './hooks/use-beads';
+import { useServerSearch } from './hooks/use-server-search';
+import { useSyncStatus } from './hooks/use-sync-status';
 import {
   persistedFleetPreferences,
   restoreFleetPreferences,
@@ -42,6 +55,7 @@ import type { RoadmapShape } from './lib/roadmap-shape';
 import { cn, relativeTime } from './lib/utils';
 import { BoardView } from './views/BoardView';
 import { FleetView } from './views/FleetView';
+import { MoleculesView } from './views/MoleculesView';
 import { OverviewView } from './views/OverviewView';
 import { RoadmapView } from './views/RoadmapView';
 
@@ -67,6 +81,7 @@ const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
   roadmap: { label: 'Roadmap', icon: <MapIcon aria-hidden="true" className="size-4" /> },
   board: { label: 'Board', icon: <Columns3 aria-hidden="true" className="size-4" /> },
   fleet: { label: 'Fleet', icon: <Bot aria-hidden="true" className="size-4" /> },
+  molecules: { label: 'Molecules', icon: <FlaskConical aria-hidden="true" className="size-4" /> },
 };
 
 export function App(): ReactNode {
@@ -74,6 +89,7 @@ export function App(): ReactNode {
   const restoredRoadmap = restoreRoadmapPreferences(saved);
   const restoredFleet = restoreFleetPreferences(saved);
   const { snapshot, index, error, loading, focusedId, setFocusedId, refresh } = useBeads();
+  const syncStatus = useSyncStatus();
 
   const [tab, setTab] = useState<DashboardTab>(saved?.tab ?? 'overview');
   // Matches `beadsDashboard.showClosed`, which the host pushes right after
@@ -92,6 +108,9 @@ export function App(): ReactNode {
   // since it is the only tab with its own list+detail split.
   const [fleetDetailWidth, setFleetDetailWidth] = useState(saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX);
   const [fleetStatusFilter, setFleetStatusFilter] = useState<FleetStatusFilter>(restoredFleet.statusFilter);
+  // Not persisted: a create-in-flight form is a live editing session, not a
+  // preference the panel should reopen into.
+  const [creating, setCreating] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
   const [mainWidth, setMainWidth] = useState(0);
 
@@ -173,9 +192,49 @@ export function App(): ReactNode {
 
   const onSelect = useCallback((id: string) => setFocusedId(id), [setFocusedId]);
 
-  const beads = snapshot?.beads ?? [];
+  // The sync chip fetches nothing on its own — piggybacking its refresh onto
+  // this same click is what keeps `bd dolt status` off the poll tick without
+  // adding a second timer.
+  const refreshSyncStatus = syncStatus.refresh;
+  const onRefresh = useCallback(() => {
+    refresh();
+    refreshSyncStatus();
+  }, [refresh, refreshSyncStatus]);
+
+  /** A successful create replaces the create form with the new issue's detail. */
+  const onCreated = useCallback(
+    (id: string) => {
+      setCreating(false);
+      setFocusedId(id);
+    },
+    [setFocusedId],
+  );
+
+  /** Cancelling drops the form; no issue is left selected in its place. */
+  const onCancelCreate = useCallback(() => {
+    setCreating(false);
+    setFocusedId(undefined);
+  }, [setFocusedId]);
+
+  // Only fires against the whole project once the client-side filter can no
+  // longer see it (`snapshot.truncated`) and the typed query is long enough
+  // to be worth the round trip; see `useServerSearch`. Merged into `beads`
+  // here so every downstream consumer — Roadmap, Board, the detail pane —
+  // keeps operating on a single list instead of learning this exists.
+  const serverSearch = useServerSearch(query.text ?? '', snapshot?.truncated ?? false);
+  const beads = useMemo(
+    () => mergeSearchResults(snapshot?.beads ?? [], serverSearch.extraBeads),
+    [snapshot?.beads, serverSearch.extraBeads],
+  );
   const selected = focusedId ? beads.find((bead) => bead.id === focusedId) : undefined;
   const blockedIds = useMemo(() => new Set(snapshot?.blockedIds ?? []), [snapshot?.blockedIds]);
+  // Full-id lookup the Fleet tab uses to pair a worker's claimed bead with its
+  // lease fields (beads-ui-vscode-ext-ayq.1). Keyed off the snapshot so it is
+  // rebuilt exactly when the issue list is.
+  const beadsById = useMemo(
+    () => new Map((snapshot?.beads ?? []).map((bead) => [bead.id, bead])),
+    [snapshot?.beads],
+  );
 
   return (
     <ToastProvider>
@@ -213,7 +272,21 @@ export function App(): ReactNode {
                 truncated
               </span>
             ) : null}
-            <Button variant="ghost" onClick={refresh} title="Refresh from bd">
+            <SyncStatusChip
+              status={syncStatus.status}
+              loading={syncStatus.loading}
+              error={syncStatus.error}
+            />
+            <Button
+              variant="secondary"
+              disabled={!snapshot}
+              onClick={() => setCreating(true)}
+              title="Create a new issue"
+            >
+              <Plus aria-hidden="true" className="size-3.5" />
+              New
+            </Button>
+            <Button variant="ghost" onClick={onRefresh} title="Refresh from bd">
               <RefreshCw aria-hidden="true" className={cn('size-3.5', loading && 'animate-spin')} />
               <span className="sr-only @md:not-sr-only">Refresh</span>
             </Button>
@@ -299,17 +372,20 @@ export function App(): ReactNode {
                 swimlanes={boardSwimlanes}
                 onSwimlanesChange={setBoardSwimlanes}
               />
-            ) : (
+            ) : tab === 'fleet' ? (
               <FleetView
                 detailWidth={fleetDetailWidth}
                 onDetailWidthChange={setFleetDetailWidth}
                 statusFilter={fleetStatusFilter}
                 onStatusFilterChange={setFleetStatusFilter}
+                beadsById={beadsById}
               />
+            ) : (
+              <MoleculesView beadsById={beadsById} onSelect={onSelect} selectedId={focusedId} />
             )}
           </div>
 
-          {selected ? (
+          {(creating && snapshot) || selected ? (
             <>
               {/* Narrow: the pane covers the content, so there is nothing to split. */}
               <Splitter
@@ -325,14 +401,23 @@ export function App(): ReactNode {
                 onReset={() => setDetailWidth(DETAIL_DEFAULT_PX)}
               />
               <div className="absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-[var(--detail-w)] @3xl:shrink-0">
-                <BeadDetail
-                  bead={selected}
-                  beads={beads}
-                  index={index}
-                  onClose={() => setFocusedId(undefined)}
-                  onSelect={onSelect}
-                  refreshKey={snapshot?.fetchedAt}
-                />
+                {creating && snapshot ? (
+                  <BeadCreate
+                    snapshot={snapshot}
+                    beads={beads}
+                    onCancel={onCancelCreate}
+                    onSelect={onCreated}
+                  />
+                ) : selected ? (
+                  <BeadDetail
+                    bead={selected}
+                    beads={beads}
+                    index={index}
+                    onClose={() => setFocusedId(undefined)}
+                    onSelect={onSelect}
+                    refreshKey={snapshot?.fetchedAt}
+                  />
+                ) : null}
               </div>
             </>
           ) : null}

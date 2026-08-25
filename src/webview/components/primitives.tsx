@@ -17,7 +17,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 
 import { PRIORITY_LABELS, type StatusCategory } from '../../shared/types';
 import { cn, percent } from '../lib/utils';
@@ -173,6 +173,74 @@ export function Select({
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * A number-plus-label tile: Overview's six top stats and the health
+ * scorecard's four check tiles both render through this one component
+ * (bead beads-ui-vscode-ext-72m.2 lifted it out of `OverviewView.tsx` so the
+ * two features share one card shape instead of drifting apart).
+ *
+ * `value` accepts a string as well as a number so a failed health check can
+ * show an em dash instead of a misleading `0`. Passing `onClick` turns the
+ * tile into a toggle (e.g. a drill-down open/close) without changing how a
+ * plain stat tile renders.
+ */
+export function StatCard({
+  icon,
+  label,
+  value,
+  hint,
+  tone = 'default',
+  onClick,
+  expanded,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: number | string;
+  hint?: string;
+  tone?: 'default' | 'accent' | 'warning' | 'success' | 'danger';
+  /** Makes this tile a toggle button (e.g. a health check's drill-down) instead of a plain tile. */
+  onClick?: () => void;
+  expanded?: boolean;
+}): ReactNode {
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (!onClick) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick();
+    }
+  }
+
+  return (
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-expanded={onClick ? expanded : undefined}
+      onClick={onClick}
+      onKeyDown={onClick ? onKeyDown : undefined}
+      className={cn(
+        'bg-surface border-border surface-interactive card-raise hover:border-border-strong rounded-lg border p-3',
+        onClick && 'cursor-pointer',
+      )}
+    >
+      <div
+        className={cn(
+          'flex items-center gap-1.5 text-xs',
+          tone === 'default' && 'text-fg-muted',
+          tone === 'accent' && 'text-accent',
+          tone === 'warning' && 'text-warning',
+          tone === 'success' && 'text-success',
+          tone === 'danger' && 'text-danger',
+        )}
+      >
+        {icon}
+        {label}
+      </div>
+      <p className="text-fg-strong mt-1 text-2xl leading-none font-semibold tabular-nums">{value}</p>
+      {hint ? <p className="text-fg-muted mt-1 text-xs">{hint}</p> : null}
+    </div>
   );
 }
 

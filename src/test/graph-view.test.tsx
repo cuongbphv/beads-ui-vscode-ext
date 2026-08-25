@@ -13,6 +13,44 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 
+interface AddDependencyCall {
+  id: string;
+  dependsOn: string;
+  type?: string;
+}
+
+const rpc = vi.hoisted(() => ({
+  addDependencyCalls: new Array<AddDependencyCall>(),
+  /** Resolves immediately unless a test overrides this with a rejecting promise. */
+  addDependencyResult: (): Promise<{ ok: true }> => Promise.resolve({ ok: true }),
+}));
+
+vi.mock('../webview/bridge/rpc', () => ({
+  call: (method: string, params: unknown) => {
+    if (method === 'addDependency') {
+      rpc.addDependencyCalls.push(params as AddDependencyCall);
+      return rpc.addDependencyResult();
+    }
+    return Promise.resolve({});
+  },
+  asRpcError: (error: unknown) => ({ kind: 'unknown', message: String(error) }),
+}));
+
+interface Notified {
+  text: string;
+  tone: string;
+}
+
+const toast = vi.hoisted(() => ({ messages: new Array<Notified>() }));
+
+vi.mock('../webview/components/toast', () => ({
+  useToast: () => ({
+    notify: (text: string, tone = 'info') => {
+      toast.messages.push({ text, tone });
+    },
+  }),
+}));
+
 let mountedRoot: ReturnType<typeof createRoot> | undefined;
 let container: HTMLDivElement | undefined;
 
@@ -28,6 +66,9 @@ afterEach(async () => {
   }
   document.body.replaceChildren();
   container = undefined;
+  rpc.addDependencyCalls.length = 0;
+  rpc.addDependencyResult = () => Promise.resolve({ ok: true });
+  toast.messages.length = 0;
 });
 
 function bead(partial: Partial<Bead> & Pick<Bead, 'id'>): Bead {
@@ -70,6 +111,19 @@ async function mount(overrides: Partial<Parameters<typeof GraphView>[0]> = {}): 
   return container;
 }
 
+/**
+ * A primary-button press-and-release with no intervening move — the pointer
+ * sequence a real click, or a CDP/Playwright-driven synthetic mouse, produces.
+ * Deliberately does *not* dispatch a native `click` event: activation now
+ * fires off `pointerup` itself (beads-ui-vscode-ext-9e9.10), precisely
+ * because a synthetic mouse can be relied on for `pointerdown`/`pointerup`
+ * but not for the follow-on `click` a real browser synthesizes.
+ */
+async function clickNode(node: Element | null | undefined): Promise<void> {
+  await act(async () => node?.dispatchEvent(pointerEvent('pointerdown')));
+  await act(async () => node?.dispatchEvent(pointerEvent('pointerup')));
+}
+
 describe('GraphView', () => {
   it('renders a node for every bead in the visible (edge-bearing) set', async () => {
     const root = await mount();
@@ -84,15 +138,29 @@ describe('GraphView', () => {
     expect(root.querySelector('[aria-label^="lonely:"]')).toBeNull();
   });
 
-  it('calls onSelect with the bead id when a node is clicked', async () => {
+  it('calls onSelect with the bead id from pointerdown/pointerup alone, with no native click event required', async () => {
     const onSelect = vi.fn();
     const root = await mount({ onSelect });
 
     const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
     expect(node).not.toBeNull();
-    await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    // No `click` dispatch here — this is exactly the CDP/synthetic-mouse gap
+    // beads-ui-vscode-ext-9e9.10 found: pointerdown/pointerup fire but the
+    // browser never synthesizes the follow-on `click`.
+    await clickNode(node);
 
     expect(onSelect).toHaveBeenCalledWith('b');
+  });
+
+  it('does not double-activate when a native click event also follows the pointer sequence, as a real mouse produces', async () => {
+    const onSelect = vi.fn();
+    const root = await mount({ onSelect });
+
+    const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+    await clickNode(node);
+    await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it('calls onSelect with the bead id when Enter is pressed on a focused node', async () => {
@@ -154,7 +222,7 @@ describe('GraphView', () => {
       expect(transformOf(node!)).toEqual(start);
     });
 
-    it('suppresses the click that follows a drag past the threshold', async () => {
+    it('does not activate the node when the drag crossed the threshold', async () => {
       const onSelect = vi.fn();
       const root = await mount({ onSelect });
       const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
@@ -162,22 +230,30 @@ describe('GraphView', () => {
       await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
       await act(async () => node?.dispatchEvent(pointerEvent('pointermove', { clientX: 30 })));
       await act(async () => node?.dispatchEvent(pointerEvent('pointerup', { clientX: 30 })));
-      // The browser fires `click` right after `pointerup` on a real drag.
-      await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
       expect(onSelect).not.toHaveBeenCalled();
     });
 
-    it('still selects on a press-and-release that never crosses the threshold', async () => {
+    it('still activates on a press-and-release that never crosses the threshold', async () => {
       const onSelect = vi.fn();
       const root = await mount({ onSelect });
       const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
 
       await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
       await act(async () => node?.dispatchEvent(pointerEvent('pointerup', { clientX: 1 })));
-      await act(async () => node?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
       expect(onSelect).toHaveBeenCalledWith('b');
+    });
+
+    it('does not activate the node when the pointer sequence is cancelled rather than released', async () => {
+      const onSelect = vi.fn();
+      const root = await mount({ onSelect });
+      const node = root.querySelector<SVGElement>('[aria-label^="b:"]');
+
+      await act(async () => node?.dispatchEvent(pointerEvent('pointerdown', { clientX: 0 })));
+      await act(async () => node?.dispatchEvent(pointerEvent('pointercancel', { clientX: 0 })));
+
+      expect(onSelect).not.toHaveBeenCalled();
     });
 
     it('drops the in-progress drag when the browser takes the capture away', async () => {
@@ -274,6 +350,110 @@ describe('GraphView', () => {
       expect(root.querySelector<HTMLButtonElement>('button[title="Reset layout"]')?.disabled).toBe(
         true,
       );
+    });
+  });
+
+  describe('link mode', () => {
+    async function arm(root: HTMLDivElement): Promise<void> {
+      const linkButton = root.querySelector<HTMLButtonElement>('button[title="Link two issues"]');
+      await act(async () => linkButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    }
+
+    function kindButton(root: HTMLDivElement, kind: string): HTMLButtonElement | undefined {
+      const dialog = root.querySelector('[role="dialog"]');
+      return Array.from(dialog?.querySelectorAll('button') ?? []).find(
+        (button) => button.textContent === kind,
+      );
+    }
+
+    it('toggles armed state via the Link toolbar button', async () => {
+      const root = await mount();
+      const linkButton = root.querySelector<HTMLButtonElement>('button[title="Link two issues"]');
+      expect(linkButton?.getAttribute('aria-pressed')).toBe('false');
+
+      await arm(root);
+
+      const armedButton = root.querySelector<HTMLButtonElement>('button[title="Cancel linking issues"]');
+      expect(armedButton?.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('renders a ring highlight on the first node clicked as the link source', async () => {
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      await clickNode(nodeA);
+
+      expect(nodeA?.getAttribute('aria-label')).toContain('(link source)');
+      expect(nodeA?.querySelector('rect[stroke="var(--color-accent)"]')).not.toBeNull();
+    });
+
+    it('calls addDependency with the source, target, and chosen kind on a source-then-target click sequence', async () => {
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      await clickNode(nodeA);
+      await clickNode(nodeB);
+
+      const blocksButton = kindButton(root, 'blocks');
+      expect(blocksButton).not.toBeUndefined();
+
+      await act(async () => blocksButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(rpc.addDependencyCalls).toEqual([{ id: 'a', dependsOn: 'b', type: 'blocks' }]);
+    });
+
+    it('disarms on Escape, clearing the source selection and closing an open popover', async () => {
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      await clickNode(nodeA);
+      await clickNode(nodeB);
+      expect(root.querySelector('[role="dialog"]')).not.toBeNull();
+
+      await act(async () =>
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+      );
+
+      expect(root.querySelector('[role="dialog"]')).toBeNull();
+      expect(root.querySelector('[aria-label^="a:"]')?.getAttribute('aria-label')).not.toContain(
+        '(link source)',
+      );
+      expect(root.querySelector('button[title="Link two issues"]')).not.toBeNull();
+      expect(rpc.addDependencyCalls).toHaveLength(0);
+    });
+
+    it('does not select the bead in the detail pane while armed', async () => {
+      const onSelect = vi.fn();
+      const root = await mount({ onSelect });
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      await clickNode(nodeA);
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('renders a cycle-rejection RpcError as a toast, the same path every other mutating RPC uses', async () => {
+      rpc.addDependencyResult = () => Promise.reject(new Error('would create a cycle'));
+      const root = await mount();
+      await arm(root);
+
+      const nodeA = root.querySelector<SVGElement>('[aria-label^="a:"]');
+      const nodeB = root.querySelector<SVGElement>('[aria-label^="b:"]');
+      await clickNode(nodeA);
+      await clickNode(nodeB);
+
+      const blocksButton = kindButton(root, 'blocks');
+      await act(async () => blocksButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+      expect(toast.messages).toEqual([{ text: 'Error: would create a cycle', tone: 'error' }]);
+      // The popover closes regardless of outcome, per the "always closes" contract.
+      expect(root.querySelector('[role="dialog"]')).toBeNull();
     });
   });
 });

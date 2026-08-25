@@ -638,9 +638,99 @@ function Column({
               </button>
             </li>
           ) : null}
+
+          <li>
+            <AddIssueRow column={column} />
+          </li>
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * The column's quick-add affordance: a dashed "+ Add issue" row that reveals
+ * an inline title input in its place. Enter submits, Escape cancels.
+ *
+ * Deliberately non-optimistic — unlike `moveCardToCategory`, there is no new
+ * card to render ahead of `bd` actually creating one, only a title. So the
+ * input stays disabled after submit not until the RPC promise resolves, but
+ * until the *next* `issuesChanged` snapshot repaints the column — detected
+ * here by `column.beads` receiving a new array reference, the same signal the
+ * board-wide optimistic-override cleanup effect above watches for. A failed
+ * submit re-enables the input and keeps the typed title so the user is not
+ * asked to retype it.
+ */
+function AddIssueRow({ column }: { column: BoardColumn }): ReactNode {
+  const { notify } = useToast();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (!pending) return;
+    setPending(false);
+    setOpen(false);
+    setTitle('');
+    // Only `column.beads` matters: any other column re-rendering must not
+    // collapse this one's still-pending row.
+  }, [column.beads]);
+
+  async function submit(): Promise<void> {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    // Same first-status-of-category rule the drag-and-drop handler above
+    // uses: dropping into (or, here, quick-adding to) a column means the
+    // first status registered for its category.
+    const status = column.statuses[0];
+    if (!status) {
+      notify(`No status is registered for the ${column.label} column.`, 'error');
+      return;
+    }
+
+    setPending(true);
+    try {
+      await call('createBead', { title: trimmed, status });
+    } catch (error) {
+      setPending(false);
+      notify(asRpcError(error).message, 'error');
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="border-border text-fg-muted hover:bg-surface-hover hover:text-fg surface-interactive w-full cursor-pointer rounded-md border border-dashed px-2 py-1.5 text-left text-xs"
+      >
+        + Add issue
+      </button>
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      autoFocus
+      value={title}
+      disabled={pending}
+      placeholder="Issue title"
+      aria-label={`New issue title for ${column.label}`}
+      onChange={(event) => setTitle(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void submit();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          setOpen(false);
+          setTitle('');
+        }
+      }}
+      className="border-border bg-surface text-fg w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none disabled:opacity-60"
+    />
   );
 }
 

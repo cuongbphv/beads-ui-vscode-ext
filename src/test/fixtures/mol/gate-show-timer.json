@@ -1,0 +1,15 @@
+{
+  "await_type": "timer",
+  "created_at": "2026-08-24T15:07:46Z",
+  "created_by": "CuongBPV",
+  "description": "Ad-hoc gate blocking bd-mol-fixtures-scratch-mol-hqf\n\nReason: Cooldown",
+  "id": "bd-mol-fixtures-scratch-qpb",
+  "issue_type": "gate",
+  "owner": "CuongBPV@fpt.com",
+  "priority": 2,
+  "schema_version": 1,
+  "status": "open",
+  "timeout": 7200000000000,
+  "title": "Gate: timer",
+  "updated_at": "2026-08-24T15:07:46Z"
+}

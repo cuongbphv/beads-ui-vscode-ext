@@ -1,0 +1,32 @@
+[
+  {
+    "id": "bd-mol-fixtures-scratch-mol-yh9",
+    "title": "fixdemo",
+    "description": "Minimal fixture-capture workflow for the beads-ui vscode extension tests.",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "molecule",
+    "created_at": "2026-08-24T15:06:49Z",
+    "updated_at": "2026-08-24T15:06:49Z",
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "fixdemo",
+    "title": "fixdemo",
+    "description": "Minimal fixture-capture workflow for the beads-ui vscode extension tests.",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "molecule",
+    "created_at": "2026-08-24T15:06:49Z",
+    "updated_at": "2026-08-24T15:06:49Z",
+    "labels": [
+      "template"
+    ],
+    "is_template": true,
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  }
+]

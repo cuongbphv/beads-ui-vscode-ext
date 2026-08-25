@@ -4,10 +4,10 @@
  * Stat cards, six charts, and the two lists that answer the only questions
  * worth asking on arrival — what can I start, and what is stuck.
  */
-import { AlertTriangle, CheckCircle2, CircleDot, Clock, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleDot, Clock, FlaskConical, Zap } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 
-import { StatusIndex } from '../../shared/model';
+import { activeMoleculeCount, StatusIndex } from '../../shared/model';
 import type { Bead, DashboardSnapshot } from '../../shared/types';
 import { BeadCard } from '../components/bead-card';
 import {
@@ -19,9 +19,10 @@ import {
   TypeChart,
   WorkloadChart,
 } from '../components/charts';
-import { EmptyState } from '../components/primitives';
+import { HealthScorecard } from '../components/health-scorecard';
+import { EmptyState, StatCard } from '../components/primitives';
+import { directBlockerHint } from '../lib/blocked-hint';
 import { burnUpDensity, workloadDensity } from '../lib/chart-density';
-import { cn } from '../lib/utils';
 
 export function OverviewView({
   snapshot,
@@ -58,13 +59,17 @@ export function OverviewView({
   const burnUp = useMemo(() => burnUpDensity(beads, index), [beads, index]);
   const workload = useMemo(() => workloadDensity(beads, index), [beads, index]);
 
+  // Molecule roots ride along in `snapshot.beads` already — no extra `bd`
+  // read, just a filter over data we already fetched for the other cards.
+  const activeMolecules = useMemo(() => activeMoleculeCount(beads, index), [beads, index]);
+
   return (
     <div className="@container h-full overflow-y-auto px-3 py-3">
-      {/* 1 → 2 → 5 columns by *container* width: a webview panel's width has
+      {/* 1 → 2 → 6 columns by *container* width: a webview panel's width has
           nothing to do with the viewport's. */}
       <section
         aria-label="Project statistics"
-        className="grid grid-cols-1 gap-2 @md:grid-cols-2 @3xl:grid-cols-5"
+        className="grid grid-cols-1 gap-2 @md:grid-cols-2 @3xl:grid-cols-6"
       >
         <StatCard
           icon={<CircleDot className="size-4" />}
@@ -100,6 +105,12 @@ export function OverviewView({
           hint={`${percentDone(stats.closed_issues, stats.total_issues)}% of all issues`}
           tone="success"
         />
+        <StatCard
+          icon={<FlaskConical className="size-4" />}
+          label="Molecules"
+          value={activeMolecules}
+          hint="active"
+        />
       </section>
 
       <div className="mt-3 grid gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3">
@@ -130,6 +141,8 @@ export function OverviewView({
           title="Ready to start"
           hint="Nothing is blocking these."
           beads={ready}
+          allBeads={beads}
+          index={index}
           onSelect={onSelect}
           selectedId={selectedId}
           emptyText="No unblocked issues right now."
@@ -138,12 +151,16 @@ export function OverviewView({
           title="Blocked"
           hint="Waiting on a dependency."
           beads={blocked}
+          allBeads={beads}
+          index={index}
           blocked
           onSelect={onSelect}
           selectedId={selectedId}
           emptyText="Nothing is blocked."
         />
       </div>
+
+      <HealthScorecard onSelect={onSelect} />
     </div>
   );
 }
@@ -152,44 +169,12 @@ function percentDone(done: number, total: number): number {
   return total <= 0 ? 0 : Math.round((done / total) * 100);
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  hint,
-  tone = 'default',
-}: {
-  icon: ReactNode;
-  label: string;
-  value: number;
-  hint?: string;
-  tone?: 'default' | 'accent' | 'warning' | 'success' | 'danger';
-}): ReactNode {
-  return (
-    <div className="bg-surface border-border surface-interactive card-raise hover:border-border-strong rounded-lg border p-3">
-      <div
-        className={cn(
-          'flex items-center gap-1.5 text-xs',
-          tone === 'default' && 'text-fg-muted',
-          tone === 'accent' && 'text-accent',
-          tone === 'warning' && 'text-warning',
-          tone === 'success' && 'text-success',
-          tone === 'danger' && 'text-danger',
-        )}
-      >
-        {icon}
-        {label}
-      </div>
-      <p className="text-fg-strong mt-1 text-2xl leading-none font-semibold tabular-nums">{value}</p>
-      {hint ? <p className="text-fg-muted mt-1 text-xs">{hint}</p> : null}
-    </div>
-  );
-}
-
 function BeadList({
   title,
   hint,
   beads,
+  allBeads,
+  index,
   onSelect,
   selectedId,
   emptyText,
@@ -198,6 +183,9 @@ function BeadList({
   title: string;
   hint: string;
   beads: Bead[];
+  /** The full snapshot, so a per-row blocker hint can resolve blocker titles. */
+  allBeads: Bead[];
+  index: StatusIndex;
   onSelect: (id: string) => void;
   selectedId?: string;
   emptyText: string;
@@ -213,16 +201,29 @@ function BeadList({
         <EmptyState icon={<CheckCircle2 className="size-8" />} title={emptyText} />
       ) : (
         <ul className="grid gap-1.5">
-          {beads.map((bead) => (
-            <li key={bead.id}>
-              <BeadCard
-                bead={bead}
-                blocked={blocked}
-                selected={bead.id === selectedId}
-                onSelect={onSelect}
-              />
-            </li>
-          ))}
+          {beads.map((bead) => {
+            // Compact "why blocked" hint: direct blocker only, capped at
+            // depth 1 — see src/webview/lib/blocked-hint.ts. `undefined`
+            // (no open direct blocker, e.g. a stale poll tick) leaves the
+            // row exactly as it was before this hint existed.
+            const blockedHint = blocked ? directBlockerHint(bead, allBeads, index) : undefined;
+            return (
+              <li key={bead.id}>
+                <BeadCard
+                  bead={bead}
+                  blocked={blocked}
+                  selected={bead.id === selectedId}
+                  onSelect={onSelect}
+                />
+                {blockedHint ? (
+                  <p className="text-fg-muted mt-1 truncate text-xs">
+                    Blocked by <span className="text-fg">{blockedHint.title}</span>
+                    {blockedHint.extra > 0 ? ` +${blockedHint.extra} more` : null}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

@@ -203,7 +203,49 @@ describe('App dashboard tabs', () => {
 
     const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim());
 
-    expect(tabs).toEqual(['Overview', 'Roadmap', 'Board', 'Fleet']);
+    expect(tabs).toEqual(['Overview', 'Roadmap', 'Board', 'Fleet', 'Molecules']);
+  });
+});
+
+describe('App create form toggle', () => {
+  it('shows the create form in the pane slot and hides it on Cancel', async () => {
+    const container = await mountApp();
+
+    expect(container.querySelector('aside[aria-label="Create a new issue"]')).toBeNull();
+
+    const newButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'New',
+    );
+    expect(newButton).toBeDefined();
+
+    await act(async () => newButton?.click());
+
+    expect(container.querySelector('aside[aria-label="Create a new issue"]')).not.toBeNull();
+    // The detail pane is not shown at the same time as the create form.
+    expect(container.querySelector('aside[aria-label^="Details for"]')).toBeNull();
+
+    const cancelButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Cancel new issue"]',
+    );
+    expect(cancelButton).not.toBeNull();
+    await act(async () => cancelButton?.click());
+
+    expect(container.querySelector('aside[aria-label="Create a new issue"]')).toBeNull();
+  });
+
+  it('shows the create form instead of the detail pane when an issue is already selected', async () => {
+    selection.focusedId = 'epic-a';
+    const container = await mountApp();
+
+    expect(container.querySelector('aside[aria-label^="Details for"]')).not.toBeNull();
+
+    const newButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'New',
+    );
+    await act(async () => newButton?.click());
+
+    expect(container.querySelector('aside[aria-label="Create a new issue"]')).not.toBeNull();
+    expect(container.querySelector('aside[aria-label^="Details for"]')).toBeNull();
   });
 });
 

@@ -23,10 +23,13 @@
 import { Bot, GitBranch, User } from 'lucide-react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
+import { resolveBeadBySuffix } from '../../../shared/bead-id-match';
 import type { FleetSnapshot, FleetWorker } from '../../../shared/fleet';
 import { filterWorkersByStatus, type FleetStatusFilter } from '../../../shared/fleet-filter';
 import { sortByRecency } from '../../../shared/fleet-sort';
+import type { Bead } from '../../../shared/types';
 import { cn, relativeTime } from '../../lib/utils';
+import { LeaseBadge } from '../lease-badge';
 import { EmptyState } from '../primitives';
 import { GitChanges } from './git-changes';
 
@@ -71,6 +74,7 @@ export function WorkerList({
   selectedTarget,
   onSelectTarget,
   statusFilter = 'all',
+  beadsById,
 }: {
   snapshot: FleetSnapshot;
   /** The `TranscriptTarget` string currently shown in the detail pane, or `null` when none is. */
@@ -78,6 +82,16 @@ export function WorkerList({
   onSelectTarget: (targetId: string) => void;
   /** Narrows which workers are listed under each orchestrator. Defaults to 'all'. */
   statusFilter?: FleetStatusFilter;
+  /**
+   * The dashboard's issues keyed by full bead id (built once in `App.tsx`),
+   * so a worker row can show its bead's claim-lease liveness
+   * (beads-ui-vscode-ext-ayq.1). A worker brief that named a short id still
+   * resolves via unique-suffix match (beads-ui-vscode-ext-ayq.5,
+   * `resolveBeadBySuffix`): an exact full-id hit short-circuits, otherwise a
+   * short id must match exactly one bead in the map or no chip renders —
+   * never a guessed, possibly-wrong one.
+   */
+  beadsById: ReadonlyMap<string, Bead>;
 }): ReactNode {
   if (snapshot.degraded) {
     return (
@@ -144,6 +158,10 @@ export function WorkerList({
             <ul className="divide-border divide-y">
               {workers.map((worker) => {
                 const worktree = worker.worktreePath ? worktreeByPath.get(worker.worktreePath) : undefined;
+                // The bead this worker claims, when the dashboard knows it —
+                // exact id or an unambiguous short-id suffix match, never a
+                // guess (beads-ui-vscode-ext-ayq.5).
+                const bead = worker.beadId ? resolveBeadBySuffix(worker.beadId, beadsById) : undefined;
                 const workerTarget = `agent:${worker.agentId}`;
                 const workerSelected = selectedTarget === workerTarget;
                 return (
@@ -168,6 +186,9 @@ export function WorkerList({
                       {worker.beadId ? (
                         <span className="text-fg-muted font-mono text-xs">{worker.beadId}</span>
                       ) : null}
+                      {/* Claim liveness of the bead this worker holds; renders
+                          nothing when the bead is unknown or carries no lease. */}
+                      {bead ? <LeaseBadge bead={bead} /> : null}
                       {worker.lastActivityAt ? (
                         <span className="text-fg-muted ml-auto text-xs" title={worker.lastActivityAt}>
                           {relativeTime(worker.lastActivityAt)}

@@ -11,14 +11,50 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
 
-const rpc = vi.hoisted(() => ({ calls: new Array<{ id: string; status: string }>() }));
+interface PendingCreate {
+  resolve: (value: { id: string }) => void;
+  reject: (error: unknown) => void;
+}
+
+const rpc = vi.hoisted(() => ({
+  calls: new Array<{ id: string; status: string }>(),
+  createBeadCalls: new Array<{ title: string; status: string }>(),
+  createBeadQueue: new Array<PendingCreate>(),
+}));
 
 vi.mock('../webview/bridge/rpc', () => ({
-  call: (method: string, params: { id: string; status: string }) => {
-    if (method === 'setStatus') rpc.calls.push(params);
+  call: (method: string, params: unknown) => {
+    if (method === 'setStatus') {
+      rpc.calls.push(params as { id: string; status: string });
+      return Promise.resolve({});
+    }
+    if (method === 'createBead') {
+      rpc.createBeadCalls.push(params as { title: string; status: string });
+      // Left pending until a test resolves/rejects it — this is what lets
+      // "disabled while pending" be observed as a real intermediate state
+      // instead of a promise that has already settled by the time we look.
+      return new Promise<{ id: string }>((resolve, reject) => {
+        rpc.createBeadQueue.push({ resolve, reject });
+      });
+    }
     return Promise.resolve({});
   },
   asRpcError: (error: unknown) => ({ kind: 'unknown', message: String(error) }),
+}));
+
+interface Notified {
+  text: string;
+  tone: string;
+}
+
+const toast = vi.hoisted(() => ({ messages: new Array<Notified>() }));
+
+vi.mock('../webview/components/toast', () => ({
+  useToast: () => ({
+    notify: (text: string, tone = 'info') => {
+      toast.messages.push({ text, tone });
+    },
+  }),
 }));
 
 // A full drag simulated through PointerSensor is a lot of jsdom pointer-event
@@ -130,6 +166,9 @@ afterEach(async () => {
   document.body.replaceChildren();
   container = undefined;
   rpc.calls.length = 0;
+  rpc.createBeadCalls.length = 0;
+  rpc.createBeadQueue.length = 0;
+  toast.messages.length = 0;
   dnd.onDragEnd = undefined;
   dnd.onDragStart = undefined;
   dnd.onDragCancel = undefined;
@@ -171,6 +210,18 @@ async function mount(overrides: Partial<Parameters<typeof BoardView>[0]> = {}): 
   mountedRoot = createRoot(container);
   await act(async () => mountedRoot?.render(createElement(BoardView, props(overrides))));
   return container;
+}
+
+/**
+ * Re-renders onto the *same* root `mount` created, so components already
+ * mounted (and their local state — e.g. a pending quick-add row) survive.
+ * Used to simulate the host pushing a fresh `issuesChanged` snapshot: a new
+ * `beads` array reference is what the column's memoized `column.beads` — and
+ * therefore the quick-add row watching it — actually reacts to.
+ */
+async function rerender(overrides: Partial<Parameters<typeof BoardView>[0]> = {}): Promise<void> {
+  if (!mountedRoot) throw new Error('nothing mounted yet');
+  await act(async () => mountedRoot?.render(createElement(BoardView, props(overrides))));
 }
 
 describe('BoardView swimlane toggle', () => {
@@ -779,5 +830,158 @@ describe('BoardView narrow keyboard fallback', () => {
 
     expect(result).toEqual({ x: 300, y: 100 });
     expect(rpc.calls).toEqual([]);
+  });
+});
+
+/**
+ * The wide layout's copy of a column, scoped away from the narrow layout's
+ * copy the same way `wideDropNode` scopes droppable ids above — the wide half
+ * always mounts every category, so this is unambiguous regardless of which
+ * category the narrow switcher currently shows.
+ */
+function wideColumn(root: HTMLElement, label: string): HTMLElement {
+  const found = root.querySelector<HTMLElement>(
+    `div[class*="@2xl:flex"] section[aria-label^="${label}, "]`,
+  );
+  if (!found) throw new Error(`no wide column for ${label}`);
+  return found;
+}
+
+/** The "+ Add issue" affordance in one column's wide copy. */
+function addButton(root: HTMLElement, label: string): HTMLButtonElement {
+  const found = [...wideColumn(root, label).querySelectorAll('button')].find(
+    (button) => button.textContent === '+ Add issue',
+  );
+  if (!found) throw new Error(`no add-issue affordance in ${label}`);
+  return found;
+}
+
+/** The revealed quick-add title input in one column's wide copy. */
+function addInput(root: HTMLElement, label: string): HTMLInputElement {
+  const found = wideColumn(root, label).querySelector<HTMLInputElement>(
+    `input[aria-label="New issue title for ${label}"]`,
+  );
+  if (!found) throw new Error(`no add-issue input in ${label}`);
+  return found;
+}
+
+/**
+ * React tracks a controlled `<input>`'s value through the instance property it
+ * installs over the native prototype setter, so assigning `el.value = x`
+ * directly leaves React's tracker thinking nothing changed and the following
+ * `input` event is a no-op. Going through the prototype setter first (the
+ * same trick React Testing Library's `fireEvent` uses) is what makes the
+ * change reach React's synthetic `onChange`.
+ */
+function typeInto(el: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  setter?.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+describe('BoardView quick-add issue', () => {
+  it('renders a "+ Add issue" affordance in every expanded column', async () => {
+    // `Done` starts collapsed by default (see `DEFAULT_COLLAPSED`); a folded
+    // column has no room for the row, so unfold everything to check all three.
+    const root = await mount({ swimlanes: false, collapsedColumns: [] });
+
+    for (const label of ['Open', 'In Progress', 'Done']) {
+      expect(addButton(root, label).textContent).toBe('+ Add issue');
+    }
+  });
+
+  it('reveals an inline, empty, enabled title input when the affordance is clicked', async () => {
+    const root = await mount({ swimlanes: false });
+
+    await act(async () => addButton(root, 'Open').click());
+
+    const input = addInput(root, 'Open');
+    expect(input.value).toBe('');
+    expect(input.disabled).toBe(false);
+  });
+
+  it('submits on Enter with the title and the column category’s first status', async () => {
+    const root = await mount({ swimlanes: false });
+    await act(async () => addButton(root, 'In Progress').click());
+
+    const input = addInput(root, 'In Progress');
+    await act(async () => typeInto(input, 'Ship the thing'));
+    press(input, { key: 'Enter', code: 'Enter' });
+    await act(async () => Promise.resolve());
+
+    // The index's `in_progress` is the only, and therefore first, status
+    // registered for the `wip` category — the same rule
+    // `moveCardToCategory`'s drop handler applies via `column.statuses[0]`.
+    expect(rpc.createBeadCalls).toEqual([{ title: 'Ship the thing', status: 'in_progress' }]);
+  });
+
+  it('cancels on Escape without calling the RPC, collapsing back to the affordance', async () => {
+    const root = await mount({ swimlanes: false });
+    await act(async () => addButton(root, 'Open').click());
+
+    const input = addInput(root, 'Open');
+    await act(async () => typeInto(input, 'Abandoned draft'));
+    press(input, { key: 'Escape', code: 'Escape' });
+
+    expect(rpc.createBeadCalls).toEqual([]);
+    expect(addButton(root, 'Open').textContent).toBe('+ Add issue');
+  });
+
+  it('disables the input once a create is submitted and pending', async () => {
+    const root = await mount({ swimlanes: false });
+    await act(async () => addButton(root, 'Open').click());
+
+    const input = addInput(root, 'Open');
+    await act(async () => typeInto(input, 'Pending one'));
+    press(input, { key: 'Enter', code: 'Enter' });
+    await act(async () => Promise.resolve());
+
+    expect(addInput(root, 'Open').disabled).toBe(true);
+  });
+
+  it('re-enables the input, keeps the typed title, and toasts an error when the RPC rejects', async () => {
+    const root = await mount({ swimlanes: false });
+    await act(async () => addButton(root, 'Open').click());
+
+    const input = addInput(root, 'Open');
+    await act(async () => typeInto(input, 'Will fail'));
+    press(input, { key: 'Enter', code: 'Enter' });
+    await act(async () => Promise.resolve());
+
+    const pending = rpc.createBeadQueue[0];
+    expect(pending).toBeDefined();
+    await act(async () => {
+      pending.reject(new Error('bd refused'));
+      await Promise.resolve();
+    });
+
+    const reenabled = addInput(root, 'Open');
+    expect(reenabled.disabled).toBe(false);
+    expect(reenabled.value).toBe('Will fail');
+    expect(toast.messages).toEqual([{ text: 'Error: bd refused', tone: 'error' }]);
+  });
+
+  it('stays disabled once the create resolves, only collapsing back once a fresh beads snapshot repaints the column', async () => {
+    const root = await mount({ swimlanes: false });
+    await act(async () => addButton(root, 'Open').click());
+
+    const input = addInput(root, 'Open');
+    await act(async () => typeInto(input, 'Will land'));
+    press(input, { key: 'Enter', code: 'Enter' });
+    await act(async () => Promise.resolve());
+    expect(addInput(root, 'Open').disabled).toBe(true);
+
+    const pending = rpc.createBeadQueue[0];
+    await act(async () => {
+      pending.resolve({ id: 'new-1' });
+      await Promise.resolve();
+    });
+    // The RPC promise settling by itself must not collapse the row — only a
+    // new `issuesChanged` snapshot (a fresh `beads` prop) does.
+    expect(addInput(root, 'Open').disabled).toBe(true);
+
+    await rerender({ swimlanes: false, beads: [...beads] });
+
+    expect(addButton(root, 'Open').textContent).toBe('+ Add issue');
   });
 });

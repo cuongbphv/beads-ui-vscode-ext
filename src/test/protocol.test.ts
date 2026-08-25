@@ -3,7 +3,60 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { DASHBOARD_TABS, resolveDashboardTab } from '../shared/protocol';
+import { requireDepType } from '../extension/panel/param-validation';
+import { DASHBOARD_TABS, DEP_TYPES, MUTATING_METHODS, resolveDashboardTab } from '../shared/protocol';
+
+describe('MUTATING_METHODS', () => {
+  it('includes createBead, so the host refetches and broadcasts after a create', () => {
+    expect(MUTATING_METHODS.has('createBead')).toBe(true);
+  });
+
+  it('excludes getHistory — it is a read, deriving events from bd history without writing anything', () => {
+    expect(MUTATING_METHODS.has('getHistory')).toBe(false);
+  });
+
+  it('includes updateText, so the host refetches and broadcasts after a text field update', () => {
+    expect(MUTATING_METHODS.has('updateText')).toBe(true);
+  });
+
+  it('excludes getMolSnapshot — it only ever reads mol/gate state, never writes it', () => {
+    expect(MUTATING_METHODS.has('getMolSnapshot')).toBe(false);
+  });
+
+  it('excludes showMolecule — it only reads one molecule\'s step list, never writes anything', () => {
+    expect(MUTATING_METHODS.has('showMolecule')).toBe(false);
+  });
+
+  it('excludes getSyncStatus — it only reports `bd dolt status`, never `bd dolt push`/`bd dolt pull`', () => {
+    expect(MUTATING_METHODS.has('getSyncStatus')).toBe(false);
+  });
+
+  it('excludes getHealthReport — it only reads stale/orphans/lint/dep cycles, never writes anything', () => {
+    expect(MUTATING_METHODS.has('getHealthReport')).toBe(false);
+  });
+
+  it('includes addDependency and removeDependency, so the host refetches and broadcasts after either', () => {
+    expect(MUTATING_METHODS.has('addDependency')).toBe(true);
+    expect(MUTATING_METHODS.has('removeDependency')).toBe(true);
+  });
+
+  it('includes resolveGate, so the host refetches and broadcasts after a gate is resolved', () => {
+    expect(MUTATING_METHODS.has('resolveGate')).toBe(true);
+  });
+});
+
+describe('DEP_TYPES (bead li0.10)', () => {
+  it('is the single allowlist both the router narrowing and the webview kind selector read', () => {
+    // `param-validation.ts`'s `requireDepType` used to hardcode its own copy
+    // of this list (li0.9); it now imports `DEP_TYPES` from here, so every
+    // value it accepts must be exactly this array — proving there is only
+    // ever one list, not two that could drift apart.
+    for (const type of DEP_TYPES) {
+      expect(requireDepType(type, 'type')).toBe(type);
+    }
+    expect(() => requireDepType('not-a-real-type', 'type')).toThrow();
+  });
+});
 
 describe('resolveDashboardTab', () => {
   it('keeps any value that is still a known tab', () => {

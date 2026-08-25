@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   StatusIndex,
+  activeMoleculeCount,
   buildColumns,
   filterBeads,
   groupByEpic,
+  mergeSearchResults,
   parentIdOf,
   progressOf,
 } from '../shared/model';
@@ -164,5 +166,70 @@ describe('filterBeads', () => {
   it('filters by type and assignee', () => {
     expect(filterBeads(beads, { types: ['bug'] }, index).map((b) => b.id)).toEqual(['bd-1']);
     expect(filterBeads(beads, { assignees: ['ana'] }, index).map((b) => b.id)).toEqual(['bd-1']);
+  });
+});
+
+describe('activeMoleculeCount', () => {
+  it('counts molecule-type issues whose status is not in the done category', () => {
+    const beads = [
+      bead({ id: 'mol-1', issue_type: 'molecule', status: 'open' }),
+      bead({ id: 'mol-2', issue_type: 'molecule', status: 'in_progress' }),
+      bead({ id: 'mol-3', issue_type: 'molecule', status: 'closed' }),
+      bead({ id: 'task-1', issue_type: 'task', status: 'open' }),
+    ];
+
+    expect(activeMoleculeCount(beads, index)).toBe(2);
+  });
+
+  it('is zero for a project with no molecules', () => {
+    const beads = [bead({ id: 'task-1' }), bead({ id: 'task-2', status: 'closed' })];
+
+    expect(activeMoleculeCount(beads, index)).toBe(0);
+  });
+
+  it('never keys off a hardcoded status name — it goes through the runtime category', () => {
+    // 'pinned' is a custom-vocabulary status that maps to the frozen category
+    // in this fixture's index, not done — a molecule sitting there still counts.
+    const beads = [bead({ id: 'mol-frozen', issue_type: 'molecule', status: 'pinned' })];
+
+    expect(activeMoleculeCount(beads, index)).toBe(1);
+  });
+});
+
+describe('mergeSearchResults', () => {
+  it('returns the loaded list unchanged when there are no search results', () => {
+    const loaded = [bead({ id: 'bd-1' })];
+
+    expect(mergeSearchResults(loaded, [])).toEqual(loaded);
+  });
+
+  it('appends a search hit that is not already loaded', () => {
+    const loaded = [bead({ id: 'bd-1' })];
+    const extra = bead({ id: 'bd-2', title: 'Found by search' });
+
+    expect(mergeSearchResults(loaded, [extra])).toEqual([loaded[0], extra]);
+  });
+
+  it('keeps the already-loaded copy of a bead present in both — it never loses to a second, independently fetched copy', () => {
+    const loaded = [bead({ id: 'bd-1', title: 'Loaded title', status: 'in_progress' })];
+    // Same id, different (e.g. stale) field values — as if bd's search index
+    // had not yet caught up with a local edit already reflected in `loaded`.
+    const staleCopy = bead({ id: 'bd-1', title: 'Stale title from search', status: 'open' });
+
+    expect(mergeSearchResults(loaded, [staleCopy])).toEqual(loaded);
+  });
+
+  it('dedupes repeated ids within the search results themselves, keeping the first', () => {
+    const first = bead({ id: 'bd-2', title: 'First copy' });
+    const second = bead({ id: 'bd-2', title: 'Second copy' });
+
+    expect(mergeSearchResults([], [first, second])).toEqual([first]);
+  });
+
+  it('preserves the loaded order and appends new hits after it', () => {
+    const loaded = [bead({ id: 'bd-2' }), bead({ id: 'bd-1' })];
+    const extra = bead({ id: 'bd-3' });
+
+    expect(mergeSearchResults(loaded, [extra]).map((b) => b.id)).toEqual(['bd-2', 'bd-1', 'bd-3']);
   });
 });

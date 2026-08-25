@@ -15,6 +15,19 @@ const execFileAsync = promisify(execFile);
 /** 16 MB: a 2000-issue `bd list --json` is well under this, with headroom. */
 const MAX_BUFFER = 16 * 1024 * 1024;
 
+/**
+ * Backoff (ms) between bounded retries of a spawn that failed with
+ * ENOENT/EINVAL even after the shell fallback (see `spawn` below). Two
+ * retries (three attempts total); short enough to add negligible latency to
+ * a genuinely-missing-binary failure, long enough to ride out a
+ * process-creation hiccup on the same machine.
+ */
+const SPAWN_RETRY_DELAYS_MS = [50, 150];
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface BdServiceOptions {
   /** Absolute path to the workspace folder containing `.beads`. */
   cwd: string;
@@ -277,6 +290,34 @@ export class BdService {
    * On Windows, an npm-installed `bd` is a `.cmd` shim that `execFile` cannot
    * launch directly. Retry once through the shell, then remember the answer so
    * later calls skip the failed attempt.
+   *
+   * A single "try plain, fall back to shell" pass is not enough under heavy
+   * concurrent load. Measured on a real Windows dev machine (beads-ui-vscode-ext-e78):
+   * `bd` on PATH resolves to an npm `.cmd` shim (`bd.cmd`) ahead of the real
+   * `bd.exe`, so `spawnOnce` below takes the shell-fallback branch on *every*
+   * cold call, not just occasionally — the plain attempt is guaranteed to
+   * ENOENT/EINVAL (Windows cannot launch a `.cmd` without a shell), and the
+   * shell retry itself spawns `cmd.exe` -> `node.exe` -> the shim's JS entry
+   * point. That is three new OS processes for one `bd` invocation. Running
+   * the full vitest suite (370+ files, 1250+ tests, many worker processes
+   * each spawning `bd` concurrently) intermittently produced
+   * `BdError: Could not run "bd"` from individual bd-live.test.ts cases —
+   * never from that file run alone — i.e. only once the suite's *aggregate*
+   * concurrent process-creation load was added on top of the tripled
+   * per-call cost above.
+   *
+   * [Unverified as a live-caught reproduction: the failure did not recur in
+   * the several full-suite runs performed while diagnosing and fixing this
+   * (it is intermittent by the bead's own report — most reruns come back
+   * clean). The mechanism above — every call already paying a 3-process
+   * cost, then piling that up across hundreds of concurrent workers — is
+   * corroborated by reading the spawn code and the actual PATH resolution on
+   * this machine, not by catching the failure mid-flight.] A bounded retry
+   * cannot make a genuinely-missing `bd` look installed: that case fails
+   * identically (ENOENT/EINVAL on the plain attempt, then the shell attempt
+   * also fails to find it) on every attempt, so retrying only adds up to
+   * `SPAWN_RETRY_DELAYS_MS`'s total of latency before the same
+   * `bd-not-found` BdError is thrown from `run()`.
    */
   private async spawn(args: string[]): Promise<{ stdout: string; stderr: string }> {
     const options = {
@@ -287,6 +328,23 @@ export class BdService {
       env: { ...process.env, BD_JSON_ENVELOPE: '0' },
     };
 
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.spawnOnce(args, options);
+      } catch (error) {
+        if (attempt >= SPAWN_RETRY_DELAYS_MS.length || !needsShellRetry(error as ExecFailure)) {
+          throw error;
+        }
+        await delay(SPAWN_RETRY_DELAYS_MS[attempt]);
+      }
+    }
+  }
+
+  /** One plain-then-shell-fallback attempt. See `spawn` for the retry wrapping this. */
+  private async spawnOnce(
+    args: string[],
+    options: Record<string, unknown>,
+  ): Promise<{ stdout: string; stderr: string }> {
     if (this.useShell) {
       return execFileAsync(this.bdPath, args, { ...options, shell: true });
     }

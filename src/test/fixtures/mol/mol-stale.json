@@ -1,0 +1,14 @@
+{
+  "blocking_count": 0,
+  "schema_version": 1,
+  "stale_molecules": [
+    {
+      "blocking_count": 0,
+      "closed_children": 1,
+      "id": "bd-mol-fixtures-scratch-jhl",
+      "title": "Stale epic demo",
+      "total_children": 1
+    }
+  ],
+  "total_count": 1
+}

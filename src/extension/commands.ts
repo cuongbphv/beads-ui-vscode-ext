@@ -153,6 +153,21 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       await guard(() => store.mutations.close(id, reason), output);
     }),
 
+    register('beadsDashboard.reopenBead', async (target: BeadNode | string) => {
+      const id = resolveId(target);
+      if (!id) return;
+
+      const reason = await vscode.window.showInputBox({
+        title: `Reopen ${id}`,
+        prompt: 'Reason (optional). Press Escape to cancel.',
+        placeHolder: 'e.g. regression found',
+      });
+      // Escape cancels; an empty string is a deliberate "no reason".
+      if (reason === undefined) return;
+
+      await guard(() => store.mutations.reopen(id, reason), output);
+    }),
+
     register('beadsDashboard.resolveGate', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;
@@ -166,6 +181,54 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       if (reason === undefined) return;
 
       await guard(() => store.mutations.resolveGate(id, reason), output);
+    }),
+
+    register('beadsDashboard.createBead', async () => {
+      const snapshot = store.current.snapshot;
+      if (!snapshot) return;
+
+      const title = await vscode.window.showInputBox({
+        title: 'New Issue',
+        prompt: 'Title',
+        placeHolder: 'e.g. Fix the flaky drag test',
+        validateInput: (value) => (value.trim() === '' ? 'Title is required.' : undefined),
+      });
+      // Escape (undefined) cancels; an empty/whitespace title never reaches
+      // here because the validator above already blocks confirming one.
+      if (title === undefined) return;
+
+      // The picker is built from the runtime vocabulary, so a project with
+      // custom types offers them without any change here — same pattern as
+      // `setStatus` above.
+      const typePicked = await vscode.window.showQuickPick(
+        snapshot.vocabulary.types.map((type) => ({
+          label: type.name,
+          description: type.custom ? 'custom' : undefined,
+          detail: type.description,
+          value: type.name,
+        })),
+        { title: 'Issue type' },
+      );
+      if (!typePicked) return;
+
+      const epics = snapshot.beads.filter((bead) => bead.issue_type === 'epic');
+      const parentPicked = await vscode.window.showQuickPick(
+        [
+          { label: '(none)', value: undefined as string | undefined },
+          ...epics.map((epic) => ({ label: epic.title, description: epic.id, value: epic.id as string | undefined })),
+        ],
+        { title: 'Parent epic' },
+      );
+      if (!parentPicked) return;
+
+      await guard(async () => {
+        const { id } = await store.mutations.create({
+          title: title.trim(),
+          type: typePicked.value,
+          parent: parentPicked.value,
+        });
+        deps.openDashboard(id);
+      }, output);
     }),
 
     register('beadsDashboard.selectFolder', () => void deps.selectFolder()),

@@ -88,6 +88,12 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "beadsDashboard.createBead",
+        "title": "Create Issue…",
+        "category": "Beads",
+        "icon": "$(add)"
+      },
+      {
         "command": "beadsDashboard.refresh",
         "title": "Refresh",
         "category": "Beads",
@@ -135,6 +141,12 @@
         "icon": "$(pass)"
       },
       {
+        "command": "beadsDashboard.reopenBead",
+        "title": "Reopen Issue…",
+        "category": "Beads",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "beadsDashboard.copyId",
         "title": "Copy Issue ID",
         "category": "Beads",
@@ -161,9 +173,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "beadsDashboard.refresh",
+          "command": "beadsDashboard.createBead",
           "when": "view == beadsDashboard.tree",
           "group": "navigation@2"
+        },
+        {
+          "command": "beadsDashboard.refresh",
+          "when": "view == beadsDashboard.tree",
+          "group": "navigation@3"
         },
         {
           "command": "beadsDashboard.showOutput",
@@ -203,6 +220,11 @@
           "group": "2_close@1"
         },
         {
+          "command": "beadsDashboard.reopenBead",
+          "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem == beadClosed",
+          "group": "2_close@1"
+        },
+        {
           "command": "beadsDashboard.copyId",
           "when": "view =~ /^beadsDashboard\\.(tree|needsYou)$/ && viewItem =~ /^bead/",
           "group": "9_copy@1"
@@ -239,6 +261,10 @@
           "when": "false"
         },
         {
+          "command": "beadsDashboard.reopenBead",
+          "when": "false"
+        },
+        {
           "command": "beadsDashboard.copyId",
           "when": "false"
         },
@@ -262,7 +288,8 @@
             "overview",
             "roadmap",
             "board",
-            "fleet"
+            "fleet",
+            "molecules"
           ],
           "default": "overview",
           "description": "Tab the dashboard opens on."
@@ -288,6 +315,21 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Who you are in beads, for the sidebar's **Needs You** section. Leave empty to use the same identity `bd` does: `BEADS_ACTOR`, then `BD_ACTOR`, then `git config user.name`, then your OS username."
+        },
+        "beadsDashboard.notifications": {
+          "type": "string",
+          "enum": [
+            "off",
+            "gates",
+            "gates-and-blocked"
+          ],
+          "enumDescriptions": [
+            "Never show a notification.",
+            "Notify when a gate needs a human.",
+            "Also notify when an issue assigned to you becomes blocked."
+          ],
+          "default": "off",
+          "markdownDescription": "Show a notification when a gate opens, or when an issue assigned to you becomes blocked. Opt-in: it only evaluates snapshots the dashboard already fetched, so it never spawns `bd` on its own. Each gate notifies at most once per window session."
         }
       }
     }
@@ -302,8 +344,14 @@
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "test": "vitest run",
+    "test:ci": "vitest run --exclude src/test/bd-live.test.ts",
     "test:electron": "node scripts/run-electron-test.mjs",
     "test:webview": "node scripts/run-webview-test.mjs",
+    "test:e2e:editing": "node scripts/e2e/editing-suite.spec.mjs",
+    "test:e2e:coordination": "node scripts/e2e/agent-coordination.spec.mjs",
+    "test:e2e:insight": "node scripts/e2e/insight-health.spec.mjs",
+    "test:e2e:board": "node scripts/e2e/sidebar-board-parity.spec.mjs",
+    "test:e2e:molecules": "node scripts/e2e/molecules-gates.spec.mjs",
     "preview": "npm run build && node scripts/render-preview.mjs",
     "capture": "npm run build && node scripts/capture-screens.mjs",
     "demo:seed": "node scripts/seed-demo-workspace.mjs --force",

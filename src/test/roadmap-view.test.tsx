@@ -78,6 +78,19 @@ vi.mock('../webview/hooks/use-schedule-edit', () => ({
   }),
 }));
 
+// The graph shape renders `GraphView`, which (as of link mode, bead li0.11)
+// reaches through `bridge/rpc.ts` — real `acquireVsCodeApi()` does not exist
+// in jsdom, so it must be mocked here the same way every other test that
+// mounts an RPC-calling component does.
+vi.mock('../webview/bridge/rpc', () => ({
+  call: () => Promise.resolve({}),
+  asRpcError: (error: unknown) => ({ kind: 'unknown', message: String(error) }),
+}));
+
+vi.mock('../webview/components/toast', () => ({
+  useToast: () => ({ notify: () => {} }),
+}));
+
 const index = new StatusIndex([
   { name: 'open', category: 'active' },
   { name: 'done', category: 'done' },

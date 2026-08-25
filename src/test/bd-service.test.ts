@@ -194,6 +194,54 @@ describe('BdService', () => {
     },
   );
 
+  // beads-ui-vscode-ext-e78: under full-suite worker-pool concurrency, both
+  // the plain execFile attempt AND the shell fallback can transiently fail
+  // to launch (ENOENT/EINVAL) even though `bd` is genuinely installed — the
+  // OS-level process-creation load spikes, not a missing binary. This forces
+  // that exact shape (both attempts fail once, then a later attempt
+  // succeeds) to prove the bounded retry rides it out instead of surfacing
+  // a false "Could not run bd".
+  it.each(['ENOENT', 'EINVAL'] as const)(
+    'rides out a transient spawn failure that clears on retry (code %s)',
+    async (code) => {
+      let call = 0;
+      impl = async (_file, _args, options) => {
+        call += 1;
+        // First plain attempt: fails, as usual, sending spawnOnce to the
+        // shell fallback. That shell fallback ALSO fails this one time
+        // (simulating the OS-level process-creation hiccup) — only the
+        // second spawnOnce attempt (driven by the outer retry loop) gets a
+        // clean run.
+        if (call <= 2) throw Object.assign(new Error('spawn failed'), { code });
+        if (!options.shell) throw Object.assign(new Error('spawn failed'), { code });
+        return { stdout: '[]', stderr: '' };
+      };
+
+      const result = await service().json(['list']);
+
+      expect(result).toEqual([]);
+      expect(call).toBeGreaterThan(2);
+    },
+  );
+
+  it('still fails with bd-not-found when every retry hits the same missing binary', async () => {
+    // A genuinely-missing bd fails identically on every attempt: the bounded
+    // retry must not paper over that — it can only add latency before the
+    // same BdError comes out.
+    let attempts = 0;
+    impl = async () => {
+      attempts += 1;
+      throw Object.assign(new Error('spawn failed'), { code: 'ENOENT' });
+    };
+
+    await expect(service().json(['list'])).rejects.toMatchObject({
+      rpcError: { kind: 'bd-not-found' },
+    });
+    // 3 outer attempts x (1 plain + 1 shell) = 6, per SPAWN_RETRY_DELAYS_MS
+    // having 2 entries (3 total attempts).
+    expect(attempts).toBe(6);
+  });
+
   it('reports unparseable output as bad-output rather than crashing', async () => {
     impl = ok('not json at all');
 

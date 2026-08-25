@@ -65,6 +65,21 @@ export class DashboardPanel implements vscode.Disposable {
    */
   private readonly transcriptTailer: TranscriptTailer;
 
+  /**
+   * True once the webview's `ready` handshake message has arrived. Before
+   * that, its `window.addEventListener('message', ...)` has not attached yet,
+   * so anything posted is silently dropped — no error, no retry. `focus()`
+   * queues into `pendingFocusId` instead of posting while this is false.
+   */
+  private ready = false;
+  /**
+   * The most recent bead id passed to `focus()` before `ready` fired, replayed
+   * once it does (see `onMessage`'s `ready` branch). A second `focus()` call
+   * before `ready` simply overwrites this — only the latest requested focus
+   * matters, same as if both calls had landed after `ready`.
+   */
+  private pendingFocusId: string | undefined;
+
   private constructor(
     context: vscode.ExtensionContext,
     private readonly panel: vscode.WebviewPanel,
@@ -179,10 +194,17 @@ export class DashboardPanel implements vscode.Disposable {
     }
   }
 
-  /** Focus an issue in the open dashboard (used by the tree's click handler). */
+  /**
+   * Focus an issue in the open dashboard (used by the tree's click handler).
+   * On a cold open, the panel/webview was just created by `DashboardPanel.show`
+   * and its message listener has not attached yet — posting now would be
+   * dropped silently, so the id is queued and replayed once `ready` fires
+   * (see `onMessage`).
+   */
   focus(id: string): void {
     this.panel.reveal(this.panel.viewColumn);
-    this.post({ kind: 'event', name: 'focusBead', id });
+    if (this.ready) this.post({ kind: 'event', name: 'focusBead', id });
+    else this.pendingFocusId = id;
   }
 
   setTab(tab: DashboardTab): void {
@@ -219,6 +241,15 @@ export class DashboardPanel implements vscode.Disposable {
         this.post({ kind: 'event', name: 'error', error: state.error });
       }
       if (this.initialTab) this.post({ kind: 'event', name: 'setTab', tab: this.initialTab });
+
+      // Only now is the webview guaranteed to have its message listener
+      // attached. Flip the flag and replay whatever `focus()` queued while
+      // this panel was still cold — see `focus()` and `pendingFocusId` above.
+      this.ready = true;
+      if (this.pendingFocusId !== undefined) {
+        this.post({ kind: 'event', name: 'focusBead', id: this.pendingFocusId });
+        this.pendingFocusId = undefined;
+      }
       return;
     }
 

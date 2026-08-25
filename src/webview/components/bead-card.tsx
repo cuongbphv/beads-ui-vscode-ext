@@ -14,6 +14,7 @@ import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { typeStyle, type Bead } from '../../shared/types';
 import { labelChipStyle } from '../lib/label-color';
 import { cn, shortDate } from '../lib/utils';
+import { LeaseBadge } from './lease-badge';
 import { PriorityDot, TypeIcon } from './primitives';
 
 /** Beyond this many chips a card stops being scannable; the rest get a count. */
@@ -171,6 +172,10 @@ export function BeadCard({
 
       <div className="mt-1.5 flex items-center gap-2">
         <PriorityDot priority={bead.priority} />
+        {/* Claim liveness (beads-ui-vscode-ext-ayq.1): renders nothing on the
+            common no-lease issue, so the card budget only grows when there is
+            something to warn about. */}
+        <LeaseBadge bead={bead} />
         {bead.due_at ? (
           <span
             className={cn(

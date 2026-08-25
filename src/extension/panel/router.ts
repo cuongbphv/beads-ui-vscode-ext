@@ -17,7 +17,18 @@ import {
 import { toPriority } from '../../shared/types';
 import type { BeadsStore } from '../store';
 import { toRpcError } from '../store';
-import { requireDueDate, requireTargetId } from './param-validation';
+import {
+  narrowAddDependencyParams,
+  narrowCreateParams,
+  narrowDeferParams,
+  narrowDependencyParams,
+  narrowLabelParams,
+  narrowReopenParams,
+  narrowResolveGateParams,
+  narrowUpdateTextParams,
+  requireDueDate,
+  requireTargetId,
+} from './param-validation';
 
 export interface RouterHost {
   /** Called after a mutation so every view can repaint. */
@@ -78,6 +89,15 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'listChildren':
       return queries.children(requireString(params.parentId, 'parentId'));
 
+    case 'getHistory': {
+      const rawLimit = params.limit;
+      const limit =
+        typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.floor(rawLimit)
+          : undefined;
+      return limit === undefined ? queries.history(id()) : queries.history(id(), limit);
+    }
+
     case 'setStatus':
       await mutations.setStatus(id(), requireString(params.status, 'status'));
       return { ok: true };
@@ -126,6 +146,78 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       await mutations.appendNotes(id(), requireString(params.text, 'text'));
       return { ok: true };
 
+    case 'updateText': {
+      // narrowUpdateTextParams throws before any argv is built when the
+      // field is outside the allowlist, the id is blank, or an empty text
+      // reaches the one field (title) that must not accept one.
+      const narrowed = narrowUpdateTextParams(params);
+      await mutations.updateText(narrowed.id, narrowed.field, narrowed.text);
+      return { ok: true };
+    }
+
+    case 'createBead':
+      // narrowCreateParams throws before any argv is built when the shape is
+      // wrong; vocabulary values (type/priority/status) pass through and the
+      // bd CLI stays the authority on whether they exist.
+      return mutations.create(narrowCreateParams(params));
+
+    case 'addDependency': {
+      // narrowAddDependencyParams throws before any argv is built when id or
+      // dependsOn is blank, they are equal (a self-edge), or type is outside
+      // DEP_TYPES. A cycle bd itself refuses to create is not special-cased
+      // here — it surfaces as a normal RpcError toast.
+      const narrowed = narrowAddDependencyParams(params);
+      await mutations.addDependency(narrowed.id, narrowed.dependsOn, narrowed.type);
+      return { ok: true };
+    }
+
+    case 'removeDependency': {
+      // Same self-edge guard as addDependency; bd dep remove takes no --type
+      // flag, so there is nothing else to narrow here.
+      const narrowed = narrowDependencyParams(params);
+      await mutations.removeDependency(narrowed.id, narrowed.dependsOn);
+      return { ok: true };
+    }
+
+    case 'addLabel': {
+      // narrowLabelParams throws before any argv is built when id or label
+      // is blank. Labels are user-defined, so there is no allowlist to check
+      // label against.
+      const narrowed = narrowLabelParams(params);
+      await mutations.addLabel(narrowed.id, narrowed.label);
+      return { ok: true };
+    }
+
+    case 'removeLabel': {
+      // Same narrowing as addLabel.
+      const narrowed = narrowLabelParams(params);
+      await mutations.removeLabel(narrowed.id, narrowed.label);
+      return { ok: true };
+    }
+
+    case 'deferBead': {
+      // narrowDeferParams throws before any argv is built when id is blank;
+      // until/reason pass through as free-form optional strings — until is
+      // NOT a YYYY-MM-DD date (bd's --until takes relative expressions like
+      // "tomorrow"/"+1h"), so this deliberately does not reuse requireDueDate.
+      const narrowed = narrowDeferParams(params);
+      await mutations.defer(narrowed.id, narrowed.until, narrowed.reason);
+      return { ok: true };
+    }
+
+    case 'undeferBead':
+      // bd undefer takes no flags beyond the target id — nothing else to narrow.
+      await mutations.undefer(id());
+      return { ok: true };
+
+    case 'reopenBead': {
+      // narrowReopenParams throws before any argv is built when id is blank;
+      // reason is an optional free-form string, same shape as close's reason.
+      const narrowed = narrowReopenParams(params);
+      await mutations.reopen(narrowed.id, narrowed.reason);
+      return { ok: true };
+    }
+
     case 'subscribeFleet':
       host.fleetSubscribe();
       return { ok: true };
@@ -140,6 +232,56 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     case 'unsubscribeTranscript':
       host.transcriptUnsubscribe(requireTargetId(params.targetId, 'targetId'));
       return { ok: true };
+
+    case 'getMolSnapshot':
+      return queries.molSnapshot();
+
+    case 'showMolecule':
+      return queries.showMolecule(id());
+
+    case 'resolveGate': {
+      // narrowResolveGateParams throws before any argv is built when id is
+      // blank; reason is an optional free-form string, same shape as
+      // reopenBead's. The webview only ever sends this for a human-type
+      // gate (see the doc comment on RpcMethods.resolveGate) but the router
+      // does not re-check await_type here — bd's own `gate resolve` does
+      // not distinguish gate types either, so there is nothing to narrow
+      // against beyond the id/reason shape.
+      const narrowed = narrowResolveGateParams(params);
+      await mutations.resolveGate(narrowed.id, narrowed.reason);
+      return { ok: true };
+    }
+
+    case 'getSyncStatus':
+      // Read-only: reports what `bd dolt status` says and nothing more. Never
+      // runs `bd dolt push`/`bd dolt pull` — see queries.doltStatus.
+      return queries.doltStatus();
+
+    case 'getHealthReport': {
+      // Read-only fan-out (stale/orphans/lint/dep cycles) — see
+      // queries.healthReport for why `bd preflight`/`bd doctor` are excluded.
+      // Only a positive finite staleDays reaches the argv; anything else
+      // falls back to BdQueries' own default.
+      const rawStaleDays = params.staleDays;
+      const staleDays =
+        typeof rawStaleDays === 'number' && Number.isFinite(rawStaleDays) && rawStaleDays > 0
+          ? Math.floor(rawStaleDays)
+          : undefined;
+      return staleDays === undefined ? queries.healthReport() : queries.healthReport(staleDays);
+    }
+
+    case 'searchBeads': {
+      // Read-only fallback for a truncated workspace — see queries.search.
+      // Only a positive finite limit reaches the argv; anything else falls
+      // back to BdQueries' own default (50, matching bd's own default).
+      const rawLimit = params.limit;
+      const limit =
+        typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.floor(rawLimit)
+          : undefined;
+      const text = requireString(params.text, 'text');
+      return limit === undefined ? queries.search(text) : queries.search(text, limit);
+    }
 
     default:
       throw new Error(`Unknown RPC method: ${String(request.method)}`);
