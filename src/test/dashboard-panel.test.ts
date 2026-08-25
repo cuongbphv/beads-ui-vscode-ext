@@ -318,8 +318,14 @@ describe('DashboardPanel mutation error toast', () => {
 });
 
 describe('DashboardPanel focus/setTab', () => {
-  it('focus() reveals the panel and posts focusBead', () => {
+  it('focus() reveals the panel and posts focusBead once the webview is already ready', async () => {
     const panel = show(makeFakeStore());
+    // Warm up the handshake first, same as a `focus()` call on a dashboard
+    // that was already open from a prior "Open Dashboard".
+    fakePanel.receiveMessage({ kind: 'ready' });
+    await Promise.resolve();
+    await Promise.resolve();
+    fakePanel.webview.postMessage.mockClear();
 
     panel.focus('bd-1');
 
@@ -328,6 +334,73 @@ describe('DashboardPanel focus/setTab', () => {
       kind: 'event',
       name: 'focusBead',
       id: 'bd-1',
+    });
+    panel.dispose();
+  });
+
+  it(
+    'regression (beads-ui-vscode-ext-9e9.12): focus() called before the ready ' +
+      'handshake queues instead of dropping, and is delivered once ready fires',
+    async () => {
+      // Mirrors extension.ts's openDashboard(): `panel.focus(id)` is called
+      // synchronously right after `DashboardPanel.show()` creates a brand-new
+      // panel, before the webview's own message listener has attached — i.e.
+      // before `ready` is ever received.
+      const panel = show(makeFakeStore());
+
+      panel.focus('bd-1');
+
+      // Reveal still happens immediately; only the post is deferred.
+      expect(fakePanel.reveal).toHaveBeenCalledWith(fakePanel.viewColumn);
+      expect(fakePanel.webview.postMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'focusBead' }),
+      );
+
+      // The webview's handshake now arrives, as it does once its listener
+      // attaches.
+      fakePanel.receiveMessage({ kind: 'ready' });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(fakePanel.webview.postMessage).toHaveBeenCalledWith({
+        kind: 'event',
+        name: 'focusBead',
+        id: 'bd-1',
+      });
+      panel.dispose();
+    },
+  );
+
+  it('a second focus() call before ready replaces the queued id rather than delivering both', async () => {
+    const panel = show(makeFakeStore());
+
+    panel.focus('bd-1');
+    panel.focus('bd-2');
+
+    fakePanel.receiveMessage({ kind: 'ready' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const focusEvents = fakePanel.webview.postMessage.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event.name === 'focusBead');
+    expect(focusEvents).toEqual([{ kind: 'event', name: 'focusBead', id: 'bd-2' }]);
+    panel.dispose();
+  });
+
+  it('focus() called again after ready posts immediately, without waiting for another handshake', async () => {
+    const panel = show(makeFakeStore());
+    fakePanel.receiveMessage({ kind: 'ready' });
+    await Promise.resolve();
+    await Promise.resolve();
+    fakePanel.webview.postMessage.mockClear();
+
+    panel.focus('bd-3');
+
+    expect(fakePanel.webview.postMessage).toHaveBeenCalledWith({
+      kind: 'event',
+      name: 'focusBead',
+      id: 'bd-3',
     });
     panel.dispose();
   });
