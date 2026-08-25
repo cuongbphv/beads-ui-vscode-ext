@@ -4,6 +4,72 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Create issues from the UI.** A quick-create command (command palette entry plus a sidebar
+  tree plus-button) for a fast title-only add, a full create form in the detail-pane slot for
+  everything else, and a quick-add row at the foot of each expanded Board column — all three go
+  through the same create plumbing (a silent `bd create` plus a status follow-up, since `bd
+  create` itself has no `--status` flag).
+- **Inline edit any text field.** Title, description, design, acceptance criteria and notes are
+  editable in place in the detail pane, with a Write/Preview toggle for markdown, Ctrl/Cmd+Enter
+  to save, and Escape to cancel.
+- **Label chips.** Add or remove labels directly on the detail pane, with autocomplete drawn from
+  every label already in use on the board — never a hardcoded list — and instant (optimistic)
+  updates that roll back with a toast if the write fails.
+- **Defer, undefer and reopen actions**, using `bd`'s own dedicated `defer`/`undefer`/`reopen`
+  subcommands rather than a generic status change.
+- **Dependency editor with an issue picker.** Add or remove a dependency edge from the detail
+  pane, choosing the relationship kind — blocks, tracks, related, and seven more — from a picker
+  that excludes the current issue and anything already linked; self-edges and unknown types are
+  rejected before they ever reach `bd`.
+- **Graph view click-to-link.** A Link toggle on the dependency graph lets you click a source
+  node, then a target node, and pick an edge kind from a popover — the same dependency actions
+  the detail-pane editor uses.
+- **Molecules tab.** A new dashboard tab lists running molecules as progress cards (current step,
+  stale badge), backed by a read-only snapshot that degrades field-by-field if any one `bd` call
+  fails rather than blanking the whole tab.
+- **Molecule detail view** — step list with parallel groups and inline gate badges for a selected
+  molecule.
+- **Wisp strip** on the Molecules tab, with a time-to-live countdown per wisp. `bd` does not emit
+  a TTL field for wisps, so the countdown is a UI-side estimate (24h for a molecule, 6h for a
+  task), not a value read from `bd` — flagged as such in the code.
+- **Gate cards with a Resolve action** on the Molecules tab, for gates awaiting a human.
+- **Overview stat card for active molecules.**
+- **Blocker inspector** — a "Blocked by" section in the detail pane that walks the full
+  transitive chain of what is blocking an issue, not just its direct dependency edges.
+- **Health scorecard drawer on Overview** — stale issues, orphans, lint findings and dependency
+  cycles, fetched only when you click "Run checks," never on load or on the poll tick.
+- **Issue history timeline** in the detail pane, showing what changed and when.
+- **Server-side search** kicks in once a workspace is large enough that the dashboard's own
+  issue list is truncated, so search still finds issues outside the loaded page.
+- **Lease/claim liveness badges** on board cards and the Fleet worker list, showing whether an
+  issue's claim is still fresh.
+- **Sync status widget** — a read-only `bd dolt status` chip; the dashboard never runs `bd dolt
+  push`/`pull` itself.
+- **Gate and blocked-issue notifications** (opt-in via `beadsDashboard.notifications`, default
+  off) — a toast when a gate needs a human, or, in the stricter mode, when an issue you're
+  assigned to or own becomes newly blocked.
+
+### Changed
+
+- **Blocked-by / Depends-on / Why-blocked, consolidated.** The detail pane's "Blocked by" section
+  now shows the full transitive blocker chain (previously a separate "Why blocked" section
+  duplicated this); the direct dependency list is renamed "Blocks." Overview's Blocked rows now
+  carry a one-line "Blocked by `<title>`" hint from the same chain.
+- Live-refresh polling now runs through a pluggable strategy with a dormant fast path for a future
+  `bd events` command — no behaviour change today, since the installed `bd` CLI does not yet
+  support it.
+
+### Fixed
+
+- The assignee field's Escape handler called `blur()` on its way out, which could re-commit a
+  stale value; it now only resets the field's local state.
+- The Fleet worker list's lease badge could miss a spawn brief that referenced an issue by a
+  short-id suffix instead of its full id.
+
 ## [0.1.5] — 2026-08-20
 
 ### Added
