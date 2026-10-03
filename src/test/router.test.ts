@@ -31,6 +31,10 @@ class FakeMutations {
     this.calls.push({ method: 'setAssignee', args: [id, assignee, observedAssignee] });
   }
 
+  async claim(id: string): Promise<void> {
+    this.calls.push({ method: 'claim', args: [id] });
+  }
+
   async comment(id: string, text: string): Promise<void> {
     this.calls.push({ method: 'comment', args: [id, text] });
   }
@@ -192,6 +196,22 @@ describe('router guarded edits', () => {
     const assignee = await handleRequest(store, host, request('setAssignee', { id: 'bd-1', assignee: 'ana' }));
     expect(status.ok).toBe(false);
     expect(assignee.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
+
+describe('router claimBead', () => {
+  it('routes a valid issue ID to Beads atomic claim', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(makeStore(mutations), host, request('claimBead', { id: 'bd-1' }));
+    expect(response).toEqual({ kind: 'response', id: 1, ok: true, data: { ok: true } });
+    expect(mutations.calls).toEqual([{ method: 'claim', args: ['bd-1'] }]);
+  });
+
+  it('rejects an empty ID before a claim mutation', async () => {
+    const mutations = new FakeMutations();
+    const response = await handleRequest(makeStore(mutations), host, request('claimBead', { id: '' }));
+    expect(response.ok).toBe(false);
     expect(mutations.calls).toEqual([]);
   });
 });

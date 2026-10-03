@@ -14,8 +14,13 @@ import { installResizeObserver } from './support/dom-harness';
 // That global only exists inside a real webview, so every test that renders
 // OverviewView must stub the bridge, same as bead-detail-history.test.tsx
 // does for bead-detail.tsx's own RPC-backed sections.
+const rpc = vi.hoisted(() => ({ calls: new Array<{ method: string; params: unknown }>() }));
+
 vi.mock('../webview/bridge/rpc', () => ({
-  call: () => new Promise(() => undefined),
+  call: (method: string, params: unknown) => {
+    rpc.calls.push({ method, params });
+    return method === 'claimBead' ? Promise.resolve({ ok: true }) : new Promise(() => undefined);
+  },
   asRpcError: (error: unknown) => ({ kind: 'unknown', message: String(error) }),
 }));
 
@@ -37,6 +42,7 @@ afterEach(async () => {
     mountedRoot = undefined;
   }
   document.body.replaceChildren();
+  rpc.calls.length = 0;
 });
 
 const index = new StatusIndex([
@@ -85,20 +91,24 @@ function snapshot(beads: Bead[], blockedIds: string[] = []): DashboardSnapshot {
   };
 }
 
-async function mount(beads: Bead[], blockedIds: string[] = []): Promise<HTMLDivElement> {
+async function mountSnapshot(data: DashboardSnapshot, onSelect = vi.fn()): Promise<HTMLDivElement> {
   const container = document.createElement('div');
   document.body.append(container);
   mountedRoot = createRoot(container);
   await act(async () => {
     mountedRoot?.render(
       createElement(OverviewView, {
-        snapshot: snapshot(beads, blockedIds),
+        snapshot: data,
         index,
-        onSelect: vi.fn(),
+        onSelect,
       }),
     );
   });
   return container;
+}
+
+async function mount(beads: Bead[], blockedIds: string[] = []): Promise<HTMLDivElement> {
+  return mountSnapshot(snapshot(beads, blockedIds));
 }
 
 /** The rendered value of the stat card whose label starts with `label`. */
@@ -205,5 +215,50 @@ describe('OverviewView Blocked list row hint (beads-ui-vscode-ext-72m.6)', () =>
     const root = await mount(beads, ['a']);
 
     expect(blockedSection(root)?.textContent).not.toContain('Blocked by');
+  });
+});
+
+describe('OverviewView Ready actions', () => {
+  it('reveals a ready issue beyond eight, opens it, and claims via atomic RPC', async () => {
+    installResizeObserver();
+    const beads = Array.from({ length: 125 }, (_, i) => bead({ id: `bd-${i + 1}` }));
+    const data = snapshot(beads);
+    data.readyIds = beads.map((item) => item.id);
+    data.stats.ready_issues = 150;
+    data.issueScope = {
+      loadedCount: 125, projectTotal: 200, excludedKinds: ['gates'], hasMore: true,
+    };
+    data.truncated = true;
+    const onSelect = vi.fn();
+    const root = await mountSnapshot(data, onSelect);
+
+    const ready = root.querySelector('section[aria-label="Ready to start"]');
+    expect(ready?.textContent).toContain('125 loaded ready · 150 project ready');
+    expect(root.querySelector('[aria-label="Issue data scope"]')?.textContent).toContain('Loaded 125 ordinary issues (more available); project total 200 includes gates');
+    expect(ready?.querySelector('[aria-label="bd-10: bd-10"]')).toBeNull();
+
+    const more = [...(ready?.querySelectorAll('button') ?? [])]
+      .find((button) => button.textContent?.includes('Show more ready issues'));
+    await act(async () => more?.click());
+    const card = ready?.querySelector<HTMLElement>('[aria-label="bd-10: bd-10"]');
+    expect(card).not.toBeNull();
+    await act(async () => card?.click());
+    expect(onSelect).toHaveBeenCalledWith('bd-10');
+    await act(async () => ready?.querySelector<HTMLButtonElement>('[aria-label="Claim bd-10"]')?.click());
+    expect(rpc.calls).toContainEqual({ method: 'claimBead', params: { id: 'bd-10' } });
+  });
+
+  it('uses native ready membership for a custom status', async () => {
+    installResizeObserver();
+    const data = snapshot([
+      bead({ id: 'triaged-1', status: 'triaged' }),
+      bead({ id: 'open-1', status: 'open' }),
+    ]);
+    data.readyIds = ['triaged-1'];
+    data.stats.ready_issues = 1;
+    const root = await mountSnapshot(data);
+    const ready = root.querySelector('section[aria-label="Ready to start"]');
+    expect(ready?.textContent).toContain('triaged-1');
+    expect(ready?.textContent).not.toContain('open-1');
   });
 });

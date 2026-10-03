@@ -5,12 +5,14 @@
  * worth asking on arrival — what can I start, and what is stuck.
  */
 import { AlertTriangle, CheckCircle2, CircleDot, Clock, FlaskConical, Zap } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { version as extensionVersion } from '../../../package.json';
 import { activeMoleculeCount, StatusIndex } from '../../shared/model';
 import type { Bead, DashboardSnapshot } from '../../shared/types';
+import { asRpcError, call } from '../bridge/rpc';
 import { BeadCard } from '../components/bead-card';
+import { useToast } from '../components/toast';
 import {
   BurnUpChart,
   ChartCard,
@@ -37,12 +39,28 @@ export function OverviewView({
   selectedId?: string;
 }): ReactNode {
   const { stats, beads } = snapshot;
+  const { notify } = useToast();
+  const [readyLimit, setReadyLimit] = useState(8);
+  const [claimingId, setClaimingId] = useState<string>();
 
   const readySet = useMemo(() => new Set(snapshot.readyIds), [snapshot.readyIds]);
   const blockedSet = useMemo(() => new Set(snapshot.blockedIds), [snapshot.blockedIds]);
 
-  const ready = beads.filter((bead) => readySet.has(bead.id)).slice(0, 8);
+  const ready = beads.filter((bead) => readySet.has(bead.id));
   const blocked = beads.filter((bead) => blockedSet.has(bead.id)).slice(0, 8);
+
+  async function claim(id: string): Promise<void> {
+    if (claimingId) return;
+    setClaimingId(id);
+    try {
+      await call('claimBead', { id });
+      notify(`Claimed ${id}`);
+    } catch (error) {
+      notify(asRpcError(error).message, 'error');
+    } finally {
+      setClaimingId(undefined);
+    }
+  }
 
   // Anything past its due date and still open — the number that should worry you.
   const overdue = useMemo(() => {
@@ -123,6 +141,16 @@ export function OverviewView({
         />
       </section>
 
+      {snapshot.issueScope ? (
+        <p className="text-fg-muted mt-2 text-xs" aria-label="Issue data scope">
+          Loaded {snapshot.issueScope.loadedCount} ordinary issues
+          {snapshot.issueScope.hasMore ? ' (more available)' : ''}; project total {snapshot.issueScope.projectTotal}
+          {snapshot.issueScope.excludedKinds.length > 0
+            ? ` includes ${snapshot.issueScope.excludedKinds.join(', ')}`
+            : ''}.
+        </p>
+      ) : null}
+
       <div className="mt-3 grid gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3">
         <ChartCard title="Status" hint="by category">
           <StatusDonut beads={beads} index={index} />
@@ -149,13 +177,17 @@ export function OverviewView({
       <div className="mt-3 grid gap-3 @3xl:grid-cols-2">
         <BeadList
           title="Ready to start"
-          hint="Nothing is blocking these."
-          beads={ready}
+          hint={`${ready.length} loaded ready · ${stats.ready_issues} project ready`}
+          beads={ready.slice(0, readyLimit)}
           allBeads={beads}
           index={index}
           onSelect={onSelect}
           selectedId={selectedId}
-          emptyText="No unblocked issues right now."
+          emptyText={snapshot.readyIds.length > 0 ? 'Ready issues are outside the loaded window. Raise the issue limit to see them.' : 'No ready issues right now.'}
+          onClaim={claim}
+          claimingId={claimingId}
+          hiddenCount={ready.length - Math.min(readyLimit, ready.length)}
+          onLoadMore={() => setReadyLimit((limit) => limit + 8)}
         />
         <BeadList
           title="Blocked"
@@ -189,6 +221,10 @@ function BeadList({
   selectedId,
   emptyText,
   blocked,
+  onClaim,
+  claimingId,
+  hiddenCount,
+  onLoadMore,
 }: {
   title: string;
   hint: string;
@@ -200,6 +236,10 @@ function BeadList({
   selectedId?: string;
   emptyText: string;
   blocked?: boolean;
+  onClaim?: (id: string) => void;
+  claimingId?: string;
+  hiddenCount?: number;
+  onLoadMore?: () => void;
 }): ReactNode {
   return (
     <section aria-label={title} className="bg-surface border-border rounded-lg border p-3">
@@ -219,12 +259,26 @@ function BeadList({
             const blockedHint = blocked ? directBlockerHint(bead, allBeads, index) : undefined;
             return (
               <li key={bead.id}>
-                <BeadCard
-                  bead={bead}
-                  blocked={blocked}
-                  selected={bead.id === selectedId}
-                  onSelect={onSelect}
-                />
+                <div className="flex items-center gap-2">
+                  <BeadCard
+                    bead={bead}
+                    blocked={blocked}
+                    selected={bead.id === selectedId}
+                    onSelect={onSelect}
+                    className="min-w-0 flex-1"
+                  />
+                  {onClaim ? (
+                    <button
+                      type="button"
+                      disabled={Boolean(claimingId)}
+                      onClick={() => onClaim(bead.id)}
+                      className="border-border text-fg hover:bg-surface-hover disabled:opacity-50 rounded-md border px-2 py-1 text-xs"
+                      aria-label={`Claim ${bead.id}`}
+                    >
+                      {claimingId === bead.id ? 'Claiming…' : 'Claim'}
+                    </button>
+                  ) : null}
+                </div>
                 {blockedHint ? (
                   <p className="text-fg-muted mt-1 truncate text-xs">
                     Blocked by <span className="text-fg">{blockedHint.title}</span>
@@ -236,6 +290,15 @@ function BeadList({
           })}
         </ul>
       )}
+      {hiddenCount && hiddenCount > 0 && onLoadMore ? (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          className="border-border text-fg-muted hover:bg-surface-hover mt-2 w-full rounded-md border px-2 py-1.5 text-xs"
+        >
+          Show more ready issues ({hiddenCount} remaining)
+        </button>
+      ) : null}
     </section>
   );
 }

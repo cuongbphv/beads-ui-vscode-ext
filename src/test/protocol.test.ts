@@ -7,6 +7,9 @@ import { requireDepType } from '../extension/panel/param-validation';
 import { DASHBOARD_TABS, DEP_TYPES, MUTATING_METHODS, resolveDashboardTab } from '../shared/protocol';
 
 describe('MUTATING_METHODS', () => {
+  it('includes atomic claim, so the host broadcasts ownership changes', () => {
+    expect(MUTATING_METHODS.has('claimBead')).toBe(true);
+  });
   it('includes createBead, so the host refetches and broadcasts after a create', () => {
     expect(MUTATING_METHODS.has('createBead')).toBe(true);
   });

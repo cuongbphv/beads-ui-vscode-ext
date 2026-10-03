@@ -142,6 +142,11 @@ export interface RpcMethods {
     params: { id: string; assignee: string; observedAssignee: string };
     result: { ok: true };
   };
+  /** Atomic Beads ownership change (`bd update <id> --claim`). */
+  claimBead: {
+    params: { id: string };
+    result: { ok: true };
+  };
   closeBead: {
     params: { id: string; reason?: string };
     result: { ok: true };
@@ -375,6 +380,7 @@ export const MUTATING_METHODS: ReadonlySet<RpcMethodName> = new Set<RpcMethodNam
   'setStatus',
   'setPriority',
   'setAssignee',
+  'claimBead',
   'setDue',
   'setEstimate',
   'closeBead',

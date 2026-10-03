@@ -110,6 +110,10 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       await mutations.setAssignee(id(), String(params.assignee ?? ''), requireStringAllowEmpty(params.observedAssignee, 'observedAssignee'));
       return { ok: true };
 
+    case 'claimBead':
+      await mutations.claim(id());
+      return { ok: true };
+
     case 'closeBead':
       await mutations.close(id(), typeof params.reason === 'string' ? params.reason : undefined);
       return { ok: true };

@@ -19,6 +19,7 @@ interface PendingCreate {
 const rpc = vi.hoisted(() => ({
   calls: new Array<{ id: string; status: string; observedStatus: string }>(),
   createBeadCalls: new Array<{ title: string; status: string }>(),
+  claimCalls: new Array<{ id: string }>(),
   createBeadQueue: new Array<PendingCreate>(),
 }));
 
@@ -36,6 +37,10 @@ vi.mock('../webview/bridge/rpc', () => ({
       return new Promise<{ id: string }>((resolve, reject) => {
         rpc.createBeadQueue.push({ resolve, reject });
       });
+    }
+    if (method === 'claimBead') {
+      rpc.claimCalls.push(params as { id: string });
+      return Promise.resolve({ ok: true });
     }
     return Promise.resolve({});
   },
@@ -167,6 +172,7 @@ afterEach(async () => {
   container = undefined;
   rpc.calls.length = 0;
   rpc.createBeadCalls.length = 0;
+  rpc.claimCalls.length = 0;
   rpc.createBeadQueue.length = 0;
   toast.messages.length = 0;
   dnd.onDragEnd = undefined;
@@ -270,6 +276,40 @@ describe('BoardView swimlane toggle', () => {
     await act(async () => toggle?.click());
 
     expect(onSwimlanesChange).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('BoardView native Ready filter', () => {
+  it('filters by bd ready IDs including a custom status and shows snapshot scope', async () => {
+    const root = await mount({
+      beads: [
+        { id: 'triaged-1', title: 'Custom ready', status: 'triaged', priority: 2, issue_type: 'task' },
+        { id: 'open-1', title: 'Open but not ready', status: 'open', priority: 2, issue_type: 'task' },
+      ],
+      readyIds: new Set(['triaged-1']),
+      readyTotal: 120,
+      issueScope: { loadedCount: 100, projectTotal: 250, excludedKinds: ['gates'], hasMore: true },
+    });
+    expect(root.querySelector('[aria-label="Board data scope"]')?.textContent)
+      .toContain('Snapshot loaded 100 ordinary issues (more available); project total 250');
+
+    const toggle = [...root.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Ready only'));
+    expect(toggle?.textContent).toContain('1 loaded');
+    await act(async () => toggle?.click());
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+    expect(root.textContent).toContain('Custom ready');
+    expect(root.textContent).not.toContain('Open but not ready');
+    expect(root.querySelector('[aria-label="Board data scope"]')?.textContent).toContain('120 ready project-wide');
+  });
+
+  it('claims the selected ready issue through the typed RPC', async () => {
+    const root = await mount({ readyIds: new Set(['safe-1']), selectedId: 'safe-1' });
+    const claim = [...root.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Claim safe-1');
+    expect(claim).toBeDefined();
+    await act(async () => claim?.click());
+    expect(rpc.claimCalls).toEqual([{ id: 'safe-1' }]);
   });
 });
 

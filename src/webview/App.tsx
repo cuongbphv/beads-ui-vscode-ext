@@ -228,6 +228,7 @@ export function App(): ReactNode {
   );
   const selected = focusedId ? beads.find((bead) => bead.id === focusedId) : undefined;
   const blockedIds = useMemo(() => new Set(snapshot?.blockedIds ?? []), [snapshot?.blockedIds]);
+  const readyIds = useMemo(() => new Set(snapshot?.readyIds ?? []), [snapshot?.readyIds]);
   // Full-id lookup the Fleet tab uses to pair a worker's claimed bead with its
   // lease fields (beads-ui-vscode-ext-ayq.1). Keyed off the snapshot so it is
   // rebuilt exactly when the issue list is.
@@ -373,6 +374,9 @@ export function App(): ReactNode {
                 onSelect={onSelect}
                 selectedId={focusedId}
                 blockedIds={blockedIds}
+                readyIds={readyIds}
+                readyTotal={snapshot.stats.ready_issues}
+                issueScope={snapshot.issueScope}
                 collapsedColumns={collapsedColumns}
                 onCollapsedColumnsChange={setCollapsedColumns}
                 swimlanes={boardSwimlanes}

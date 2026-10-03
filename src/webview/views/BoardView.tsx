@@ -42,7 +42,7 @@ import {
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { StatusIndex, buildColumns, filterBeads, type BeadQuery } from '../../shared/model';
-import type { Bead, BoardColumn, StatusCategory } from '../../shared/types';
+import type { Bead, BoardColumn, DashboardSnapshot, StatusCategory } from '../../shared/types';
 import { asRpcError, call } from '../bridge/rpc';
 import { BeadCard } from '../components/bead-card';
 import { EmptyState } from '../components/primitives';
@@ -106,6 +106,9 @@ export function BoardView({
   onSelect,
   selectedId,
   blockedIds,
+  readyIds,
+  readyTotal,
+  issueScope,
   collapsedColumns,
   onCollapsedColumnsChange,
   swimlanes: swimlanesEnabled,
@@ -118,6 +121,10 @@ export function BoardView({
   onSelect: (id: string) => void;
   selectedId?: string;
   blockedIds: Set<string>;
+  /** Native `bd ready` membership, including custom active statuses. */
+  readyIds?: ReadonlySet<string>;
+  readyTotal?: number;
+  issueScope?: DashboardSnapshot['issueScope'];
   /** `undefined` means the user has never chosen — fall back to the default. */
   collapsedColumns?: StatusCategory[];
   onCollapsedColumnsChange: (next: StatusCategory[]) => void;
@@ -127,6 +134,8 @@ export function BoardView({
 }): ReactNode {
   const { notify } = useToast();
   const [dragging, setDragging] = useState<Bead>();
+  const [readyOnly, setReadyOnly] = useState(false);
+  const [claiming, setClaiming] = useState(false);
   /**
    * Optimistic override: id → status. Applied on top of the snapshot so the
    * card lands in the new column immediately, and dropped as soon as the host
@@ -154,10 +163,10 @@ export function BoardView({
   // below — never re-filter per lane.
   const visible = useMemo(
     () =>
-      filterBeads(beads, query, index).map((bead) =>
-        optimistic[bead.id] ? { ...bead, status: optimistic[bead.id] } : bead,
-      ),
-    [beads, query, index, optimistic],
+      filterBeads(beads, query, index)
+        .filter((bead) => !readyOnly || readyIds?.has(bead.id))
+        .map((bead) => optimistic[bead.id] ? { ...bead, status: optimistic[bead.id] } : bead),
+    [beads, query, index, optimistic, readyOnly, readyIds],
   );
 
   const columns = useMemo(() => buildColumns(visible, index), [visible, index]);
@@ -178,6 +187,19 @@ export function BoardView({
 
   function onDragStart(event: DragStartEvent): void {
     setDragging(beads.find((bead) => bead.id === event.active.id));
+  }
+
+  async function claimSelected(): Promise<void> {
+    if (!selectedId || !readyIds?.has(selectedId) || claiming) return;
+    setClaiming(true);
+    try {
+      await call('claimBead', { id: selectedId });
+      notify(`Claimed ${selectedId}`);
+    } catch (error) {
+      notify(asRpcError(error).message, 'error');
+    } finally {
+      setClaiming(false);
+    }
   }
 
   /**
@@ -305,23 +327,56 @@ export function BoardView({
           query={query}
           onChange={onQueryChange}
           trailing={
-            <button
-              type="button"
-              title="Group columns into taxonomy-label lanes"
-              aria-pressed={Boolean(swimlanesEnabled)}
-              onClick={() => onSwimlanesChange(!swimlanesEnabled)}
-              className={cn(
-                'surface-interactive inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs',
-                swimlanesEnabled
-                  ? 'bg-surface-active text-fg-strong'
-                  : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
-              )}
-            >
-              <Rows3 aria-hidden="true" className="size-3.5" />
-              Swimlanes
-            </button>
+            <div className="flex items-center gap-1">
+              {readyIds ? (
+                <button
+                  type="button"
+                  aria-pressed={readyOnly}
+                  onClick={() => setReadyOnly((current) => !current)}
+                  className={cn(
+                    'surface-interactive rounded-md px-2 py-1 text-xs',
+                    readyOnly ? 'bg-surface-active text-fg-strong' : 'text-fg-muted hover:bg-surface-hover',
+                  )}
+                >
+                  Ready only ({beads.filter((bead) => readyIds.has(bead.id)).length} loaded)
+                </button>
+              ) : null}
+              {selectedId && readyIds?.has(selectedId) ? (
+                <button
+                  type="button"
+                  disabled={claiming}
+                  onClick={() => void claimSelected()}
+                  className="border-border text-fg hover:bg-surface-hover disabled:opacity-50 rounded-md border px-2 py-1 text-xs"
+                >
+                  {claiming ? 'Claiming…' : `Claim ${selectedId}`}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                title="Group columns into taxonomy-label lanes"
+                aria-pressed={Boolean(swimlanesEnabled)}
+                onClick={() => onSwimlanesChange(!swimlanesEnabled)}
+                className={cn(
+                  'surface-interactive inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs',
+                  swimlanesEnabled
+                    ? 'bg-surface-active text-fg-strong'
+                    : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
+                )}
+              >
+                <Rows3 aria-hidden="true" className="size-3.5" />
+                Swimlanes
+              </button>
+            </div>
           }
         />
+
+        {issueScope ? (
+          <p className="text-fg-muted mt-1 text-xs" aria-label="Board data scope">
+            Snapshot loaded {issueScope.loadedCount} ordinary issues
+            {issueScope.hasMore ? ' (more available)' : ''}; project total {issueScope.projectTotal}.
+            {readyOnly ? ` ${readyTotal ?? readyIds?.size ?? 0} ready project-wide.` : ''}
+          </p>
+        ) : null}
 
         {/* Column switcher: only rendered where a multi-column board will not fit.
             Doubles as the per-lane narrow selector when swimlanes are on — one
