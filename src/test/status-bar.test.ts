@@ -52,6 +52,13 @@ describe('statusBarContent', () => {
     expect(content?.text).toBe('$(dashboard) 3 ready');
   });
 
+  it('does not count an issue Beads also reports as blocked as ready', () => {
+    const current = snapshot(['a', 'b']);
+    current.blockedIds = ['b'];
+    const content = statusBarContent({ snapshot: current, loading: false });
+    expect(content?.text).toBe('$(dashboard) 1 ready');
+  });
+
   it('appends a gate count when gates are open', () => {
     const state: StoreState = { snapshot: snapshot(['a']), loading: false };
 

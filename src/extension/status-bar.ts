@@ -52,7 +52,8 @@ export function statusBarContent(
 
   if (!state.snapshot) return undefined;
 
-  const ready = state.snapshot.readyIds.length;
+  const blocked = new Set(state.snapshot.blockedIds);
+  const ready = state.snapshot.readyIds.filter((id) => !blocked.has(id)).length;
   const gateCount = gatesInSnapshot?.length ?? 0;
 
   const text =
@@ -61,7 +62,8 @@ export function statusBarContent(
       : `$(dashboard) ${ready} ready`;
 
   const tooltipLines = [`${ready} issue(s) ready to work on`];
-  if (gateCount > 0) tooltipLines.push(`${gateCount} gate(s) open`);
+  if (gateCount > 0) tooltipLines.push(`${gateCount} human gate(s) awaiting review or resolution`);
+  tooltipLines.push('Ready comes from bd; blocked work is not counted as ready.');
   tooltipLines.push('Click to open the Beads dashboard.');
 
   return { text, tooltip: tooltipLines.join('\n') };

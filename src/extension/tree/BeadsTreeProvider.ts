@@ -19,6 +19,7 @@
 import * as vscode from 'vscode';
 
 import { StatusIndex, buildSidebarSections, humanGates, progressOf } from '../../shared/model';
+import { leaseState } from '../../shared/lease';
 import {
   PRIORITY_LABELS,
   type Bead,
@@ -47,6 +48,8 @@ interface LeafOptions {
   scope: 'mine' | 'plan' | 'triage';
   /** Ids from `bd ready`, annotated on the row where that is actionable. */
   ready?: ReadonlySet<string>;
+  /** Ids Beads reports as blocked; a blocked row never claims to be ready. */
+  blocked?: ReadonlySet<string>;
   /** Suppress the assignee, which is a constant inside "Needs You". */
   hideAssignee?: boolean;
 }
@@ -181,10 +184,6 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
     const showClosed = vscode.workspace.getConfiguration('beadsDashboard').get<boolean>('showClosed', true);
     const me = this.actor.current;
 
-    if (snapshot.beads.length === 0) {
-      return [messageNode('No issues yet. Run `bd create` to add one.', 'info')];
-    }
-
     const { mine, plan, unassigned } = buildSidebarSections(snapshot.beads, index, {
       me,
       showClosed,
@@ -192,14 +191,15 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
     });
 
     const readySet = new Set(snapshot.readyIds);
+    const blockedSet = new Set(snapshot.blockedIds);
 
     // Each scope fills its own view, so the roots here are the section's
     // contents — the view title carries the heading the wrapper node used to.
     if (this.scope === 'mine') {
-      if (!me) return [whoAreYouNode()];
-
-      const issueNodes = mine.length > 0
-        ? this.capped(mine, index, { scope: 'mine', ready: readySet, hideAssignee: true })
+      const issueNodes = !me
+        ? [whoAreYouNode()]
+        : mine.length > 0
+        ? this.capped(mine, index, { scope: 'mine', ready: readySet, blocked: blockedSet, hideAssignee: true })
         : // Names the identity it resolved: an empty queue and a wrong name look
           // identical otherwise.
           [messageNode(`Nothing is assigned to ${me}.`, 'check')];
@@ -215,12 +215,16 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
               `Gates (${actionableGates.length})`,
               actionableGates.map((gate) => this.gateNode(gate, index)),
               'shield',
-              'blocking progress',
+              'Human review needed; resolve after approval',
             ),
           ]
         : [];
 
       return [...gatesSection, ...issueNodes];
+    }
+
+    if (snapshot.beads.length === 0) {
+      return [messageNode('No issues yet. Run `bd create` to add one.', 'info')];
     }
 
     // Unassigned rides along in the plan view rather than claiming a third one:
@@ -231,7 +235,7 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
       section(
         `Unassigned (${unassigned.length})`,
         unassigned.length > 0
-          ? this.capped(unassigned, index, { scope: 'triage', ready: readySet })
+          ? this.capped(unassigned, index, { scope: 'triage', ready: readySet, blocked: blockedSet })
           : [messageNode('Everything open has an owner.', 'check')],
         'inbox',
         'no PIC yet',
@@ -285,7 +289,7 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
     node.gateId = gate.id;
 
     const statusDef = index.def(gate.status);
-    node.description = [statusDef?.icon, `P${gate.priority}`].filter(Boolean).join(' ');
+    node.description = [statusDef?.icon, `P${gate.priority}`, gate.owner ?? 'human review'].filter(Boolean).join(' · ');
     node.iconPath = new vscode.ThemeIcon(iconForType('gate').id, colorForPriority(gate.priority));
     node.tooltip = tooltipForGate(gate);
     // Distinct from `beadOpen`/`beadClosed` so the bead-only context menu
@@ -305,7 +309,17 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
     // Ready is only worth calling out where it changes what you would do next:
     // in your own queue and in triage. Under an epic it is just noise.
     const parts = [[statusDef?.icon, `P${bead.priority}`].filter(Boolean).join(' ')];
-    if (options.ready?.has(bead.id)) parts.push('ready');
+    const blocked = options.blocked?.has(bead.id) ?? false;
+    const ready = !blocked && (options.ready?.has(bead.id) ?? false);
+    if (blocked) parts.push('blocked');
+    else if (ready) parts.push('ready');
+    else if (options.scope === 'mine' && index.category(bead.status) === 'wip') parts.push('claimed');
+    if (options.scope === 'mine') {
+      const lease = leaseState(bead, Date.now());
+      if (lease.state !== 'none') {
+        parts.push(lease.state === 'stale-heartbeat' ? 'heartbeat stale' : `lease ${lease.state}`);
+      }
+    }
     // In "Needs You" every row says the same name; spend the width on the rest.
     if (bead.assignee && !options.hideAssignee) parts.push(bead.assignee);
     node.description = parts.join(' · ');
@@ -313,7 +327,11 @@ export class BeadsTreeProvider implements vscode.TreeDataProvider<BeadNode>, vsc
       iconForType(bead.issue_type).id,
       colorForPriority(bead.priority),
     );
-    node.tooltip = tooltipFor(bead, index);
+    node.tooltip = tooltipFor(bead, index, options.scope === 'mine'
+      ? blocked ? 'Blocked — open the issue to inspect blockers.'
+        : ready ? 'Ready in Beads — open the issue to continue work.'
+          : 'Assigned to you — open the issue to inspect the next action.'
+      : undefined);
     node.command = openCommand(bead);
     // Drives which context-menu items appear; closed issues lose "Close".
     node.contextValue = index.isDone(bead.status) ? 'beadClosed' : 'beadOpen';
@@ -381,7 +399,7 @@ function openCommand(bead: Bead): vscode.Command {
   return { command: 'beadsDashboard.openBead', title: 'Open Issue', arguments: [bead.id] };
 }
 
-function tooltipFor(bead: Bead, index: StatusIndex): vscode.MarkdownString {
+function tooltipFor(bead: Bead, index: StatusIndex, nextAction?: string): vscode.MarkdownString {
   const statusDef = index.def(bead.status);
   const lines = [
     `**${bead.id}** · \`${bead.issue_type}\``,
@@ -394,6 +412,7 @@ function tooltipFor(bead: Bead, index: StatusIndex): vscode.MarkdownString {
   if (bead.assignee) lines.push(`Assignee: ${bead.assignee}`);
   if (bead.labels?.length) lines.push(`Labels: ${bead.labels.join(', ')}`);
   if (bead.blocked_by_count) lines.push(`Blocked by ${bead.blocked_by_count} issue(s)`);
+  if (nextAction) lines.push('', nextAction);
 
   const markdown = new vscode.MarkdownString(lines.join('\n'));
   markdown.supportThemeIcons = true;
@@ -405,6 +424,7 @@ function tooltipForGate(gate: BdGate): vscode.MarkdownString {
   if (gate.description) lines.push('', gate.description);
   lines.push('', `Priority: ${PRIORITY_LABELS[gate.priority] ?? `P${gate.priority}`}`);
   if (gate.owner) lines.push(`Owner: ${gate.owner}`);
+  lines.push('', 'Human approval is required. Resolve this gate after the decision; Beads will refresh the queue.');
 
   const markdown = new vscode.MarkdownString(lines.join('\n'));
   markdown.supportThemeIcons = true;
