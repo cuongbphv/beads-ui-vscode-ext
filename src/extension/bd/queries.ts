@@ -564,10 +564,10 @@ export class BdQueries {
   }
 
   /**
-   * Composes the Molecules tab's one round trip. Short-circuits before any
-   * per-root or project-wide mol/gate read when there are no molecule roots —
-   * the common case — so a project with none costs exactly the one `bd list`
-   * call above. Otherwise fans `molProgress` out per root via
+   * Composes the Molecules tab's one round trip. Even without molecule roots,
+   * read project-wide gates so standalone human approvals remain actionable;
+   * skip only the molecule-specific progress, stale and wisp reads. Otherwise
+   * fans `molProgress` out per root via
    * `Promise.allSettled`: one broken molecule's progress read degrades only
    * its own card (and flips the snapshot's `degraded` flag) instead of
    * blanking the whole tab.
@@ -575,7 +575,7 @@ export class BdQueries {
   async molSnapshot(): Promise<MolSnapshot> {
     const roots = await this.molRoots();
     if (roots.length === 0) {
-      return { molecules: [], wisps: [], gates: [], fetchedAt: new Date().toISOString(), degraded: false };
+      return { molecules: [], wisps: [], gates: await this.gates(), fetchedAt: new Date().toISOString(), degraded: false };
     }
 
     const [progressOutcomes, staleIds, wisps, gates] = await Promise.all([

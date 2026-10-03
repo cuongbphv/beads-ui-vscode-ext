@@ -275,6 +275,7 @@ describe('MoleculesView', () => {
     // Real fixture: one human, one timer, one gh:pr gate — see gate-list.json.
     const section = el.querySelector('section[aria-label^="Gates ("]');
     expect(section?.getAttribute('aria-label')).toBe('Gates (3)');
+    expect(section?.querySelectorAll('article')).toHaveLength(3);
     expect(el.textContent).toContain('Waiting on a person');
     // Only the one getMolSnapshot round trip fired — gate cards cost no new reads.
     expect(rpc.calls).toEqual([{ method: 'getMolSnapshot', params: undefined }]);
@@ -294,16 +295,29 @@ describe('MoleculesView', () => {
 
   it('does not show the full "No molecules" empty state when gates exist but there are zero molecules', async () => {
     const el = await mount();
+    const standaloneGate: BdGate = {
+      id: 'standalone-gate', title: 'Approve deployment', status: 'open',
+      owner: 'Alice', priority: 2, issue_type: 'gate', await_type: 'human',
+    };
     await resolveOldest({
       molecules: [],
       wisps: [],
-      gates: gateFixtures,
+      gates: [standaloneGate],
       fetchedAt: new Date().toISOString(),
       degraded: false,
     });
 
     expect(el.textContent).not.toContain('No molecules in this project');
-    expect(el.querySelector('section[aria-label^="Gates ("]')).not.toBeNull();
+    const section = el.querySelector('section[aria-label="Gates (1)"]');
+    expect(section).not.toBeNull();
+    expect(section?.textContent).toContain('open · Owner: Alice');
+    const resolveButton = section?.querySelector('button');
+    expect(resolveButton?.textContent).toContain('Resolve');
+    await act(async () => resolveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(rpc.calls).toEqual([
+      { method: 'getMolSnapshot', params: undefined },
+      { method: 'resolveGate', params: { id: standaloneGate.id } },
+    ]);
   });
 
   it('does not show the full "No molecules" empty state when only wisps exist (zero molecules, zero gates)', async () => {

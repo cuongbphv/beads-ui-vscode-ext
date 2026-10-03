@@ -5,9 +5,8 @@
  * Layout/lifecycle cloned from `FleetView`: `useMolecules()` fetches only
  * while this component is mounted, so switching to another tab is exactly
  * what stops the extra `bd mol`/`bd gate` reads `getMolSnapshot` fans out —
- * a project with zero molecules costs exactly the one `bd list --type
- * molecule` call `BdQueries.molSnapshot` short-circuits on (see
- * `queries.ts`), and only while a webview session has this tab open.
+ * a project with zero molecules still reads project-wide gates so standalone
+ * human approvals remain visible, and only while this tab is open.
  */
 import { AlertCircle, FlaskConical } from 'lucide-react';
 import { useCallback, useState, type ReactNode } from 'react';

@@ -55,6 +55,9 @@ export function GateCard({ gate }: { gate: BdGate }): ReactNode {
       </div>
       <p className="text-fg-strong mt-1 line-clamp-2 text-sm leading-snug">{gate.title}</p>
       <p className="text-warning mt-1.5 text-xs">{formatGateAwait(gate)}</p>
+      <p className="text-fg-muted mt-1 text-xs">
+        {gate.status}{gate.owner ? ` · Owner: ${gate.owner}` : ' · Unassigned'}
+      </p>
       {gate.await_type === 'human' ? (
         <Button variant="secondary" disabled={busy} className="mt-2" onClick={() => void resolve()}>
           <CheckCircle2 aria-hidden="true" className="size-3.5" />

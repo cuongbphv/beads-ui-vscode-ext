@@ -976,19 +976,21 @@ describe('BdQueries molecule reads', () => {
 });
 
 describe('BdQueries.molSnapshot', () => {
-  it('short-circuits at zero molecule roots: no progress/wisp/stale/gate reads happen', async () => {
+  it('reads standalone gates at zero molecule roots without molecule-specific reads', async () => {
     const fake = new FakeArgvBd();
     fake.responses.set('list --flat --type molecule', []);
+    fake.responses.set('gate list', [
+      { id: 'gate-1', title: 'Design approval', status: 'open', owner: 'Alice', priority: 2, issue_type: 'gate', await_type: 'human' },
+    ]);
 
     const snapshot = await molQueries(fake).molSnapshot();
 
     expect(snapshot.molecules).toEqual([]);
     expect(snapshot.wisps).toEqual([]);
-    expect(snapshot.gates).toEqual([]);
+    expect(snapshot.gates.map((gate) => gate.id)).toEqual(['gate-1']);
     expect(snapshot.degraded).toBe(false);
     expect(typeof snapshot.fetchedAt).toBe('string');
-    // The one and only bd call was the roots list — no mol/gate fan-out at all.
-    expect(fake.argv).toEqual([['list', '--flat', '--type', 'molecule']]);
+    expect(fake.argv).toEqual([['list', '--flat', '--type', 'molecule'], ['gate', 'list']]);
   });
 
   it('degrades only the molecule whose progress call throws; the rest of the snapshot still populates', async () => {
