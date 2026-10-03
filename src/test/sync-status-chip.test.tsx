@@ -76,6 +76,8 @@ describe('SyncStatusChip', () => {
     });
 
     expect(root.textContent).toContain('embedded');
+    expect(root.textContent).toContain('Embedded mode uses no Dolt server process');
+    expect(root.querySelector('[title]')?.getAttribute('title')).toContain('Server health does not indicate remote sync');
     expect(root.querySelector('[data-testid="sync-ahead-behind"]')).toBeNull();
     expect(root.textContent).not.toMatch(/synced/);
   });
@@ -117,7 +119,17 @@ describe('SyncStatusChip', () => {
       error: { kind: 'unknown', message: 'bd exploded' },
     });
 
-    expect(root.textContent?.toLowerCase()).toContain('sync status unavailable');
+    expect(root.textContent).toContain('Dolt backend status unavailable');
+  });
+
+  it('marks an earlier backend result stale when the next status check fails', async () => {
+    const root = await mount({
+      status: { mode: 'local-server', server_running: true },
+      error: { kind: 'unknown', message: 'server unreachable' },
+    });
+    expect(root.textContent).toContain('status stale');
+    expect(root.querySelector('[role="status"]')?.getAttribute('title')).toBe('server unreachable');
+    expect(root.querySelector('.bg-success')).toBeNull();
   });
 
   it('the copy button copies exactly the suggested command, via the copyText RPC, and never a push/pull mutation', async () => {

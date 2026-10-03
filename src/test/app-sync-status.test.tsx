@@ -102,6 +102,54 @@ const emptySnapshot: DashboardSnapshot = {
 };
 
 describe('sync status chip fetch trigger', () => {
+  it('explains the committed-only history scope when a detail is open', async () => {
+    const container = await mountApp();
+    await act(async () => {
+      bridgeState.hostListeners.forEach((listener) =>
+        listener({
+          kind: 'event',
+          name: 'issuesChanged',
+          snapshot: {
+            ...emptySnapshot,
+            beads: [{ id: 'project-1', title: 'Example', status: 'open', priority: 1, issue_type: 'task' }],
+          },
+        }),
+      );
+      bridgeState.hostListeners.forEach((listener) =>
+        listener({ kind: 'event', name: 'focusBead', id: 'project-1' }),
+      );
+    });
+    expect(container.textContent).toContain('Change history shows committed Dolt revisions; recent uncommitted edits may be absent.');
+  });
+
+  it('keeps the last successful snapshot visibly stale during an outage and clears it on recovery', async () => {
+    const container = await mountApp();
+    await act(async () => {
+      bridgeState.hostListeners.forEach((listener) =>
+        listener({ kind: 'event', name: 'issuesChanged', snapshot: emptySnapshot }),
+      );
+    });
+    expect(container.textContent).toContain('last refreshed');
+    expect(container.textContent).not.toContain('stale data');
+
+    await act(async () => {
+      bridgeState.hostListeners.forEach((listener) =>
+        listener({ kind: 'event', name: 'error', error: { kind: 'bd-error', message: 'backend unreachable' } }),
+      );
+    });
+    expect(container.textContent).toContain('stale data');
+    expect(container.textContent).toContain('Showing data from the last successful refresh.');
+    expect(container.textContent).toContain('backend unreachable');
+
+    await act(async () => {
+      bridgeState.hostListeners.forEach((listener) =>
+        listener({ kind: 'event', name: 'issuesChanged', snapshot: { ...emptySnapshot, fetchedAt: '2026-08-24T00:01:00.000Z' } }),
+      );
+    });
+    expect(container.textContent).not.toContain('stale data');
+    expect(container.querySelector('[title="Last successful refresh: 2026-08-24T00:01:00.000Z"]')).not.toBeNull();
+  });
+
   it('does not fetch on mount, and not on a simulated poll tick (issuesChanged)', async () => {
     await mountApp();
     expect(syncStatusCalls()).toEqual([]);

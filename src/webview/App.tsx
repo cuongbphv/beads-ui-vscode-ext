@@ -263,8 +263,13 @@ export function App(): ReactNode {
 
           <div className="text-fg-muted ml-auto flex items-center gap-2 text-xs">
             {snapshot ? (
-              <span title={snapshot.fetchedAt}>
-                {snapshot.beads.length} issues · updated {relativeTime(snapshot.fetchedAt)}
+              <span title={`Last successful refresh: ${snapshot.fetchedAt}`}>
+                {snapshot.beads.length} issues · last refreshed {relativeTime(snapshot.fetchedAt)}
+              </span>
+            ) : null}
+            {snapshot && error ? (
+              <span className="text-warning" role="status" title="Showing the last successful snapshot because bd could not refresh it">
+                stale data
               </span>
             ) : null}
             {snapshot?.truncated ? (
@@ -301,6 +306,7 @@ export function App(): ReactNode {
             <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <div>
               <p className="font-medium">{error.message}</p>
+              {snapshot ? <p className="mt-1">Showing data from the last successful refresh.</p> : null}
               {error.kind === 'bd-not-found' ? (
                 <p className="text-fg-muted mt-1">
                   Set <code>beadsDashboard.bdPath</code> in settings if bd is installed somewhere unusual.
@@ -409,14 +415,21 @@ export function App(): ReactNode {
                     onSelect={onCreated}
                   />
                 ) : selected ? (
-                  <BeadDetail
-                    bead={selected}
-                    beads={beads}
-                    index={index}
-                    onClose={() => setFocusedId(undefined)}
-                    onSelect={onSelect}
-                    refreshKey={snapshot?.fetchedAt}
-                  />
+                  <div className="flex h-full flex-col">
+                    <p className="text-fg-muted border-border border-b px-3 py-1 text-xs">
+                      Change history shows committed Dolt revisions; recent uncommitted edits may be absent.
+                    </p>
+                    <div className="min-h-0 flex-1">
+                      <BeadDetail
+                        bead={selected}
+                        beads={beads}
+                        index={index}
+                        onClose={() => setFocusedId(undefined)}
+                        onSelect={onSelect}
+                        refreshKey={snapshot?.fetchedAt}
+                      />
+                    </div>
+                  </div>
                 ) : null}
               </div>
             </>

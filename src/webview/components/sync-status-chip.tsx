@@ -33,11 +33,11 @@ export function SyncStatusChip({ status, loading, error }: SyncStatusChipProps):
   // until the user presses Refresh once, rather than showing a placeholder
   // for a call that was never made.
   if (!status) {
-    if (loading) return <span className="text-fg-muted text-xs">checking sync…</span>;
+    if (loading) return <span className="text-fg-muted text-xs">checking Dolt backend…</span>;
     if (error) {
       return (
         <span className="text-warning text-xs" title={error.message}>
-          sync status unavailable
+          Dolt backend status unavailable
         </span>
       );
     }
@@ -46,21 +46,24 @@ export function SyncStatusChip({ status, loading, error }: SyncStatusChipProps):
 
   const hasAhead = typeof status.ahead === 'number';
   const hasBehind = typeof status.behind === 'number';
+  const serverDescription = status.mode === 'embedded'
+    ? 'Embedded mode uses no Dolt server process'
+    : status.server_running ? 'Dolt server running at last check' : 'Dolt server not running at last check';
 
   return (
     <span
       className="text-fg-muted inline-flex items-center gap-1.5 text-xs"
-      title={`Dolt mode: ${status.mode}`}
+      title={`Dolt backend mode: ${status.mode}. ${hasAhead || hasBehind ? 'Remote comparison is reported by bd.' : 'Server health does not indicate remote sync.'}`}
     >
       <GitBranch aria-hidden="true" className="size-3.5" />
-      <span data-testid="sync-mode">{status.mode}</span>
+      <span data-testid="sync-mode">Dolt {status.mode}</span>
       <span
         aria-hidden="true"
-        className={cn('inline-block size-1.5 rounded-full', status.server_running ? 'bg-success' : 'bg-fg-muted')}
+        className={cn('inline-block size-1.5 rounded-full', !error && status.server_running ? 'bg-success' : 'bg-fg-muted')}
       />
-      <span className="sr-only">
-        {status.server_running ? 'Dolt server running' : 'Dolt server not running'}
-      </span>
+      <span className="sr-only">{serverDescription}</span>
+      {error ? <span className="text-warning" role="status" title={error.message}>status stale</span> : null}
+      {loading ? <span className="text-fg-muted">checking…</span> : null}
       {hasAhead || hasBehind ? (
         <span data-testid="sync-ahead-behind">
           {hasAhead ? `↑${status.ahead}` : null}
