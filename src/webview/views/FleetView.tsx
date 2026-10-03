@@ -124,7 +124,7 @@ export function FleetView({
     >
       {error ? (
         <div role="alert" className="border-danger/50 bg-danger/10 text-danger flex items-center gap-2 border-b px-3 py-2 text-sm">
-          <span>Fleet connection failed: {error.message}</span>
+          <span>Fleet data unavailable: {error.message}</span>
           <button type="button" onClick={retry} className="ml-auto inline-flex shrink-0 items-center gap-1 underline">
             <RefreshCw aria-hidden="true" className="size-3.5" /> Retry
           </button>

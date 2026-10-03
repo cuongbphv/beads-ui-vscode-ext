@@ -43,6 +43,10 @@ function fire(fleet: FleetSnapshot): void {
   for (const listener of [...rpc.listeners]) listener({ kind: 'event', name: 'fleetChanged', fleet });
 }
 
+function fireError(message: string | null): void {
+  for (const listener of [...rpc.listeners]) listener({ kind: 'event', name: 'fleetError', message });
+}
+
 function makeSnapshot(overrides: Partial<FleetSnapshot> = {}): FleetSnapshot {
   return {
     orchestrators: [],
@@ -142,6 +146,17 @@ describe('useFleet', () => {
     await act(async () => fire(latest));
     expect(hook().error).toBeUndefined();
     expect(hook().snapshot).toEqual(latest);
+  });
+
+  it('shows a background scan failure with stale data and clears it on recovery', async () => {
+    await mount();
+    const previous = makeSnapshot({ generatedAt: '2026-10-03T01:00:00.000Z' });
+    await act(async () => fire(previous));
+    await act(async () => fireError('git status unavailable'));
+    expect(hook().snapshot).toEqual(previous);
+    expect(hook().error?.message).toBe('git status unavailable');
+    await act(async () => fireError(null));
+    expect(hook().error).toBeUndefined();
   });
 
   it('calls unsubscribeFleet on unmount', async () => {

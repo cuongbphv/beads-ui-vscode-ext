@@ -35,6 +35,9 @@ export function useFleet(): FleetState {
         setSnapshot(event.fleet);
         setError(undefined);
         setLoading(false);
+      } else if (event.name === 'fleetError') {
+        setError(event.message ? { kind: 'unknown', message: event.message } : undefined);
+        setLoading(false);
       }
     });
 

@@ -112,6 +112,7 @@ function makeFakePanel(): FakePanel {
 
 class FakeFleetService {
   snapshot: FleetSnapshot | undefined;
+  lastError: string | undefined;
   filePaths: Record<string, string> = {};
   providers: Record<string, 'claude' | 'codex'> = {};
   baseDir: string | null = null;
@@ -121,6 +122,7 @@ class FakeFleetService {
   }
 
   onDidChange = (): { dispose: () => void } => ({ dispose: () => {} });
+  onDidError = (): { dispose: () => void } => ({ dispose: () => {} });
 
   filePathFor(targetId: string): string | null {
     return this.filePaths[targetId] ?? null;

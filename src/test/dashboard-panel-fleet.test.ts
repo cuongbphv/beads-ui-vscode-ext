@@ -115,7 +115,9 @@ class FakeFleetService {
   observeCalls = 0;
   liveObservers = 0;
   snapshot: FleetSnapshot | undefined;
+  lastError: string | undefined;
   private readonly listeners = new Set<(snapshot: FleetSnapshot) => void>();
+  private readonly errorListeners = new Set<(message: string | undefined) => void>();
 
   observe(): { dispose: () => void } {
     this.observeCalls += 1;
@@ -134,6 +136,16 @@ class FakeFleetService {
     this.listeners.add(listener);
     return { dispose: () => this.listeners.delete(listener) };
   };
+
+  onDidError = (listener: (message: string | undefined) => void): { dispose: () => void } => {
+    this.errorListeners.add(listener);
+    return { dispose: () => this.errorListeners.delete(listener) };
+  };
+
+  fireError(message: string | undefined): void {
+    this.lastError = message;
+    for (const listener of [...this.errorListeners]) listener(message);
+  }
 
   fire(snapshot: FleetSnapshot): void {
     this.snapshot = snapshot;
@@ -280,6 +292,24 @@ describe('DashboardPanel Fleet subscribe/visibility gating', () => {
     expect(fakePanel.webview.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'fleetChanged', fleet: fleet.snapshot }),
     );
+    panel.dispose();
+  });
+
+  it('forwards scan failures and recovery, including the error known before subscribe', () => {
+    const fleet = new FakeFleetService();
+    fleet.fireError('disk read failed');
+    const panel = DashboardPanel.show(context, makeFakeStore(), fleet as unknown as FleetService, {
+      revealBead: vi.fn(),
+    });
+
+    panel.fleetSubscribe();
+    expect(fakePanel.webview.postMessage).toHaveBeenCalledWith({
+      kind: 'event', name: 'fleetError', message: 'disk read failed',
+    });
+    fleet.fireError(undefined);
+    expect(fakePanel.webview.postMessage).toHaveBeenCalledWith({
+      kind: 'event', name: 'fleetError', message: null,
+    });
     panel.dispose();
   });
 

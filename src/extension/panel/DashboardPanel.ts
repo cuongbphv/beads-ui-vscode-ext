@@ -121,6 +121,9 @@ export class DashboardPanel implements vscode.Disposable {
       fleet.onDidChange((snapshot) => {
         if (this.fleetSubscribed) this.post({ kind: 'event', name: 'fleetChanged', fleet: snapshot });
       }),
+      fleet.onDidError((message) => {
+        if (this.fleetSubscribed) this.post({ kind: 'event', name: 'fleetError', message: message ?? null });
+      }),
     );
   }
 
@@ -132,6 +135,7 @@ export class DashboardPanel implements vscode.Disposable {
     // the `ready` handler below does for `getSnapshot` — otherwise a fresh
     // subscriber waits out a full discovery tick for its first frame.
     if (this.fleet.snapshot) this.post({ kind: 'event', name: 'fleetChanged', fleet: this.fleet.snapshot });
+    if (this.fleet.lastError) this.post({ kind: 'event', name: 'fleetError', message: this.fleet.lastError });
   }
 
   /** `RouterHost.fleetUnsubscribe`: stop forwarding `fleetChanged` to this webview session. */

@@ -95,12 +95,14 @@ vi.mock('vscode', () => ({
 
 const worktreeGit = vi.hoisted(() => ({
   listWorktrees: vi.fn(async () => [] as Array<{ path: string; dirName: string; branch: string | null; bare: boolean }>),
+  statusError: undefined as Error | undefined,
 }));
 
 vi.mock('../extension/fleet/worktree-git', () => ({
   listWorktrees: worktreeGit.listWorktrees,
   WorktreeGitProbe: class {
     async statusFor(_path: string, branch: string | null) {
+      if (worktreeGit.statusError) throw worktreeGit.statusError;
       return { branch, changedFiles: 0, insertions: 0, deletions: 0, measuredAt: new Date().toISOString() };
     }
   },
@@ -140,6 +142,7 @@ beforeEach(async () => {
   projectDir = join(root, 'projects', encodeProjectDirName(cwd));
   await mkdir(projectDir, { recursive: true });
   worktreeGit.listWorktrees.mockResolvedValue([]);
+  worktreeGit.statusError = undefined;
 
   vscodeMock.watchers.length = 0;
   vscodeMock.createFileSystemWatcher.mockReset();
@@ -682,6 +685,27 @@ describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
 });
 
 describe('FleetService fleetChanged debounce and dedupe', () => {
+  it('reports a failed background scan and clears the error after recovery without losing the last snapshot', async () => {
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
+    const listener = vi.fn();
+    service.onDidError(listener);
+    await service.tick();
+    const previous = service.snapshot;
+
+    worktreeGit.listWorktrees.mockResolvedValue([{ path: join(root, 'wt-failure'), dirName: 'wt-failure', branch: 'work/failure', bare: false }]);
+    worktreeGit.statusError = new Error('git status unavailable');
+    await service.tick();
+    expect(service.lastError).toBe('git status unavailable');
+    expect(service.snapshot).toBe(previous);
+    expect(listener).toHaveBeenCalledWith('git status unavailable');
+
+    worktreeGit.statusError = undefined;
+    await service.tick();
+    expect(service.lastError).toBeUndefined();
+    expect(listener).toHaveBeenCalledWith(undefined);
+    service.dispose();
+  });
+
   it('emits on the first scan', async () => {
     const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     const listener = vi.fn();

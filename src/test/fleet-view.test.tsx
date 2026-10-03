@@ -58,6 +58,10 @@ function fire(fleet: FleetSnapshot): void {
   for (const listener of [...rpc.listeners]) listener({ kind: 'event', name: 'fleetChanged', fleet });
 }
 
+function fireError(message: string | null): void {
+  for (const listener of [...rpc.listeners]) listener({ kind: 'event', name: 'fleetError', message });
+}
+
 function snapshot(overrides: Partial<FleetSnapshot> = {}): FleetSnapshot {
   return {
     orchestrators: [],
@@ -169,6 +173,15 @@ describe('FleetView', () => {
     await act(async () => fire(snapshot({ generatedAt })));
     expect(el.querySelector('[role="alert"]')).toBeNull();
     expect(el.querySelector('[title="2026-10-03T01:00:00.000Z"]')?.textContent).toContain('Last Fleet snapshot');
+  });
+
+  it('replaces the misleading no-data state when a background discovery scan fails', async () => {
+    const el = await mount();
+    await act(async () => fireError('git status unavailable'));
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('git status unavailable');
+    expect(el.textContent).not.toContain('No fleet data yet');
+    await act(async () => fire(snapshot()));
+    expect(el.querySelector('[role="alert"]')).toBeNull();
   });
 
   it('renders the degraded hint when discovery reports no-claude-dir', async () => {

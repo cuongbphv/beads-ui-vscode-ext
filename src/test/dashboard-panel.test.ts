@@ -92,10 +92,12 @@ function makeFakePanel(): FakePanel {
 /** Never actually observed in this file's tests, but the constructor wires `fleet.onDidChange`. */
 class FakeFleetService {
   snapshot: FleetSnapshot | undefined;
+  lastError: string | undefined;
   observe(): { dispose: () => void } {
     return { dispose: vi.fn() };
   }
   onDidChange = (): { dispose: () => void } => ({ dispose: vi.fn() });
+  onDidError = (): { dispose: () => void } => ({ dispose: vi.fn() });
 }
 
 /**

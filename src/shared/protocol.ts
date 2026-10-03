@@ -475,6 +475,7 @@ export type HostEvent =
   | { kind: 'event'; name: 'settings'; settings: DashboardSettings }
   | { kind: 'event'; name: 'error'; error: RpcError }
   | { kind: 'event'; name: 'fleetChanged'; fleet: FleetSnapshot }
+  | { kind: 'event'; name: 'fleetError'; message: string | null }
   | {
       kind: 'event';
       name: 'transcriptAppend';

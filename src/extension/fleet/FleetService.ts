@@ -119,6 +119,7 @@ export class FleetService implements vscode.Disposable {
   private scanning: Promise<void> | undefined;
   private lastEmittedComparable: string | undefined;
   private current: FleetSnapshot | undefined;
+  private discoveryError: string | undefined;
   /** The on-disk directory name matching `cwd`, cached from the last successful scan (P4's transcript resolution). */
   private projectDirName: string | null = null;
   private readonly codexMetaCache = new Map<string, CodexSessionMeta>();
@@ -128,6 +129,9 @@ export class FleetService implements vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<FleetSnapshot>();
   /** Fires with a fresh snapshot — debounced and skipped on no real change; see `maybeEmit`. */
   readonly onDidChange = this.emitter.event;
+  private readonly errorEmitter = new vscode.EventEmitter<string | undefined>();
+  /** A failed scan keeps the last good snapshot but must be visible to subscribers. */
+  readonly onDidError = this.errorEmitter.event;
 
   constructor(
     private readonly cwd: string,
@@ -145,6 +149,10 @@ export class FleetService implements vscode.Disposable {
   /** The last snapshot computed, if any — for a fresh subscriber to catch up on without waiting for a tick. */
   get snapshot(): FleetSnapshot | undefined {
     return this.current;
+  }
+
+  get lastError(): string | undefined {
+    return this.discoveryError;
   }
 
   /**
@@ -248,9 +256,18 @@ export class FleetService implements vscode.Disposable {
       try {
         const snapshot = await this.scan();
         this.current = snapshot;
+        if (this.discoveryError) {
+          this.discoveryError = undefined;
+          this.errorEmitter.fire(undefined);
+        }
         this.maybeEmit(snapshot);
       } catch (error) {
-        this.log(`fleet discovery failed: ${errorMessage(error)}`);
+        const message = errorMessage(error);
+        this.log(`fleet discovery failed: ${message}`);
+        if (message !== this.discoveryError) {
+          this.discoveryError = message;
+          this.errorEmitter.fire(message);
+        }
       } finally {
         this.scanning = undefined;
       }
@@ -636,6 +653,7 @@ export class FleetService implements vscode.Disposable {
     if (this.timer) clearInterval(this.timer);
     this.stopWatcher();
     this.emitter.dispose();
+    this.errorEmitter.dispose();
   }
 }
 
