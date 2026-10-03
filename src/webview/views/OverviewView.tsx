@@ -7,6 +7,7 @@
 import { AlertTriangle, CheckCircle2, CircleDot, Clock, FlaskConical, Zap } from 'lucide-react';
 import { useMemo, type ReactNode } from 'react';
 
+import { version as extensionVersion } from '../../../package.json';
 import { activeMoleculeCount, StatusIndex } from '../../shared/model';
 import type { Bead, DashboardSnapshot } from '../../shared/types';
 import { BeadCard } from '../components/bead-card';
@@ -65,6 +66,15 @@ export function OverviewView({
 
   return (
     <div className="@container h-full overflow-y-auto px-3 py-3">
+      <div className="text-fg-muted mb-3 flex flex-wrap items-center justify-end gap-2 text-xs">
+        <span>Beads Dashboard</span>
+        <span
+          aria-label="Extension version"
+          className="border-border bg-surface rounded-full border px-2 py-0.5 font-mono"
+        >
+          v{extensionVersion}
+        </span>
+      </div>
       {/* 1 → 2 → 6 columns by *container* width: a webview panel's width has
           nothing to do with the viewport's. */}
       <section
