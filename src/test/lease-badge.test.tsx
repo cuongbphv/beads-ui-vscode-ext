@@ -10,7 +10,7 @@
  */
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { Bead } from '../shared/types';
 import { BeadCard } from '../webview/components/bead-card';
@@ -34,6 +34,8 @@ afterEach(async () => {
   }
   container?.remove();
   container = undefined;
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 async function render(element: ReturnType<typeof createElement>): Promise<HTMLElement> {
@@ -112,6 +114,106 @@ describe('LeaseBadge states', () => {
     expect(el.textContent).toContain('lease expired');
     expect(el.querySelector('svg')).not.toBeNull();
     expect(el.querySelector('[title]')?.getAttribute('title')).toContain('3m ago');
+  });
+});
+
+describe('visible lease clock', () => {
+  it('does not refresh existing badges when another badge subscribes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    const issue = bead({ lease_expires_at: new Date(NOW + 30_000).toISOString() });
+    const first = await render(createElement(LeaseBadge, { bead: issue }));
+    expect(first.querySelector('[title]')?.getAttribute('title')).toBe('Lease live — expires in 30s');
+
+    // Move wall time without firing the shared interval. Adding another card
+    // should not cause a broadcast to the already-mounted first card.
+    vi.setSystemTime(NOW + 5_000);
+    const secondContainer = document.createElement('div');
+    document.body.append(secondContainer);
+    const secondRoot = createRoot(secondContainer);
+    try {
+      await act(async () => secondRoot.render(createElement(LeaseBadge, { bead: issue })));
+      expect(secondContainer.querySelector('[title]')?.getAttribute('title')).toBe('Lease live — expires in 25s');
+      expect(first.querySelector('[title]')?.getAttribute('title')).toBe('Lease live — expires in 30s');
+      expect(vi.getTimerCount()).toBe(1);
+    } finally {
+      await act(async () => secondRoot.unmount());
+      secondContainer.remove();
+    }
+  });
+
+  it('shares one timer across badges and moves live to stale to expired without new bead data', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    const issue = bead({
+      heartbeat_at: new Date(NOW).toISOString(),
+      lease_expires_at: new Date(NOW + 7 * 60_000).toISOString(),
+    });
+    const el = await render(createElement('div', null,
+      createElement(LeaseBadge, { bead: issue }),
+      createElement(LeaseBadge, { bead: issue }),
+    ));
+
+    expect(el.textContent).toBe('leasedleased');
+    expect(vi.getTimerCount()).toBe(1);
+    await act(async () => vi.advanceTimersByTime(5 * 60_000 + 1_000));
+    expect(el.textContent).toBe('stale heartbeatstale heartbeat');
+    expect(el.querySelector('[title]')?.getAttribute('title')).toContain('check worker status');
+    await act(async () => vi.advanceTimersByTime(2 * 60_000));
+    expect(el.textContent).toBe('lease expiredlease expired');
+  });
+
+  it('pauses while hidden, refreshes on visibility, and clears the timer on unmount', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    const el = await render(createElement(LeaseBadge, {
+      bead: bead({ lease_expires_at: new Date(NOW + 30_000).toISOString() }),
+    }));
+    expect(vi.getTimerCount()).toBe(1);
+
+    hidden.mockReturnValue(true);
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => vi.advanceTimersByTime(31_000));
+    expect(el.textContent).toBe('leased');
+
+    hidden.mockReturnValue(false);
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(el.textContent).toBe('lease expired');
+    expect(el.querySelector('[title]')?.getAttribute('title')).toBe('Lease expired 1s ago');
+    expect(vi.getTimerCount()).toBe(1);
+    await act(async () => mounted?.unmount());
+    mounted = undefined;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not start a timer when no parseable lease timestamp exists', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    await render(createElement(LeaseBadge, {
+      bead: bead({ lease_expires_at: 'invalid', lease_granted_node: 'node-a' }),
+    }));
+    expect(container?.textContent).toBe('');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not start a timer when mounted in a hidden webview', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    const el = await render(createElement(LeaseBadge, {
+      bead: bead({ lease_expires_at: new Date(NOW + 1_000).toISOString() }),
+    }));
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => vi.advanceTimersByTime(2_000));
+    expect(el.textContent).toBe('leased');
+    hidden.mockReturnValue(false);
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(el.textContent).toBe('lease expired');
+    expect(vi.getTimerCount()).toBe(1);
   });
 });
 

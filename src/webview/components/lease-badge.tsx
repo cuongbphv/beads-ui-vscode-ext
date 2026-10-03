@@ -12,7 +12,7 @@
  *   not grow a chip that says so.
  */
 import { HeartOff, HeartPulse, TimerOff } from 'lucide-react';
-import type { ComponentType, ReactNode } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 
 import {
   formatDurationMs,
@@ -36,6 +36,55 @@ const BADGE: Record<
   expired: { icon: TimerOff, className: 'text-danger', label: 'lease expired' },
 };
 
+// Cards and Fleet rows share one clock. Pausing while the webview is hidden
+// avoids timers for tabs the user cannot see; visibility restores a fresh tick.
+const listeners = new Set<() => void>();
+let timer: ReturnType<typeof setInterval> | undefined;
+
+function tick(): void {
+  for (const listener of listeners) listener();
+}
+
+function stopClock(): void {
+  if (timer !== undefined) clearInterval(timer);
+  timer = undefined;
+}
+
+function syncClock(): void {
+  if (document.hidden || listeners.size === 0) {
+    stopClock();
+    return;
+  }
+  tick();
+  if (timer === undefined) timer = setInterval(tick, 1_000);
+}
+
+function subscribeClock(listener: () => void): () => void {
+  listeners.add(listener);
+  if (listeners.size === 1) {
+    document.addEventListener('visibilitychange', syncClock);
+    if (!document.hidden) timer = setInterval(tick, 1_000);
+  }
+  // Catch the subscriber up without re-rendering every mounted card.
+  if (!document.hidden) listener();
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      document.removeEventListener('visibilitychange', syncClock);
+      stopClock();
+    }
+  };
+}
+
+function useVisibleClock(enabled: boolean): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeClock(() => setNow(Date.now()));
+  }, [enabled]);
+  return now;
+}
+
 /** The sentence behind the chip: what happened, when, held by whom, where. */
 function describeLease(info: LeaseInfo): string {
   const suffix =
@@ -46,7 +95,7 @@ function describeLease(info: LeaseInfo): string {
       // `expired` only ever arises from a parsed expiry, so the ms are present.
       return `Lease expired ${formatDurationMs(info.expiresInMs ?? 0)} ago${suffix}`;
     case 'stale-heartbeat':
-      return `No heartbeat for ${formatDurationMs(info.heartbeatAgeMs ?? 0)} — the worker may be gone${suffix}`;
+      return `No heartbeat for ${formatDurationMs(info.heartbeatAgeMs ?? 0)} — check worker status${suffix}`;
     case 'live':
       return info.expiresInMs !== undefined
         ? `Lease live — expires in ${formatDurationMs(info.expiresInMs)}${suffix}`
@@ -63,11 +112,14 @@ export function LeaseBadge({
 }: {
   /** Anything carrying the lease fields — a full `Bead` qualifies. */
   bead: LeaseFields;
-  /** Injectable clock for tests; the live UI reads the wall clock per render. */
+  /** Fixed clock for static renders and tests; otherwise use the shared visible clock. */
   nowMs?: number;
   className?: string;
 }): ReactNode {
-  const info = leaseState(bead, nowMs ?? Date.now());
+  const hasTimestamp = [bead.lease_expires_at, bead.heartbeat_at]
+    .some((value) => value !== undefined && Number.isFinite(Date.parse(value)));
+  const liveNow = useVisibleClock(nowMs === undefined && hasTimestamp);
+  const info = leaseState(bead, nowMs ?? liveNow);
   if (info.state === 'none') return null;
 
   const meta = BADGE[info.state];
