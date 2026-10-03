@@ -46,6 +46,14 @@ export function requireTargetId(value: unknown, field: string): string {
   return value;
 }
 
+/** A bounded, positive byte cursor supplied by the preceding transcript page. */
+export function requireTranscriptOffset(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error('Invalid parameter "beforeOffset": expected a positive byte offset.');
+  }
+  return value;
+}
+
 /**
  * `updateText`'s allowlist of settable fields. This is CLI shape, not beads
  * vocabulary — the fixed set of dedicated `bd update` flags — so hardcoding

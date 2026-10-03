@@ -132,10 +132,21 @@ export interface TranscriptBackfill {
   /** True when the backfill window was smaller than the whole transcript file. */
   truncated: boolean;
   totalBytes: number;
+  /** Byte offset of the first complete line in this window; pass to getTranscriptPage. */
+  beforeOffset?: number;
   /**
    * Set when more than half the lines in the backfilled window failed to
    * parse — the transcript format is an unofficial contract, so this is a
    * "the data may be incomplete" signal for the UI rather than a thrown error.
    */
+  degraded?: boolean;
+}
+
+/** One bounded page preceding `beforeOffset`, oldest event first. */
+export interface TranscriptPage {
+  events: TranscriptEvent[];
+  /** Cursor for the next older page. Zero means the beginning was reached. */
+  beforeOffset: number;
+  hasOlder: boolean;
   degraded?: boolean;
 }

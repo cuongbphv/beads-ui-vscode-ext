@@ -25,7 +25,6 @@ const hookState = vi.hoisted(() => ({
 
 vi.mock('../webview/hooks/use-transcript', () => ({
   useTranscript: () => hookState.current,
-  MAX_TRANSCRIPT_EVENTS: 500,
 }));
 
 const { Transcript } = await import('../webview/components/fleet/transcript');
@@ -49,6 +48,9 @@ function baseState(overrides: Partial<TranscriptState> = {}): TranscriptState {
     degraded: false,
     loading: false,
     error: null,
+    loadingOlder: false,
+    olderError: null,
+    loadOlder: async () => {},
     ...overrides,
   };
 }
@@ -220,10 +222,10 @@ describe('Transcript — banners', () => {
   it('shows the truncated banner only when truncated is true', async () => {
     const event = makeEvent({ blocks: [{ type: 'text', text: 'hi', truncated: false }] });
     const withBanner = await render(baseState({ events: [event], truncated: true }));
-    expect(withBanner.textContent?.toLowerCase()).toContain('truncated');
+    expect(withBanner.textContent?.toLowerCase()).toContain('older history is available');
 
     const withoutBanner = await render(baseState({ events: [event], truncated: false }));
-    expect(withoutBanner.textContent?.toLowerCase()).not.toContain('truncated');
+    expect(withoutBanner.textContent?.toLowerCase()).not.toContain('older history is available');
   });
 
   it('shows the degraded banner only when degraded is true', async () => {
@@ -233,6 +235,37 @@ describe('Transcript — banners', () => {
 
     const withoutBanner = await render(baseState({ events: [event], degraded: false }));
     expect(withoutBanner.textContent?.toLowerCase()).not.toMatch(/could not be parsed/);
+  });
+});
+
+describe('Transcript — history controls', () => {
+  it('loads older events and searches only the loaded history', async () => {
+    const loadOlder = vi.fn(async () => {});
+    const el = await render(baseState({
+      events: [
+        makeEvent({ uuid: 'a', blocks: [{ type: 'text', text: 'First mission', truncated: false }] }),
+        makeEvent({ uuid: 'b', blocks: [{ type: 'text', text: 'Second mission', truncated: false }] }),
+      ],
+      truncated: true,
+      loadOlder,
+    }));
+    const loadButton = [...el.querySelectorAll('button')].find((button) => button.textContent?.includes('Load older'));
+    expect(loadButton).toBeDefined();
+    await act(async () => loadButton?.click());
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+
+    const search = el.querySelector('input[type="search"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(search, 'First');
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(el.textContent).toContain('1 matches in loaded events');
+    expect(el.textContent).toContain('First mission');
+    expect(el.textContent).not.toContain('Second mission');
+    const latest = [...el.querySelectorAll('button')].find((button) => button.textContent === 'Latest');
+    await act(async () => latest?.click());
+    expect(search.value).toBe('');
+    expect(el.textContent).toContain('Second mission');
   });
 });
 

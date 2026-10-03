@@ -4,7 +4,7 @@
  * The webview never builds a `bd` argv; it calls one of the typed methods
  * below and the host translates. Framework-free: no `vscode`, no `react`.
  */
-import type { FleetSnapshot, TranscriptBackfill, TranscriptEvent } from './fleet';
+import type { FleetSnapshot, TranscriptBackfill, TranscriptEvent, TranscriptPage } from './fleet';
 import type { HistoryEvent } from './history-diff';
 import type { MolDetail, MolSnapshot } from './mol';
 import type {
@@ -283,6 +283,11 @@ export interface RpcMethods {
   subscribeTranscript: {
     params: { targetId: string };
     result: TranscriptBackfill;
+  };
+  /** Read one bounded page before the initial backfill or a previous page. */
+  getTranscriptPage: {
+    params: { targetId: string; beforeOffset: number };
+    result: TranscriptPage;
   };
   /** Stop receiving `transcriptAppend` events for this target. */
   unsubscribeTranscript: {

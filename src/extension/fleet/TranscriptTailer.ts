@@ -37,7 +37,7 @@
 import { promises as fs } from 'node:fs';
 import { resolve as resolvePath, sep } from 'node:path';
 
-import type { TranscriptBackfill, TranscriptEvent, TranscriptTarget } from '../../shared/fleet';
+import type { TranscriptBackfill, TranscriptEvent, TranscriptPage, TranscriptTarget } from '../../shared/fleet';
 import { decodeUtf8Chunk, trimPartialFirstLine } from './lib/tail-decode';
 import { parseCodexTranscriptLine, parseTranscriptLine } from './lib/transcript';
 
@@ -175,6 +175,7 @@ export class TranscriptTailer {
       offset: window.size,
       truncated: window.truncated,
       totalBytes: window.size,
+      beforeOffset: window.startOffset,
       ...(degraded ? { degraded: true } : {}),
     };
 
@@ -206,6 +207,38 @@ export class TranscriptTailer {
     this.active = tail;
 
     return backfill;
+  }
+
+  /** Read a bounded earlier window without changing the active live tail. */
+  async page(targetId: string, beforeOffset: number): Promise<TranscriptPage> {
+    const resolution = this.resolveTarget(targetId);
+    if (!resolution) throw new Error(`Unknown transcript target: ${targetId}`);
+    if (!isPathContained(resolution.filePath, resolution.baseDir)) {
+      throw new Error(`Refused to read a transcript path outside its expected directory: ${targetId}`);
+    }
+    const [filePath, baseDir] = await Promise.all([
+      fs.realpath(resolution.filePath), fs.realpath(resolution.baseDir),
+    ]);
+    if (!isPathContained(filePath, baseDir)) {
+      throw new Error(`Refused to read a transcript symlink outside its expected directory: ${targetId}`);
+    }
+    const stat = await fs.stat(filePath);
+    if (beforeOffset > stat.size) throw new Error('Transcript changed; reopen it to load earlier history.');
+    const start = Math.max(0, beforeOffset - this.backfillBytes);
+    const raw = await readRange(filePath, start, beforeOffset);
+    const boundary = start === 0 || (await readRange(filePath, start - 1, start))[0] === 10;
+    const firstNewline = boundary ? -1 : raw.indexOf(10);
+    const completeStart = boundary ? 0 : (firstNewline < 0 ? raw.length : firstNewline + 1);
+    const text = new TextDecoder().decode(raw.subarray(completeStart));
+    const { complete } = splitLines(text);
+    const { events, total, failed } = parseLines(complete, resolution.provider ?? 'claude');
+    const cursor = start + completeStart;
+    return {
+      events,
+      beforeOffset: cursor === beforeOffset && start < beforeOffset ? start : cursor,
+      hasOlder: start > 0,
+      ...(total > 0 && failed / total > SCHEMA_DRIFT_THRESHOLD ? { degraded: true } : {}),
+    };
   }
 
   /**
@@ -348,6 +381,7 @@ interface BackfillWindow {
   size: number;
   /** True when the window was smaller than the whole file. */
   truncated: boolean;
+  startOffset: number;
 }
 
 /** Read the last `backfillBytes` of `filePath` and split it into whole lines. */
@@ -360,9 +394,12 @@ async function readBackfillWindow(filePath: string, backfillBytes: number): Prom
   // Only a window that starts mid-file risks an unreadable partial first
   // line; a window covering the whole (small) file starts at a real line
   // boundary and must not have its first line thrown away.
-  const trimmed = windowStart > 0 ? trimPartialFirstLine(text) : text;
+  const boundary = windowStart === 0 || (await readRange(filePath, windowStart - 1, windowStart))[0] === 10;
+  const trimmed = boundary ? text : trimPartialFirstLine(text);
   const { complete, pending } = splitLines(trimmed);
-  return { complete, pending, carry, size, truncated: windowStart > 0 };
+  const firstNewline = boundary ? -1 : raw.indexOf(10);
+  const startOffset = boundary ? windowStart : windowStart + (firstNewline < 0 ? raw.length : firstNewline + 1);
+  return { complete, pending, carry, size, truncated: windowStart > 0, startOffset };
 }
 
 /** Read the byte range `[start, end)` of `filePath`. */

@@ -24,11 +24,13 @@ const rpc = vi.hoisted(() => ({
   calls: [] as Array<{ method: string; params: unknown }>,
   listeners: new Set<(event: HostEvent) => void>(),
   subscribeImpl: undefined as ((targetId: string) => Promise<unknown>) | undefined,
+  pageImpl: undefined as ((beforeOffset: number) => Promise<unknown>) | undefined,
 }));
 
 vi.mock('../webview/bridge/rpc', () => ({
-  call: (method: string, params: { targetId: string }) => {
+  call: (method: string, params: { targetId: string; beforeOffset?: number }) => {
     rpc.calls.push({ method, params });
+    if (method === 'getTranscriptPage' && rpc.pageImpl) return rpc.pageImpl(params.beforeOffset ?? 0);
     if (method === 'subscribeTranscript' && rpc.subscribeImpl) return rpc.subscribeImpl(params.targetId);
     if (method === 'subscribeTranscript') {
       return Promise.resolve({ target: params.targetId, events: [], offset: 0, truncated: false, totalBytes: 0 });
@@ -45,7 +47,7 @@ vi.mock('../webview/bridge/rpc', () => ({
   }),
 }));
 
-const { useTranscript, MAX_TRANSCRIPT_EVENTS } = await import('../webview/hooks/use-transcript');
+const { useTranscript } = await import('../webview/hooks/use-transcript');
 
 function fireAppend(targetId: string, events: TranscriptEvent[], degraded = false): void {
   for (const listener of [...rpc.listeners]) {
@@ -101,6 +103,7 @@ afterEach(async () => {
   rpc.calls.length = 0;
   rpc.listeners.clear();
   rpc.subscribeImpl = undefined;
+  rpc.pageImpl = undefined;
 });
 
 async function mount(targetId: string): Promise<void> {
@@ -181,17 +184,47 @@ describe('useTranscript', () => {
     expect(hook().degraded).toBe(true);
   });
 
-  it('keeps only the most recent 500 events and flags truncated once the window overflows', async () => {
+  it('retains more than 500 live events without losing the start of the loaded window', async () => {
     await mount('agent:worker-1');
 
-    const burst = Array.from({ length: MAX_TRANSCRIPT_EVENTS + 50 }, (_, i) =>
+    const burst = Array.from({ length: 550 }, (_, i) =>
       makeEvent({ uuid: `e-${i}` }),
     );
     await act(async () => fireAppend('agent:worker-1', burst));
 
-    expect(hook().events).toHaveLength(MAX_TRANSCRIPT_EVENTS);
-    expect(hook().events[0].uuid).toBe('e-50'); // the oldest 50 were dropped
-    expect(hook().truncated).toBe(true);
+    expect(hook().events).toHaveLength(550);
+    expect(hook().events[0].uuid).toBe('e-0');
+    expect(hook().truncated).toBe(false);
+  });
+
+  it('prepends an older page while preserving a concurrent live append', async () => {
+    rpc.subscribeImpl = async (targetId) => ({
+      target: targetId, events: [makeEvent({ uuid: 'middle' })],
+      offset: 200, beforeOffset: 100, truncated: true, totalBytes: 200,
+    });
+    rpc.pageImpl = async () => {
+      fireAppend('agent:worker-1', [makeEvent({ uuid: 'latest' })]);
+      return { events: [makeEvent({ uuid: 'oldest' })], beforeOffset: 0, hasOlder: false };
+    };
+    await mount('agent:worker-1');
+    await act(async () => hook().loadOlder());
+    expect(hook().events.map((event) => event.uuid)).toEqual(['oldest', 'middle', 'latest']);
+    expect(hook().truncated).toBe(false);
+    expect(rpc.calls.at(-1)).toEqual({
+      method: 'getTranscriptPage', params: { targetId: 'agent:worker-1', beforeOffset: 100 },
+    });
+  });
+
+  it('keeps an append arriving before the initial backfill response settles', async () => {
+    let settle: ((value: unknown) => void) | undefined;
+    rpc.subscribeImpl = () => new Promise((resolve) => { settle = resolve; });
+    await mount('agent:worker-1');
+    await act(async () => fireAppend('agent:worker-1', [makeEvent({ uuid: 'new' })]));
+    await act(async () => settle?.({
+      target: 'agent:worker-1', events: [makeEvent({ uuid: 'old' })],
+      offset: 100, beforeOffset: 0, truncated: false, totalBytes: 100,
+    }));
+    expect(hook().events.map((event) => event.uuid)).toEqual(['old', 'new']);
   });
 
   it('calls unsubscribeTranscript with the same targetId on unmount', async () => {

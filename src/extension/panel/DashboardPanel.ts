@@ -5,7 +5,7 @@
 import * as vscode from 'vscode';
 import { randomBytes } from 'node:crypto';
 
-import type { TranscriptBackfill } from '../../shared/fleet';
+import type { TranscriptBackfill, TranscriptPage } from '../../shared/fleet';
 import { isRpcRequest, type DashboardTab, type HostEvent } from '../../shared/protocol';
 import type { FleetService } from '../fleet/FleetService';
 import { TranscriptTailer, type TranscriptResolution } from '../fleet/TranscriptTailer';
@@ -161,6 +161,10 @@ export class DashboardPanel implements vscode.Disposable {
         ...(payload.degraded ? { degraded: true } : {}),
       });
     });
+  }
+
+  transcriptPage(targetId: string, beforeOffset: number): Promise<TranscriptPage> {
+    return this.transcriptTailer.page(targetId, beforeOffset);
   }
 
   /** `RouterHost.transcriptUnsubscribe`: stop tailing, if `targetId` is still the active one. */

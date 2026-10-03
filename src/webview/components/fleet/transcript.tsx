@@ -24,11 +24,11 @@
  * `useTranscript` via the RPC bridge. No `child_process`, filesystem, or
  * network access from this file.
  */
-import { AlertTriangle, Bot, Brain, ScrollText, Terminal, Wrench } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { AlertTriangle, Bot, Brain, Search, ScrollText, Terminal, Wrench } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import type { TranscriptBlock, TranscriptEvent } from '../../../shared/fleet';
-import { MAX_TRANSCRIPT_EVENTS, useTranscript } from '../../hooks/use-transcript';
+import { useTranscript } from '../../hooks/use-transcript';
 import { isNearBottom, nextScrollTop } from '../../lib/transcript-scroll';
 import { cn } from '../../lib/utils';
 import { Markdown } from '../markdown';
@@ -38,27 +38,63 @@ import { EmptyState, Skeleton } from '../primitives';
 const FOLLOW_THRESHOLD_PX = 40;
 
 export function Transcript({ targetId }: { targetId: string }): ReactNode {
-  const { events, truncated, degraded, loading, error } = useTranscript(targetId);
+  const { events, truncated, degraded, loading, error, loadingOlder, olderError, loadOlder } = useTranscript(targetId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const previousScrollHeight = useRef(0);
+  const prependAnchor = useRef<{ top: number; height: number } | null>(null);
   const [following, setFollowing] = useState(true);
+  const [query, setQuery] = useState('');
+  const visibleEvents = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return needle ? events.filter((event) => eventSearchText(event).includes(needle)) : events;
+  }, [events, query]);
+
+  useEffect(() => {
+    setQuery('');
+    setFollowing(true);
+    prependAnchor.current = null;
+    previousScrollHeight.current = 0;
+  }, [targetId]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const nextHeight = el.scrollHeight;
-    el.scrollTop = nextScrollTop({
-      following,
-      scrollTop: el.scrollTop,
-      previousScrollHeight: previousScrollHeight.current,
-      nextScrollHeight: nextHeight,
-      clientHeight: el.clientHeight,
-    });
+    if (prependAnchor.current) {
+      el.scrollTop = prependAnchor.current.top + nextHeight - prependAnchor.current.height;
+      prependAnchor.current = null;
+    } else {
+      el.scrollTop = nextScrollTop({
+        following: following && !query,
+        scrollTop: el.scrollTop,
+        previousScrollHeight: previousScrollHeight.current,
+        nextScrollHeight: nextHeight,
+        clientHeight: el.clientHeight,
+      });
+    }
     previousScrollHeight.current = nextHeight;
     // Deliberately only depends on `events`: this effect exists to react to
     // new content arriving, using whatever `following` is *at that moment*.
     // A manual toggle with no new content is handled by the button itself.
-  }, [events]);
+  }, [visibleEvents]);
+
+  useEffect(() => {
+    if (olderError) prependAnchor.current = null;
+  }, [olderError]);
+
+  async function showOlder(): Promise<void> {
+    const el = scrollRef.current;
+    if (el) prependAnchor.current = { top: el.scrollTop, height: el.scrollHeight };
+    setFollowing(false);
+    await loadOlder();
+  }
+
+  function jumpLatest(): void {
+    setQuery('');
+    setFollowing(true);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+  }
 
   function handleScroll(): void {
     const el = scrollRef.current;
@@ -95,7 +131,7 @@ export function Transcript({ targetId }: { targetId: string }): ReactNode {
     );
   }
 
-  if (events.length === 0) {
+  if (events.length === 0 && !truncated) {
     return (
       <EmptyState
         icon={<Bot className="size-10" />}
@@ -107,9 +143,23 @@ export function Transcript({ targetId }: { targetId: string }): ReactNode {
 
   return (
     <div className="@container flex h-full min-h-0 flex-col">
+      <div className="border-border flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
+        <label className="text-fg-muted flex min-w-40 flex-1 items-center gap-1.5 text-xs">
+          <Search aria-hidden="true" className="size-3.5" />
+          <input
+            type="search"
+            aria-label="Search loaded transcript"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search loaded events"
+            className="bg-surface min-w-0 flex-1 rounded border px-2 py-1"
+          />
+        </label>
+        {query ? <span className="text-fg-muted text-xs">{visibleEvents.length} matches in loaded events</span> : null}
+      </div>
       {truncated || degraded ? (
         <div className="border-border bg-surface-hover text-fg-muted flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1.5 text-xs">
-          {truncated ? <span>Truncated — showing the last {MAX_TRANSCRIPT_EVENTS} events.</span> : null}
+          {truncated ? <span>Older history is available.</span> : null}
           {degraded ? (
             <span className="text-warning inline-flex items-center gap-1">
               <AlertTriangle aria-hidden="true" className="size-3" />
@@ -119,15 +169,28 @@ export function Transcript({ targetId }: { targetId: string }): ReactNode {
         </div>
       ) : null}
 
+      {truncated ? (
+        <div className="border-border flex items-center gap-2 border-b px-3 py-1.5">
+          <button type="button" disabled={loadingOlder} onClick={() => void showOlder()} className="surface-interactive rounded-md px-2 py-1 text-xs">
+            {loadingOlder ? 'Loading older events…' : 'Load older events'}
+          </button>
+          {olderError ? <span role="alert" className="text-danger text-xs">{olderError}</span> : null}
+        </div>
+      ) : null}
+
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-2">
         <ul className="flex flex-col gap-3">
-          {events.map((event, index) => (
+          {visibleEvents.map((event, index) => (
             <TranscriptEventRow key={event.uuid ?? index} event={event} />
           ))}
         </ul>
+        {query && visibleEvents.length === 0 ? <p className="text-fg-muted text-xs">No matches in loaded events.</p> : null}
       </div>
 
-      <div className="border-border flex items-center justify-end border-t px-3 py-1.5">
+      <div className="border-border flex items-center justify-end gap-2 border-t px-3 py-1.5">
+        <button type="button" onClick={jumpLatest} className="surface-interactive rounded-md px-2 py-1 text-xs">
+          Latest
+        </button>
         <button
           type="button"
           aria-pressed={following}
@@ -144,6 +207,17 @@ export function Transcript({ targetId }: { targetId: string }): ReactNode {
       </div>
     </div>
   );
+}
+
+function eventSearchText(event: TranscriptEvent): string {
+  return event.blocks.map((block) => {
+    switch (block.type) {
+      case 'text': return block.text;
+      case 'thinking': return block.thinking;
+      case 'tool_use': return `${block.name} ${block.input}`;
+      case 'tool_result': return block.content;
+    }
+  }).join(' ').toLocaleLowerCase();
 }
 
 /**

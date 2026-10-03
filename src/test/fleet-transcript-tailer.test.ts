@@ -240,6 +240,66 @@ describe('TranscriptTailer.subscribe — backfill', () => {
   });
 });
 
+describe('TranscriptTailer.page — bounded older history', () => {
+  it.each(['claude', 'codex'] as const)('loads all 600 %s events in order across byte pages', async (provider) => {
+    const filePath = join(baseDir, `long-${provider}.jsonl`);
+    const line = (index: number) => provider === 'claude'
+      ? jsonLine('user', `event-${index} café 🔎`)
+      : JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `event-${index} café 🔎` }] },
+      }) + '\n';
+    await writeFile(filePath, Array.from({ length: 600 }, (_, index) => line(index)).join(''), 'utf8');
+    const tailer = new TranscriptTailer(
+      resolver({ 'session:long': { filePath, baseDir, provider } }),
+      undefined,
+      { backfillBytes: 1024 },
+    );
+    const initial = await tailer.subscribe('session:long', vi.fn());
+    let all = initial.events;
+    let cursor = initial.beforeOffset ?? 0;
+    let pages = 0;
+    while (cursor > 0) {
+      const page = await tailer.page('session:long', cursor);
+      expect(page.beforeOffset).toBeLessThan(cursor);
+      all = page.events.concat(all);
+      cursor = page.beforeOffset;
+      pages += 1;
+    }
+    expect(pages).toBeGreaterThan(1);
+    expect(all.map((event) => event.blocks[0]?.type === 'text' ? event.blocks[0].text : '')).toEqual(
+      Array.from({ length: 600 }, (_, index) => `event-${index} café 🔎`),
+    );
+    tailer.dispose();
+  });
+
+  it('keeps a complete line when a page begins exactly at its byte boundary', async () => {
+    const filePath = join(baseDir, 'boundary.jsonl');
+    const line = jsonLine('user', 'same length');
+    await writeFile(filePath, line.repeat(12), 'utf8');
+    const tailer = new TranscriptTailer(
+      resolver({ 'session:boundary': { filePath, baseDir } }),
+      undefined,
+      { backfillBytes: Buffer.byteLength(line) * 4 },
+    );
+    const initial = await tailer.subscribe('session:boundary', vi.fn());
+    expect(initial.events).toHaveLength(4);
+    const firstPage = await tailer.page('session:boundary', initial.beforeOffset ?? 0);
+    expect(firstPage.events).toHaveLength(4);
+    tailer.dispose();
+  });
+
+  it('rejects a symlink escaping its base directory on every older-page request', async () => {
+    const outside = join(root, 'outside.jsonl');
+    const link = join(baseDir, 'linked.jsonl');
+    await writeFile(outside, jsonLine('user', 'secret'));
+    await symlink(outside, link);
+    const tailer = new TranscriptTailer(resolver({ 'session:linked': { filePath: link, baseDir } }));
+    await expect(tailer.page('session:linked', 10)).rejects.toThrow(/symlink|outside|contain/i);
+    tailer.dispose();
+  });
+});
+
 describe('TranscriptTailer streaming', () => {
   it('backfills and streams Codex text and tool activity while skipping metadata', async () => {
     const filePath = join(baseDir, 'rollout-codex.jsonl');

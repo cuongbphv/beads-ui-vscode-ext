@@ -162,6 +162,7 @@ function makeHost(overrides: Partial<RouterHost> = {}): RouterHost {
       truncated: false,
       totalBytes: 0,
     })) as RouterHost['transcriptSubscribe'],
+    transcriptPage: vi.fn(async () => ({ events: [], beforeOffset: 0, hasOlder: false })),
     transcriptUnsubscribe: vi.fn(),
     ...overrides,
   };
@@ -1063,6 +1064,23 @@ describe('router Fleet wiring', () => {
 });
 
 describe('router transcript wiring', () => {
+  it('validates the older-page cursor and forwards only a safe target and offset', async () => {
+    const localHost = makeHost();
+    const response = await handleRequest(
+      makeStore(new FakeMutations()),
+      localHost,
+      request('getTranscriptPage', { targetId: 'agent:worker-1', beforeOffset: 123 }),
+    );
+    expect(response.ok).toBe(true);
+    expect(localHost.transcriptPage).toHaveBeenCalledWith('agent:worker-1', 123);
+    const badOffset = await handleRequest(
+      makeStore(new FakeMutations()),
+      localHost,
+      request('getTranscriptPage', { targetId: 'agent:worker-1', beforeOffset: -1 }),
+    );
+    expect(badOffset.ok).toBe(false);
+    expect(localHost.transcriptPage).toHaveBeenCalledTimes(1);
+  });
   it('subscribeTranscript calls host.transcriptSubscribe with the targetId and returns its backfill', async () => {
     const backfill: TranscriptBackfill = {
       target: 'agent:worker-1',
