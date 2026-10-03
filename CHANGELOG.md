@@ -4,6 +4,21 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — unreleased
+
+### Added
+
+- **Ready → Claim → Needs You:** Browse more of Beads' native ready set in Overview, filter the Board to ready work, claim atomically, and see assigned work, blockers and human gates in the sidebar.
+- Resolve workspace databases through `bd context`, including worktree redirects and `BEADS_DIR`. Snapshot metadata explains the loaded issue window and the wider project total.
+- Fleet now recognizes Codex sessions and opens their transcripts alongside Claude Code workers.
+- A dedicated CI job verifies pinned Beads 1.3.1 and Dolt archives before running the isolated journal qualification suite.
+
+### Changed
+
+- Lease badges update while visible without Beads polling. The dashboard identifies the last successful refresh and marks retained data stale when a backend read fails.
+- Dolt status distinguishes backend health from remote synchronization; Change history states that it includes committed revisions only.
+- Concurrent status and assignee edits use Beads preconditions, so a conflict refreshes the issue instead of silently overwriting another actor's change.
+
 ## [0.1.7] — 2026-10-03
 
 ### Fixed

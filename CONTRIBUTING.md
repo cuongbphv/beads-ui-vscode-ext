@@ -38,8 +38,9 @@ editor, reload the window.
 
 ### You need a workspace with beads in it
 
-The extension activates only when the folder it opens contains a `.beads` directory, and **this
-repo's own `.beads/` is gitignored** — cloning gets you no database. Two ways out:
+The extension asks `bd context` which database a workspace uses. That can be a local `.beads`
+directory, a worktree redirect, or `BEADS_DIR`. **This repo's own `.beads/` is gitignored** —
+cloning gets you no database. To try the extension in isolation:
 
 ```bash
 npm run demo:seed    # builds the throwaway "Harbor" demo workspace in your temp dir, 5 epics / 46 issues
@@ -54,9 +55,11 @@ your own and create a few issues. Don't add a `.beads/` to this repo in a PR.
 npm run verify    # lint + typecheck + test + build + npm audit
 ```
 
-`verify` has to pass locally, because **CI excludes the live CLI suite**. Part of the suite
+`verify` has to pass locally. The ordinary PR test job excludes the shared-project live CLI suite.
+Part of the suite
 ([`src/test/bd-live.test.ts`](src/test/bd-live.test.ts)) drives the real `bd` binary and cross-checks
-every read against raw `bd --json` output, so PR CI uses `npm run test:ci`; the release workflow only builds and publishes. If you change anything under `src/extension/bd/`, say in the PR that `bd-live` passed
+every read against raw `bd --json` output, so PR CI uses `npm run test:ci`; another CI job runs the
+isolated pinned Beads 1.3.1 journal suite. The release workflow builds and publishes. If you change anything under `src/extension/bd/`, say in the PR that `bd-live` passed
 and which `bd` version you ran.
 
 For changes to journal handling, also run the opt-in suite against a Beads 1.3.1
@@ -71,6 +74,7 @@ active journals, JSON Lines, retention recovery, custom active statuses, runtime
 vocabulary and dashboard reads. It also tests owned server/proxy workspaces
 (requires `dolt` on PATH) and stops those temporary servers. It does not migrate this repository's database.
 Without `BEADS_COMPAT_BD`, these tests are explicitly skipped.
+Run `npm run test:e2e:workbench` for the isolated editor flow through Ready, Claim and a human gate.
 
 Other useful runs:
 

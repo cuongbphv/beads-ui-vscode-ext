@@ -28,8 +28,8 @@
 
 Beads Dashboard reads your local beads database through the `bd` CLI and renders it six ways:
 
-- **Overview** — totals, a status breakdown, epic progress, the two lists that matter on
-  arrival (what is ready to start, and what is blocked), and an on-demand **Project health**
+- **Overview** — totals, a status breakdown, epic progress, and the two lists that matter on
+  arrival (what is ready to start, with inline Claim and Show more, and what is blocked), plus an on-demand **Project health**
   drawer: press "Run checks" for stale/orphaned/lint/dependency-cycle tiles, each degrading on
   its own instead of blanking the other three, with a drill-down into each check's findings.
 - **Roadmap** — Epic → Task drill-down with progress bars and per-epic counts. A shape toggle
@@ -37,15 +37,15 @@ Beads Dashboard reads your local beads database through the `bd` CLI and renders
   DAG, auto-laid-out, draggable node by node, and — in **Link mode** — click two nodes to add a
   dependency edge between them (a rejected cycle surfaces as a toast, never a crash).
 - **Board** — a kanban board whose columns are derived from your project's status *categories* at
-  runtime. Drag a card to change its status, toggle swimlanes to group the columns by taxonomy
+  runtime. Filter to Beads' native Ready set or claim the selected ready issue, drag a card to change its status, toggle swimlanes to group the columns by taxonomy
   label (`auto-ok` / `auto-partial` / `needs-human`), or use a column's "+ Add issue" row to
   create one directly in that status.
 - **Molecules** — a viewer onto `bd mol`: the running molecules as cards, a detail view with its
   step list, parallel groups and gate badges, a wisp strip with a heuristic TTL countdown, and
   gate cards with an inline Resolve action for gates a human can clear. View-only by design — no
   pour/wisp/burn/squash/bond from the UI.
-- **Fleet** — which Claude Code sessions are running as orchestrators/workers against this
-  workspace, the git worktrees they left behind, and (click a worker) its live transcript. See
+- **Fleet** — Claude Code and Codex sessions against this workspace, their worktrees and branches,
+  and (click a worker) its live transcript. See
   [Fleet monitor](#fleet-monitor) below.
 
 Every issue can be created, edited and linked without leaving the editor: a **Create Issue…**
@@ -62,7 +62,8 @@ same result. A board card and a Fleet worker row both carry a lease/claim livene
 stale heartbeat / expired) whenever `bd` reports lease data for a claim, and render nothing on the
 common case where it does not. A detail pane also shows a **blocker inspector** (the full
 transitive "Blocked by" chain, not just direct blockers) and a **Change history** timeline built by
-diffing consecutive `bd history` commits. Once a workspace grows past `beadsDashboard.issueLimit`,
+diffing consecutive committed `bd history` revisions; recent uncommitted edits may be absent. The
+header shows the last successful refresh and marks retained data stale if the backend fails. Once a workspace grows past `beadsDashboard.issueLimit`,
 the board's search box falls back to a server-side `bd search` so issues outside the loaded window
 are still findable.
 
@@ -154,10 +155,11 @@ your own assigned issues, since it blocks real work until someone clears it:
 ## Requirements
 
 - The [`bd` CLI](https://github.com/steveyegge/beads) on your `PATH` (or set `beadsDashboard.bdPath`).
-- A workspace folder containing a `.beads` directory. The extension activates only when it finds one.
+- A workspace whose database `bd context` can resolve. A local `.beads`, a worktree redirect,
+  or `BEADS_DIR` can provide it; the header shows the resolved database location.
 
 Something not behaving? [docs/TROUBLESHOOTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/docs/TROUBLESHOOTING.md) covers the four degraded states the
-extension handles on purpose — no workspace folder, no `.beads` directory, no `bd` on your `PATH`,
+extension handles on purpose — no workspace folder, unresolved Beads database, no `bd` on your `PATH`,
 and a `bd` that runs but refuses — what each one shows, why it happens, and how to clear it.
 
 ## Install
@@ -225,11 +227,10 @@ See [Beads 1.3.1 compatibility](docs/BEADS-1.3.1.md) for verification and limits
 
 ## Fleet monitor
 
-The **Fleet** tab answers "what is my agent fleet doing to this workspace right now?" — which
-Claude Code sessions are running as orchestrators, which workers they spawned, which git worktrees
-those workers left on disk, and whether a worktree is stale (no worker still claims it, so it is
-either leftover or waiting for review). Click a worker or an orchestrator row to follow its
-transcript live, streamed from the same JSONL file Claude Code itself writes. Text and thinking
+The **Fleet** tab answers "what is my agent fleet doing to this workspace right now?" for
+Claude Code and Codex sessions. It pairs discovered sessions and workers with git worktrees
+and groups worktrees whose worker link is unknown as **Unassociated worktrees**. Click a worker or orchestrator to follow
+its transcript live from the agent's own JSONL store. Text and thinking
 render through a small hand-rolled markdown renderer — headings, lists, code fences, tables,
 bold/italic, no third-party dependency — parsed to a plain-data AST and drawn as React elements
 directly, never `dangerouslySetInnerHTML`; a transcript is an agent/tool-controlled channel, so
@@ -239,17 +240,15 @@ that renderer is the security boundary, not an afterthought.
 
 Where the data comes from:
 
-- **Sessions and workers** — read from `~/.claude/projects/<mangled-cwd>`, Claude Code's own
-  transcript store, matched to this workspace the same way Claude Code itself does. A session
-  counts as an orchestrator only once it has spawned at least one worker (a `subagents/agent-*.jsonl`
-  file); an ordinary chat session is not part of the fleet.
+- **Sessions and workers** — Claude Code comes from `~/.claude/projects/<mangled-cwd>`;
+  Codex comes from `~/.codex/sessions` (or `CODEX_HOME/sessions`). Both are matched to this
+  workspace and their transcript paths stay inside their expected stores.
 - **Worktrees and their git status** — `git worktree list --porcelain`, then `git status` /
-  `git diff --numstat` per worktree, matched to a bead id from the worker's own spawn brief. A
-  worktree with no worker still claiming it renders under "Stale worktrees" — the answer to
-  [#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11)'s original question of what a
-  stale worktree even means.
-- **Discovery cadence** — a 5-second poll is the always-on baseline; a `FileSystemWatcher` on
-  `~/.claude/projects` is layered on top as a fast path when the OS reports a change sooner. The
+  `git diff --numstat` per worktree, matched to a bead id from a worker's spawn brief when known.
+  An unmatched worktree appears under **Unassociated worktrees — worker link unknown**; that label
+  does not assert whether an agent is still working. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
+- **Discovery cadence** — a 5-second poll is the visible Fleet baseline. A filesystem watcher on
+  Claude Code's `~/.claude/projects` store is a fast path when the OS reports a change sooner. The
   poll never goes away: a watcher is inherently best-effort (a fresh watcher can miss an event in
   the moment right after it starts watching — measured, not assumed, against a real Extension
   Development Host), so the worst case is exactly as fast as polling alone, never slower or silently
@@ -268,8 +267,7 @@ Claude Code's own transcript store) than either of those — see the doc comment
 
 ## Roadmap
 
-No dates, and nothing below is a promise. What the list is for: every planned item is an open
-issue, so "where would I even start?" has an answer.
+This distinguishes shipped behavior from checks still needed for the next release.
 
 **Shipped** — done, and in the extension today:
 
@@ -282,13 +280,13 @@ issue, so "where would I even start?" has an answer.
 - **Molecule progress** — a **Molecules** tab: `bd mol` molecules as cards, a step-list detail
   view, a wisp strip with a TTL countdown, and gate cards you can resolve inline — see
   [What it does](#what-it-does) above. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
+- **Pull-request CI** — lint, typecheck, build and unit tests run on PRs; a separate job verifies
+  pinned Beads 1.3.1 and Dolt binaries before running the isolated live compatibility suite.
+  ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 
-**Planned** — designed against the architecture that already exists:
-
-- **A workflow that runs on pull requests** — nothing does today, because part of the suite drives
-  a real `bd` binary. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
-- **Windows, confirmed by someone on Windows** — the `.cmd` shim fallback and the Git-Bash paths are
-  written but never verified on a real box. ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
+**Still to verify** — the `.cmd` shim fallback and Git-Bash paths have test coverage, but a fresh
+Windows smoke run is needed before claiming the full v0.2.0 workflow works on Windows.
+([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
 
 **Exploring** — a direction, not a commitment. Nothing is designed and no issue is open yet.
 
@@ -332,8 +330,9 @@ seeded through `bd import` into a throwaway workspace in your temp directory —
 tracker is nearly all closed, and screenshots taken against it make a live tool look finished. The
 unit suite asserts the fixture stays mid-flight rather than drifting back into a graveyard.
 
-These, `capture` and `preview` all drive live `bd --json` output, so they need the `bd` CLI
-locally. That is why they do not run in CI. `gif` also needs `ffmpeg` on your `PATH`.
+These, `capture` and `preview` drive live `bd --json` output, so they need the `bd` CLI
+locally. CI runs the isolated Beads 1.3.1 compatibility suite; the editor E2E and screenshot
+tools remain local. `gif` also needs `ffmpeg` on your `PATH`.
 
 ### Releasing
 
@@ -343,9 +342,10 @@ and to Open VSX. The tag must match `version` in `package.json` or the workflow 
 building.
 
 ```bash
-npm run verify       # the workflow cannot run the bd-backed tests; do it here
-git tag v0.1.0
-git push origin v0.1.0
+npm run verify
+npm run test:e2e:workbench
+npm run package
+# Tag v<package.json version> only after the checks and release review pass.
 ```
 
 Publishing needs two repository secrets. Each publish step is skipped with a warning when its token

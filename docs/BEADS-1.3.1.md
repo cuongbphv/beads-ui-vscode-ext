@@ -87,13 +87,14 @@ baselining, mid-session disable, retention pruning/recovery, custom active
 statuses, string custom types and dashboard reads. It also creates owned direct
 server and proxied-server workspaces, checks their journal/status contracts, and
 stops those temporary servers before cleanup. Those two cases require `dolt` on
-PATH. Without `BEADS_COMPAT_BD`, the suite is explicitly skipped, including in CI.
+PATH. Without `BEADS_COMPAT_BD`, a local run skips the suite. A dedicated Linux CI job
+downloads the official 1.3.1 binary and Dolt, verifies both SHA-256 digests, then opts in.
 Real CLI cases use a 30-second timeout, matching the existing `bd-live` suite,
 since each test can spawn several Dolt processes under concurrent suite load.
 Unit cases separately cover malformed output, fallback and page-budget bounds,
 proxy backend health, CLI replacement, and the 12-tick backstop.
 
-This is macOS qualification, not a claim that Windows or an externally managed
+Local qualification was on macOS; the CI job runs on Linux. Neither is a claim that Windows or an externally managed
 shared proxy has been tested. Remote sync and raw SQL are deliberately outside
 the journal; the periodic full snapshot remains necessary.
 
