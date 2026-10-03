@@ -1,6 +1,7 @@
 # Everything the extension does not need at runtime. The two bundles in dist/
 # are self-contained, so no source and no node_modules are shipped.
 .beads/**
+.beads*.lock
 .agents/**
 .claude/**
 .codex/**
