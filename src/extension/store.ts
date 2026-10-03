@@ -154,6 +154,7 @@ export class BeadsStore implements vscode.Disposable {
         // is retargeted in place rather than rebuilt.
         if (event.affectsConfiguration('beadsDashboard.bdPath')) {
           this.bd.setBdPath(config().get<string>('bdPath'));
+          this.changeProbe.restart();
           void this.refresh();
         }
       }),

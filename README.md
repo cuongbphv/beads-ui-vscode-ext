@@ -202,11 +202,15 @@ Activity Bar.
 | `beadsDashboard.assignee` | `""` | Who you are, for **Needs You**. Empty means the identity `bd` itself would use. |
 | `beadsDashboard.notifications` | `off` | Toast when a gate opens or (one step further) when your own issue becomes blocked: `off`, `gates` or `gates-and-blocked`. Opt-in — it only evaluates snapshots the dashboard already fetched, never spawns `bd` on its own. |
 
-Changes made outside the editor — by an agent, a teammate, or your own terminal — show up on
-their own within a few seconds. That check is one `bd list --limit 1`, and the full reload only
-runs when something actually changed; nothing is checked at all while every Beads view is hidden
-or the window is in the background. Set `pollIntervalSeconds` to `0` if you would rather the
-extension spawn nothing you did not ask for.
+Changes made outside the editor — by an agent, a teammate, or your own terminal —
+trigger a reload when the next active probe detects them. With Beads 1.3 and an
+already-enabled events journal, the extension checks the effective journal setting
+and reads `bd events tail` as JSON Lines. Otherwise it uses `bd list --limit 1`.
+It also performs a full resync every 12 active probe ticks, since sync and raw SQL
+writes are not journaled. Nothing is checked while every Beads view is hidden or
+the window is in the background. Set `pollIntervalSeconds` to `0` to disable checks.
+The extension never enables a journal or upgrades your database automatically.
+See [Beads 1.3.1 compatibility](docs/BEADS-1.3.1.md) for verification and limits.
 
 ## Commands
 

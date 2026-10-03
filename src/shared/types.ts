@@ -297,7 +297,7 @@ export interface SyncStatus {
   data_dir?: string;
   data_dir_exists?: boolean;
   schema_version?: number;
-  /** Local-server / externally-managed modes (unverified shape — passed through as-is). */
+  /** Server process/endpoint fields, including the proxy endpoint in proxied mode. */
   pid?: number;
   port?: number;
   host?: string;

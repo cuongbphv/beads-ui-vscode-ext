@@ -51,6 +51,34 @@ describe('BdService', () => {
     impl = ok('[]');
   });
 
+  it('parses a single journal record without expecting a wrapper', async () => {
+    impl = ok('{"seq":1}\n');
+    expect(await service().jsonLines(['events', 'tail'])).toEqual([{ seq: 1 }]);
+    expect(calls[0].args).toEqual(['events', 'tail', '--json']);
+  });
+
+  it('parses multiple JSON Lines, CRLF and blank lines', async () => {
+    impl = ok('\r\n{"seq":1}\r\n \r\n{"seq":2}\r\n');
+    expect(await service().jsonLines(['events', 'tail'])).toEqual([{ seq: 1 }, { seq: 2 }]);
+  });
+
+  it('returns an empty page for empty JSON Lines stdout', async () => {
+    impl = ok(' \n');
+    expect(await service().jsonLines(['events', 'tail'])).toEqual([]);
+  });
+
+  it('rejects a malformed JSON line rather than accepting a partial page', async () => {
+    impl = ok('{"seq":1}\ninvalid\n');
+    await expect(service().jsonLines(['events', 'tail'])).rejects.toMatchObject({ rpcError: { kind: 'bad-output' } });
+  });
+
+  it('preserves the machine-readable retention window on CLI failure', async () => {
+    impl = fail({ code: 1, stderr: 'note: retention enabled\n', stdout: '{"code":"events_journal_truncated","error":"pruned","head":80,"floor":40}' });
+    await expect(service().jsonLines(['events', 'tail'])).rejects.toMatchObject({
+      rpcError: { code: 'events_journal_truncated' }, output: { head: 80, floor: 40 },
+    });
+  });
+
   it('appends --json and returns a legacy bare array unchanged', async () => {
     impl = ok('[{"id":"bd-1","title":"one"}]');
 

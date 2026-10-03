@@ -153,10 +153,12 @@ npm run install:local     # 构建 → 打包 → 安装；然后 reload window
 | `beadsDashboard.showClosed` | `true` | 在看板和树视图中包含已关闭的 issue。 |
 | `beadsDashboard.assignee` | `""` | 你是谁，用于 **Needs You**。留空表示使用 `bd` 自身会识别的身份。 |
 
-在编辑器外部发生的变更 —— 无论是 agent、同事，还是你自己在终端里做的操作 —— 都会在几秒内
-自动出现。这个检查只是一次 `bd list --limit 1`，只有在确实发生变化时才会触发完整刷新；
-当所有 Beads 视图都处于隐藏状态或窗口在后台时，完全不会做任何检查。如果你希望扩展不主动
-产生任何你没有要求的进程，可以把 `pollIntervalSeconds` 设为 `0`。
+编辑器外部的变更会在下一次有效检查检测到后触发刷新。使用 Beads 1.3 且已启用
+事件日志时，扩展检查日志配置，并按 JSON Lines 读取 `bd events tail`；其他情况下
+使用 `bd list --limit 1`。每 12 次有效检查仍会完整刷新，以捕获未记录的同步和 SQL
+变更。所有 Beads 视图隐藏或窗口在后台时不检查；设置 `pollIntervalSeconds` 为 `0`
+可关闭检查。扩展不会自动启用日志或升级数据库。
+参见 [Beads 1.3.1 兼容性说明](docs/BEADS-1.3.1.md)。
 
 ## 命令
 

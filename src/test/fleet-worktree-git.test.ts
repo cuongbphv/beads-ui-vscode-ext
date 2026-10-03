@@ -4,7 +4,7 @@
  * is `fleet-git-parse.test.ts`'s job, over `./lib/git-parse.ts`).
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,6 +23,8 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'fleet-worktree-git-test-'));
   repo = join(root, 'repo');
   await mkdir(repo, { recursive: true });
+  // git reports the physical checkout path (macOS /var is a symlink to /private/var).
+  repo = await realpath(repo);
 
   git(repo, ['init', '-q', '-b', 'main']);
   git(repo, ['config', 'user.email', 'test@example.com']);

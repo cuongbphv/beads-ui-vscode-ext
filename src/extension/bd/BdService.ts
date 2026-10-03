@@ -41,7 +41,7 @@ export interface BdServiceOptions {
 export class BdError extends Error {
   readonly rpcError: RpcError;
 
-  constructor(rpcError: RpcError) {
+  constructor(rpcError: RpcError, readonly output?: unknown) {
     super(rpcError.message);
     this.name = 'BdError';
     this.rpcError = rpcError;
@@ -83,23 +83,20 @@ function unwrapEnvelope(value: unknown): unknown {
  * object with an `error` key, while `bd list --json` emits a plain
  * `Error: ...` line. Both have to produce the same RpcError.
  */
-function parseErrorOutput(stderr: string, stdout: string): { message: string; code?: string } {
+function parseErrorOutput(stderr: string, stdout: string): { message: string; code?: string; output?: unknown } {
+  // A note on stderr must not hide a typed refusal printed on stdout.
   for (const stream of [stderr, stdout]) {
-    const text = stream.trim();
-    if (!text) continue;
-
-    if (text.startsWith('{')) {
-      try {
-        const parsed = unwrapEnvelope(JSON.parse(text)) as { error?: string; code?: string };
-        if (parsed && typeof parsed.error === 'string') {
-          return { message: parsed.error, code: parsed.code };
-        }
-      } catch {
-        // Not JSON after all; fall through to the text handling below.
+    try {
+      const parsed = unwrapEnvelope(JSON.parse(stream.trim())) as { error?: string; code?: string };
+      if (parsed && typeof parsed.error === 'string') {
+        return { message: parsed.error, code: parsed.code, output: parsed };
       }
+    } catch {
+      // Try the other stream before falling back to prose.
     }
-
-    const firstLine = text.split(/\r?\n/)[0].replace(/^Error:\s*/i, '').trim();
+  }
+  for (const stream of [stderr, stdout]) {
+    const firstLine = stream.trim().split(/\r?\n/)[0].replace(/^Error:\s*/i, '').trim();
     if (firstLine) return { message: firstLine };
   }
   return { message: 'bd failed without producing an error message' };
@@ -232,6 +229,21 @@ export class BdService {
     }
   }
 
+  /** JSON Lines commands have one independent JSON record per nonblank line. */
+  async jsonLines<T>(args: string[]): Promise<T[]> {
+    const stdout = await this.run([...args, '--json']);
+    try {
+      return stdout.split(/\r?\n/).filter((line) => line.trim() !== '')
+        .map((line) => JSON.parse(line) as T);
+    } catch {
+      throw new BdError({
+        kind: 'bad-output',
+        message: `Could not parse JSON Lines from \`bd ${args.join(' ')}\`.`,
+        detail: stdout.slice(0, 2000),
+      });
+    }
+  }
+
   /** Same as `json`, but coalesces identical concurrent calls. */
   async jsonShared<T>(args: string[]): Promise<T> {
     // NUL separator, written as an escape on purpose: a raw 0x00 byte in this
@@ -274,7 +286,7 @@ export class BdService {
         });
       }
 
-      const { message, code } = parseErrorOutput(failure.stderr ?? '', failure.stdout ?? '');
+      const { message, code, output } = parseErrorOutput(failure.stderr ?? '', failure.stdout ?? '');
       this.log(`bd ${args.join(' ')} — FAILED (${failure.code}): ${message}`);
       throw new BdError({
         kind: classify(message),
@@ -282,7 +294,7 @@ export class BdService {
         code,
         exitCode: typeof failure.code === 'number' ? failure.code : undefined,
         detail: failure.stderr?.slice(0, 4000),
-      });
+      }, output);
     }
   }
 

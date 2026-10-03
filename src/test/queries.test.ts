@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { BdError } from '../extension/bd/BdService';
 import { BdQueries } from '../extension/bd/queries';
 import { BdMutations } from '../extension/bd/mutations';
 import type { BdService } from '../extension/bd/BdService';
@@ -16,6 +17,11 @@ class FakeBd {
     this.argv.push(args);
     const key = args[0];
     return (this.responses[key] ?? []) as T;
+  }
+
+  async jsonLines<T>(args: string[]): Promise<T[]> {
+    this.argv.push(args);
+    return (this.responses[args[0]] ?? []) as T[];
   }
 
   jsonShared<T>(args: string[]): Promise<T> {
@@ -36,6 +42,18 @@ function queries(fake: FakeBd): BdQueries {
 }
 
 describe('BdQueries.vocabulary', () => {
+  it('includes 1.3.1 system types and normalizes custom type names', async () => {
+    const fake = new FakeBd();
+    fake.responses = {
+      statuses: { built_in_statuses: [] },
+      types: { core_types: [{ name: 'task' }], system_types: [{ name: 'gate' }, { name: 'molecule' }], custom_types: ['incident', { name: 'review' }, 'task'] },
+    };
+    expect((await queries(fake).vocabulary()).types).toEqual([
+      { name: 'task' }, { name: 'gate' }, { name: 'molecule' },
+      { name: 'incident', custom: true }, { name: 'review', custom: true },
+    ]);
+  });
+
   it('reads the keyed payloads bd returns and normalises categories', async () => {
     const fake = new FakeBd();
     fake.responses = {
@@ -1070,6 +1088,29 @@ describe('BdQueries.showMolecule', () => {
 });
 
 describe('BdQueries.doltStatus', () => {
+  it('recognizes the direct server State payload that omits mode', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({ running: true, pid: 222, port: 3307, data_dir: '/workspace/.beads/dolt' });
+    expect(await queries(fake).doltStatus()).toEqual({ mode: 'local-server', server_running: true, pid: 222, port: 3307, data_dir: '/workspace/.beads/dolt' });
+  });
+
+  it('uses reachability and version from external server status', async () => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({ mode: 'external', running: true, host: 'example.local', port: 3306, version: '8.0.33' });
+    expect(await queries(fake).doltStatus()).toEqual({ mode: 'external', server_running: true, host: 'example.local', port: 3306, server_version: '8.0.33' });
+  });
+
+  it.each([
+    { running: true, backend_managed: true, backend_running: true, expected: true },
+    { running: true, backend_managed: true, backend_running: false, expected: false },
+    { running: true, backend_managed: false, backend_running: false, expected: true },
+    { running: false, backend_managed: true, backend_running: true, expected: false },
+  ])('reads 1.3.1 proxy and backend health $expected', async ({ expected, ...fields }) => {
+    const fake = new FakeBd();
+    fake.execResults.dolt = JSON.stringify({ mode: 'proxied-server', proxy_pid: 111, proxy_port: 40001, ...fields });
+    expect(await queries(fake).doltStatus()).toMatchObject({ mode: 'proxied-server', server_running: expected, pid: 111, port: 40001 });
+  });
+
   it('sends the exact argv, with --json as a literal element rather than one bd.json would append', async () => {
     const fake = new FakeBd();
     fake.execResults.dolt = JSON.stringify({
@@ -1184,43 +1225,66 @@ describe('BdQueries.doltStatus', () => {
   });
 });
 
-describe('BdQueries.eventsTail', () => {
-  it('sends --since and --limit as separate flags, exactly as ChangeProbeStrategy needs', async () => {
+describe('BdQueries events journal contracts', () => {
+  function enabled() {
     const fake = new FakeBd();
+    fake.responses.config = { value: 'true' };
+    return fake;
+  }
 
-    await queries(fake).eventsTail(7, 50);
-
-    expect(fake.argv[0]).toEqual(['events', 'tail', '--since', '7', '--limit', '50']);
+  it('checks the effective config and reads JSON Lines with bounded argv', async () => {
+    const fake = enabled();
+    fake.responses.events = [{ seq: 8 }, { seq: 9 }];
+    expect(await queries(fake).eventsTail(7, 50)).toEqual({ events: [{ seq: 8 }, { seq: 9 }], latestSeq: 9 });
+    expect(fake.argv).toEqual([['config', 'get', 'events-journal'], ['events', 'tail', '--since', '7', '--limit', '50']]);
   });
 
-  it('reads a keyed {events: [...]} payload and reports the highest seq seen', async () => {
-    const fake = new FakeBd();
-    fake.responses = { events: { events: [{ seq: 3 }, { seq: 9 }, { seq: 5 }] } };
-
-    const page = await queries(fake).eventsTail(0, 10);
-
-    expect(page.events).toHaveLength(3);
-    expect(page.latestSeq).toBe(9);
+  it.each(['1', 1, true, 'TRUE', ' true '])('accepts effective enabled value %s', async (value) => {
+    const fake = enabled();
+    fake.responses.config = { value };
+    expect(await queries(fake).eventsTail(12, 10)).toEqual({ events: [], latestSeq: 12 });
   });
 
-  it('falls back to sinceSeq as latestSeq when the page is empty', async () => {
-    const fake = new FakeBd();
-    fake.responses = { events: { events: [] } };
-
-    const page = await queries(fake).eventsTail(12, 10);
-
-    expect(page.events).toEqual([]);
-    expect(page.latestSeq).toBe(12);
+  it.each(['false', '0', false, '', undefined])('does not mistake disabled value %s for a quiet journal', async (value) => {
+    const fake = enabled();
+    fake.responses.config = { value };
+    await expect(queries(fake).eventsTail(0, 1)).rejects.toMatchObject({ rpcError: { code: 'events_journal_disabled' } });
+    expect(fake.argv).toHaveLength(1);
   });
 
-  it('also accepts a bare array, like several other bd commands', async () => {
-    const fake = new FakeBd();
-    fake.responses = { events: [{ seq: 4 }] };
+  it.each([[{}], [{ seq: '3' }], [{ seq: 1.5 }], [{ seq: -1 }], [{ seq: 2 }, { seq: 2 }], [{ seq: 3 }, { seq: 2 }], [null]].map((events) => ({ events })))('rejects invalid records $events', async ({ events }) => {
+    const fake = enabled();
+    fake.responses.events = events;
+    await expect(queries(fake).eventsTail(0, 10)).rejects.toMatchObject({ rpcError: { kind: 'bad-output' } });
+  });
 
-    const page = await queries(fake).eventsTail(0, 10);
+  it('reads the counter head through readonly CLI SQL in server mode', async () => {
+    const fake = enabled();
+    fake.responses.sql = [{ head: 300 }];
+    expect(await queries(fake).eventsHead()).toBe(300);
+    expect(fake.argv[1]).toEqual(['sql', '--readonly', 'SELECT next_seq AS head FROM bd_events_seq WHERE id = 0']);
+    expect(fake.argv.some(([command]) => command === 'events')).toBe(false);
+  });
 
-    expect(page.events).toEqual([{ seq: 4 }]);
-    expect(page.latestSeq).toBe(4);
+  it('drains bounded pages to baseline embedded mode without replay', async () => {
+    const fake = enabled();
+    const tail = vi.spyOn(fake, 'jsonLines');
+    tail.mockResolvedValueOnce(Array.from({ length: 1000 }, (_, i) => ({ seq: i + 1 }))).mockResolvedValueOnce([{ seq: 1001 }]);
+    expect(await queries(fake).eventsHead()).toBe(1001);
+    expect(tail).toHaveBeenLastCalledWith(['events', 'tail', '--since', '1000', '--limit', '1000']);
+  });
+
+  it('uses the structured truncation head when initial history has been pruned', async () => {
+    const fake = enabled();
+    vi.spyOn(fake, 'jsonLines').mockRejectedValueOnce(new BdError({ kind: 'bd-error', code: 'events_journal_truncated', message: 'pruned' }, { head: 80 }));
+    expect(await queries(fake).eventsHead()).toBe(80);
+  });
+
+  it('refuses an incomplete baseline rather than reading indefinitely', async () => {
+    const fake = enabled();
+    let seq = 0;
+    vi.spyOn(fake, 'jsonLines').mockImplementation(async () => Array.from({ length: 1000 }, () => ({ seq: ++seq })));
+    await expect(queries(fake).eventsHead()).rejects.toThrow('page budget');
   });
 });
 
