@@ -154,11 +154,13 @@ Sau khi xong: **Ctrl+Shift+P → "Developer: Reload Window"**, rồi mở icon B
 | `beadsDashboard.showClosed` | `true` | Hiện cả issue đã đóng trên board và cây thư mục. |
 | `beadsDashboard.assignee` | `""` | Bạn là ai, dùng cho **Needs You**. Để trống nghĩa là dùng đúng identity mà `bd` tự nhận diện. |
 
-Thay đổi từ bên ngoài editor — bởi 1 agent, đồng nghiệp, hay chính terminal của bạn — tự hiện ra
-chỉ trong vài giây. Việc kiểm tra đó chỉ là 1 lệnh `bd list --limit 1`, và chỉ reload toàn bộ khi
-thật sự có thay đổi; hoàn toàn không kiểm tra gì khi mọi view Beads đang ẩn hoặc cửa sổ đang chạy
-nền. Đặt `pollIntervalSeconds` về `0` nếu bạn muốn extension không tự spawn bất cứ thứ gì bạn
-không yêu cầu.
+Thay đổi từ bên ngoài editor được tải lại khi lần kiểm tra đang hoạt động tiếp theo
+phát hiện chúng. Với Beads 1.3 và events journal đã bật, extension kiểm tra cấu hình
+journal và đọc JSON Lines từ `bd events tail`; trường hợp khác dùng `bd list --limit 1`.
+Mỗi 12 lần kiểm tra vẫn tải lại toàn bộ để bắt thay đổi từ sync hoặc SQL không được
+ghi vào journal. Không kiểm tra khi các view Beads bị ẩn hoặc cửa sổ chạy nền.
+Đặt `pollIntervalSeconds` về `0` để tắt. Extension không tự bật journal hoặc nâng cấp
+database. Xem [ghi chú tương thích Beads 1.3.1](docs/BEADS-1.3.1.md).
 
 ## Lệnh
 

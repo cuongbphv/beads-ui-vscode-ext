@@ -34,8 +34,9 @@ vi.mock('../webview/bridge/rpc', () => ({
   asRpcError: (error: unknown) => ({ kind: 'unknown', message: String(error) }),
 }));
 
-vi.mock('../webview/hooks/use-beads', () => ({
-  useBeads: () => ({
+vi.mock('../webview/hooks/use-beads', () => {
+  // Match the real hook: unchanged snapshots and callbacks keep their identity.
+  const state = {
     snapshot: {
       context: { bd_version: 'test', beads_dir: '.beads', repo_root: '/repo' },
       vocabulary: {
@@ -79,11 +80,11 @@ vi.mock('../webview/hooks/use-beads', () => ({
     },
     error: undefined,
     loading: false,
-    focusedId: selection.focusedId,
     setFocusedId: vi.fn(),
     refresh: vi.fn(),
-  }),
-}));
+  };
+  return { useBeads: () => ({ ...state, focusedId: selection.focusedId }) };
+});
 
 vi.mock('../webview/hooks/use-schedule-edit', () => ({
   useScheduleEdit: () => ({ pending: new Set<string>(), commit: vi.fn() }),

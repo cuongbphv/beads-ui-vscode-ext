@@ -34,7 +34,7 @@ import type {
   SyncStatus,
 } from '../../shared/types';
 import { toCategory } from '../../shared/types';
-import type { BdService } from './BdService';
+import { BdError, type BdService } from './BdService';
 
 /** `bd list` defaults to 50 rows; the dashboard wants the whole project. */
 export const DEFAULT_ISSUE_LIMIT = 2000;
@@ -53,13 +53,9 @@ interface RawHistoryCommit {
   Issue?: Partial<Bead>;
 }
 
-/**
- * One page of the dormant `events tail` probe. See `BdQueries.eventsTail`
- * and `ChangeProbeStrategy` (`./change-probe.ts`) for why this exists.
- */
+/** A page of Beads 1.3's JSON Lines events journal. */
 export interface EventsTailPage {
-  events: Array<{ seq?: number }>;
-  /** Highest `seq` seen in this page, or the caller's `sinceSeq` if the page was empty. */
+  events: Array<{ seq: number }>;
   latestSeq: number;
 }
 
@@ -96,10 +92,10 @@ const DEGRADED_SYNC_STATUS: SyncStatus = { mode: 'unknown', server_running: fals
  *
  * Verified shape (embedded mode, this project, bd 1.x): `{data_dir,
  * data_dir_exists, mode, schema_version, server_running}` — no ahead/behind or
- * last-sync fields. Local-server / externally-managed modes are documented
- * (PID, port, reachability, server version, database) but unverified here, so
- * every field beyond `mode`/`server_running` is read defensively and only
- * copied across when it is actually present with the expected type.
+ * last-sync fields. Beads 1.3.1 proxied mode reports proxy and backend liveness separately.
+ * Direct managed-server State omits `mode`; its typed fields identify it as
+ * local-server. Optional endpoint/version fields are copied only with the
+ * expected type.
  */
 export function parseDoltStatus(stdout: string): SyncStatus {
   let raw: unknown;
@@ -114,22 +110,31 @@ export function parseDoltStatus(stdout: string): SyncStatus {
   }
 
   const obj = raw as Record<string, unknown>;
-  if (typeof obj.mode !== 'string' || obj.mode === '') {
-    return { ...DEGRADED_SYNC_STATUS };
-  }
+  // Direct managed-server status is doltserver.State and omits `mode`.
+  const mode = typeof obj.mode === 'string' && obj.mode !== '' ? obj.mode
+    : typeof obj.running === 'boolean' && typeof obj.pid === 'number'
+      && typeof obj.port === 'number' && typeof obj.data_dir === 'string' ? 'local-server' : undefined;
+  if (!mode) return { ...DEGRADED_SYNC_STATUS };
 
   const status: SyncStatus = {
-    mode: obj.mode,
-    server_running: obj.server_running === true,
+    mode,
+    server_running: mode === 'proxied-server'
+      ? obj.running === true && (obj.backend_managed !== true || obj.backend_running === true)
+      : typeof obj.server_running === 'boolean' ? obj.server_running : obj.running === true,
   };
   if (typeof obj.data_dir === 'string') status.data_dir = obj.data_dir;
   if (typeof obj.data_dir_exists === 'boolean') status.data_dir_exists = obj.data_dir_exists;
   if (typeof obj.schema_version === 'number') status.schema_version = obj.schema_version;
   if (typeof obj.pid === 'number') status.pid = obj.pid;
+  if (obj.mode === 'proxied-server') {
+    if (typeof obj.proxy_pid === 'number') status.pid = obj.proxy_pid;
+    if (typeof obj.proxy_port === 'number') status.port = obj.proxy_port;
+  }
   if (typeof obj.port === 'number') status.port = obj.port;
   if (typeof obj.host === 'string') status.host = obj.host;
   if (typeof obj.reachable === 'boolean') status.reachable = obj.reachable;
   if (typeof obj.server_version === 'string') status.server_version = obj.server_version;
+  else if (typeof obj.version === 'string') status.server_version = obj.version;
   if (typeof obj.database === 'string') status.database = obj.database;
   // Unverified in any real payload; copied through only when bd actually sends them.
   if (typeof obj.ahead === 'number') status.ahead = obj.ahead;
@@ -207,13 +212,16 @@ export class BdQueries {
       .map((s) => ({ ...s, custom: true }));
 
     const types = pickArray<IssueTypeDef>(typePayload, 'core_types', 'types');
-    const customTypes = pickArray<IssueTypeDef>(typePayload, 'custom_types')
-      .filter((t) => !types.some((known) => known.name === t.name))
+    const systemTypes = pickArray<IssueTypeDef>(typePayload, 'system_types')
+      .filter((t) => !types.some((known) => known.name === t.name));
+    const customTypes = pickArray<IssueTypeDef | string>(typePayload, 'custom_types')
+      .map((t) => typeof t === 'string' ? { name: t } : t)
+      .filter((t) => ![...types, ...systemTypes].some((known) => known.name === t.name))
       .map((t) => ({ ...t, custom: true }));
 
     this.vocabularyCache = {
       statuses: [...statuses, ...custom].map((s) => ({ ...s, category: toCategory(s.category) })),
-      types: [...types, ...customTypes],
+      types: [...types, ...systemTypes, ...customTypes],
     };
     return this.vocabularyCache;
   }
@@ -360,36 +368,66 @@ export class BdQueries {
     return newest ? `${newest.id}@${newest.updated_at ?? ''}` : '';
   }
 
-  /**
-   * `bd events tail --since <sinceSeq> --limit <limit>` — the dormant
-   * fast-path probe for `ChangeProbeStrategy` (`./change-probe.ts`).
-   *
-   * [Unverified/speculative] `events` is not a real `bd` subcommand on any
-   * version this extension has been measured against: bd 1.2.2 answers
-   * `Error: unknown command "events" for "bd"` (exit 1, confirmed by running
-   * it directly). This method exists only so the strategy has a concrete
-   * argv to call if a future `bd` ships a `--json` change journal. The
-   * response shape assumed here — a keyed `{events: [...]}` payload (falling
-   * back to a bare array, the same duality `pickArray` already handles for
-   * other bd commands) of rows carrying a numeric `seq` — is a guess, not a
-   * verified contract, and will need re-checking against whatever a real
-   * `bd events tail --json` actually returns before this path can ever fire.
-   */
+  /** Check the effective setting (including BD_EVENTS_JOURNAL), not an empty page. */
+  private async requireEventsJournal(): Promise<void> {
+    const config = await this.bd.json<{ value?: unknown }>(['config', 'get', 'events-journal']);
+    const value = typeof config?.value === 'string' ? config.value.trim().toLowerCase() : config?.value;
+    if (value !== true && value !== 1 && value !== 'true' && value !== '1') {
+      throw new BdError({ kind: 'bd-error', code: 'events_journal_disabled', message: 'Events journal is disabled.' });
+    }
+  }
+
+  /** Read JSON Lines, rejecting malformed sequences instead of silently missing changes. */
   async eventsTail(sinceSeq: number, limit: number): Promise<EventsTailPage> {
-    const raw = await this.bd.json<unknown>([
-      'events',
-      'tail',
-      '--since',
-      String(sinceSeq),
-      '--limit',
-      String(limit),
+    await this.requireEventsJournal();
+    const raw = await this.bd.jsonLines<unknown>([
+      'events', 'tail', '--since', String(sinceSeq), '--limit', String(limit),
     ]);
-    const events = pickArray<{ seq?: number }>(raw, 'events');
-    const latestSeq = events.reduce(
-      (max, event) => (typeof event.seq === 'number' && event.seq > max ? event.seq : max),
-      sinceSeq,
-    );
+    let latestSeq = sinceSeq;
+    const events = raw.map((row) => {
+      const seq = (row as { seq?: unknown } | null)?.seq;
+      if (!Number.isSafeInteger(seq) || (seq as number) <= latestSeq) {
+        throw new BdError({ kind: 'bad-output', message: 'Invalid sequence in events journal.' });
+      }
+      latestSeq = seq as number;
+      return { seq: latestSeq };
+    });
     return { events, latestSeq };
+  }
+
+  /**
+   * Capture a cursor BEFORE the full snapshot, so concurrent writes remain visible.
+   * bd 1.3.1 has no CLI head command. Server mode supports this read-only query;
+   * embedded mode is baselined by draining bounded pages without replaying refreshes.
+   * A large journal / unsupported topology falls back to watermark rather than
+   * an unbounded read or an incomplete baseline. No Dolt files are read directly.
+   */
+  async eventsHead(): Promise<number> {
+    await this.requireEventsJournal();
+    try {
+      const rows = await this.bd.json<Array<{ head?: unknown }>>([
+        'sql', '--readonly', 'SELECT next_seq AS head FROM bd_events_seq WHERE id = 0',
+      ]);
+      const head = rows?.[0]?.head;
+      if (Number.isSafeInteger(head) && (head as number) >= 0) return head as number;
+    } catch {
+      // Embedded mode does not expose SQL; a proxy may refuse it as well.
+    }
+    let seq = 0;
+    for (let page = 0; page < 10; page++) {
+      try {
+        const result = await this.eventsTail(seq, 1000);
+        seq = result.latestSeq;
+        if (result.events.length < 1000) return seq;
+      } catch (error) {
+        if (error instanceof BdError && error.rpcError.code === 'events_journal_truncated') {
+          const head = (error.output as { head?: unknown } | undefined)?.head;
+          if (Number.isSafeInteger(head) && (head as number) >= 0) return head as number;
+        }
+        throw error;
+      }
+    }
+    throw new BdError({ kind: 'bd-error', message: 'Events journal baseline exceeded its page budget.' });
   }
 
   /**

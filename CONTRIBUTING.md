@@ -10,7 +10,7 @@ is everything nobody has claimed. The [Roadmap](README.md#roadmap) explains wher
 
 ## Three rules that decide whether a PR can be merged at all
 
-1. **`bd --json` is the only interface.** Never read `.beads/issues.jsonl`, the Dolt files or
+1. **The `bd` CLI with `--json` is the only interface** (including JSON Lines for `bd events tail`). Never read `.beads/issues.jsonl`, the Dolt files or
    `.beads/last-touched`'s *contents*. That export has auto-refresh off by default and upstream
    declares direct readers incompatible; the watcher may use the file as a *signal*, never as data.
 2. **The call chain is one-directional and no layer may be skipped:**
@@ -54,11 +54,23 @@ your own and create a few issues. Don't add a `.beads/` to this repo in a PR.
 npm run verify    # lint + typecheck + test + build + npm audit
 ```
 
-`verify` has to pass locally, because **CI cannot run it**. Part of the suite
+`verify` has to pass locally, because **CI excludes the live CLI suite**. Part of the suite
 ([`src/test/bd-live.test.ts`](src/test/bd-live.test.ts)) drives the real `bd` binary and cross-checks
-every read against raw `bd --json` output, so the release workflow only builds and publishes — it
-does not test. If you change anything under `src/extension/bd/`, say in the PR that `bd-live` passed
+every read against raw `bd --json` output, so PR CI uses `npm run test:ci`; the release workflow only builds and publishes. If you change anything under `src/extension/bd/`, say in the PR that `bd-live` passed
 and which `bd` version you ran.
+
+For changes to journal handling, also run the opt-in suite against a Beads 1.3.1
+binary downloaded from the official release (verify its published checksum):
+
+```bash
+BEADS_COMPAT_BD=/absolute/path/to/bd npm test -- --run src/test/bd-events-live.test.ts
+```
+
+This suite creates its own temporary git/Beads workspace and tests disabled and
+active journals, JSON Lines, retention recovery, custom active statuses, runtime
+vocabulary and dashboard reads. It also tests owned server/proxy workspaces
+(requires `dolt` on PATH) and stops those temporary servers. It does not migrate this repository's database.
+Without `BEADS_COMPAT_BD`, these tests are explicitly skipped.
 
 Other useful runs:
 

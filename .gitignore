@@ -78,3 +78,5 @@ Vent
 *.vsix
 docs/superpowers/
 .superpowers
+# Beads 1.3 schema migration gate runtime lock
+.beads.gate.lock

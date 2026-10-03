@@ -4,6 +4,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { version as extensionVersion } from '../../package.json';
 import { StatusIndex } from '../shared/model';
 import type { Bead, DashboardSnapshot } from '../shared/types';
 import { installResizeObserver } from './support/dom-harness';
@@ -106,6 +107,17 @@ function statValue(root: HTMLElement, label: string): string | null {
   const card = cards.find((el) => el.textContent?.includes(label));
   return card?.querySelector('p')?.textContent ?? null;
 }
+
+describe('OverviewView extension version', () => {
+  it('shows the packaged extension version above the statistics', async () => {
+    installResizeObserver();
+    const root = await mount([]);
+    const badge = root.querySelector('[aria-label="Extension version"]');
+    expect(badge?.textContent).toBe(`v${extensionVersion}`);
+    const statistics = root.querySelector('[aria-label="Project statistics"]');
+    expect(badge && statistics && (badge.compareDocumentPosition(statistics) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+  });
+});
 
 describe('OverviewView molecules stat card', () => {
   it('counts only molecule-type issues outside the done category, derived from snapshot.beads', async () => {

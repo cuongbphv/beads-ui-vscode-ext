@@ -4,6 +4,34 @@ All notable changes to **Beads Dashboard** are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] — 2026-10-03
+
+### Fixed
+
+- **Live refresh with Beads 1.3's events journal** ([#18](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/18)).
+  Read the CLI's JSON Lines records, detect the effective journal setting, and
+  keep disabled journals and older CLIs on the watermark probe. A journal disabled
+  mid-session triggers an immediate full refresh before falling back.
+- Baseline journal cursors at the current head before a full snapshot, instead of
+  replaying historical pages as changes. Recover from `events_journal_truncated`
+  with a new baseline and full refresh; retain the 12-tick resync for unjournaled
+  sync/SQL writes and recreated journals. Re-detect when the configured CLI changes.
+- Recognize direct-server Dolt status without a `mode` field, external-server
+  `running`/`version` fields, and Beads 1.3.1's proxied status using `running`, `backend_managed` and
+  `backend_running`, including the proxy PID/port, instead of reporting it stopped.
+- Include `bd types`' additive `system_types` and normalize custom types reported
+  as strings, so the runtime vocabulary contains usable type names.
+
+### Changed
+
+- Qualify the journal path against a real Beads 1.3.1 binary in an isolated
+  workspace with an opt-in CLI integration suite. Existing Beads 1.2.2 support
+  remains via the watermark fallback. See [compatibility notes](docs/BEADS-1.3.1.md).
+- Ignore Beads 1.3's workspace migration gate runtime lock (`.beads.gate.lock`).
+- Refresh vulnerable dependency locks, upgrade the VSIX packager to `@vscode/vsce`
+  4.0.0 (Node 22, matching the project baseline), and override `@parcel/watcher`
+  to the compatible 2.6 line that removes its vulnerable `braces` dependency.
+
 ## [0.1.6] — 2026-08-25
 
 ### Added

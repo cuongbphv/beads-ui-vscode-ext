@@ -2,7 +2,7 @@
   "name": "beads-dashboard",
   "displayName": "Beads Dashboard — Kanban & Roadmap",
   "description": "Dashboard for the beads (bd) issue tracker: Overview, Roadmap and Kanban board, plus an Epic → Task sidebar.",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "cuongbphv",
   "license": "MIT",
   "author": "Bùi Phan Viết Cường",
@@ -394,7 +394,7 @@
     "@types/react-dom": "^19.2.4",
     "@types/vscode": "~1.105.0",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^3.9.2",
+    "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
     "jsdom": "^29.1.1",
@@ -403,5 +403,8 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.66.0",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "@parcel/watcher": "^2.6.0"
   }
 }
