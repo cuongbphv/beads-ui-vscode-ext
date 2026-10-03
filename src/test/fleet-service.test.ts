@@ -151,6 +151,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   vi.restoreAllMocks();
 });
@@ -190,6 +191,26 @@ async function writeCodexFleet(
 }
 
 describe('FleetService session discovery', () => {
+  it('discovers sessions under CODEX_HOME when no test root override is passed', async () => {
+    const codexHome = join(root, 'custom-codex-home');
+    vi.stubEnv('CODEX_HOME', codexHome);
+    const dir = join(codexHome, 'sessions', '2026', '10', '03');
+    await mkdir(dir, { recursive: true });
+    const parentId = 'parent-from-env';
+    const childId = 'child-from-env';
+    await writeFile(join(dir, `rollout-2026-10-03T10-00-00-${parentId}.jsonl`), [
+      JSON.stringify({ type: 'session_meta', payload: { id: parentId, cwd, source: 'vscode' } }),
+      JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'spawn_agent', arguments: JSON.stringify({ task_name: 'worker', message: 'Inspect worktree.' }) } }),
+    ].join('\n') + '\n');
+    await writeFile(join(dir, `rollout-2026-10-03T10-00-01-${childId}.jsonl`),
+      JSON.stringify({ type: 'session_meta', payload: { id: childId, cwd, parent_thread_id: parentId, agent_path: '/root/worker' } }) + '\n');
+
+    const service = new FleetService(cwd, undefined, { projectsRoot: join(root, 'no-claude') });
+    await service.tick();
+    expect(service.snapshot?.workers).toEqual([expect.objectContaining({ agentId: childId, provider: 'codex' })]);
+    service.dispose();
+  });
+
   it('degrades to no-claude-dir when ~/.claude/projects does not exist', async () => {
     const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: join(root, 'does-not-exist') });
     await service.tick();

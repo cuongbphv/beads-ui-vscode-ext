@@ -24,6 +24,7 @@ import { Bot, ScrollText, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { FLEET_STATUS_FILTERS, type FleetStatusFilter } from '../../shared/fleet-filter';
+import type { FleetSnapshot } from '../../shared/fleet';
 import type { Bead } from '../../shared/types';
 import { Transcript } from '../components/fleet/transcript';
 import { WorkerList } from '../components/fleet/worker-list';
@@ -33,9 +34,17 @@ import { useFleet } from '../hooks/use-fleet';
 import { clamp, DETAIL_MIN_PX, detailMaxWidth, type Range } from '../lib/drag-resize';
 
 /** A human label for the detail pane's header — `agent:<id>` / `session:<id>` without the prefix noise. */
-function targetLabel(targetId: string): string {
-  if (targetId.startsWith('agent:')) return `Worker ${targetId.slice('agent:'.length)}`;
-  if (targetId.startsWith('session:')) return `Orchestrator ${targetId.slice('session:'.length)}`;
+function targetLabel(targetId: string, snapshot: FleetSnapshot): string {
+  if (targetId.startsWith('agent:')) {
+    const id = targetId.slice('agent:'.length);
+    const provider = snapshot.workers.find((worker) => worker.agentId === id)?.provider;
+    return `${provider === 'codex' ? 'Codex' : 'Claude Code'} worker ${id}`;
+  }
+  if (targetId.startsWith('session:')) {
+    const id = targetId.slice('session:'.length);
+    const provider = snapshot.orchestrators.find((orchestrator) => orchestrator.sessionId === id)?.provider;
+    return `${provider === 'codex' ? 'Codex' : 'Claude Code'} orchestrator ${id}`;
+  }
   return targetId;
 }
 
@@ -170,13 +179,13 @@ export function FleetView({
                 />
                 <div className="absolute inset-0 z-10 @3xl:static @3xl:z-auto @3xl:w-[var(--fleet-detail-w)] @3xl:shrink-0">
                   <aside
-                    aria-label={`Transcript for ${targetLabel(selectedTarget)}`}
+                    aria-label={`Transcript for ${targetLabel(selectedTarget, snapshot)}`}
                     className="bg-surface border-border flex h-full min-h-0 w-full flex-col border-l"
                   >
                     <header className="border-border flex items-center gap-2 border-b px-3 py-2">
                       <ScrollText aria-hidden="true" className="text-fg-muted size-3.5 shrink-0" />
                       <span className="text-fg-strong truncate text-sm font-medium">
-                        {targetLabel(selectedTarget)}
+                        {targetLabel(selectedTarget, snapshot)}
                       </span>
                       <button
                         type="button"

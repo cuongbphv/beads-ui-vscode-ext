@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * `WorkerList`: orchestrators + their workers, the "stale worktrees" section,
+ * `WorkerList`: orchestrators + their workers, the unassociated worktrees section,
  * the degraded empty state, and (beads-ui-vscode-ext-37b) click-to-select
  * into the transcript pane with `aria-current` on the selected row —
  * all a pure function of the `FleetSnapshot` and `selectedTarget` it is handed.
@@ -103,9 +103,15 @@ function snapshot(overrides: Partial<FleetSnapshot> = {}): FleetSnapshot {
 
 describe('WorkerList degraded state', () => {
   it('renders a friendly hint for a missing ~/.claude/projects directory', async () => {
-    const el = await render(snapshot({ degraded: { reason: 'no-claude-dir' } }));
-    expect(el.textContent).toContain('No Claude Code session data');
-    expect(el.textContent).toContain('~/.claude/projects');
+    const el = await render(snapshot({ degraded: { reason: 'no-claude-dir' }, providerDegraded: { claude: 'no-claude-dir', codex: 'no-codex-dir' } }));
+    expect(el.textContent).toContain('No agent session data');
+    expect(el.textContent).toContain('No Claude Code or Codex session directory');
+  });
+
+  it('shows an ordinary empty state when Codex sessions exist but Claude does not', async () => {
+    const el = await render(snapshot({ degraded: { reason: 'no-claude-dir' }, providerDegraded: { claude: 'no-claude-dir' } }));
+    expect(el.textContent).toContain('No fleet activity');
+    expect(el.textContent).not.toContain('No agent session data');
   });
 });
 
@@ -117,6 +123,23 @@ describe('WorkerList empty state', () => {
 });
 
 describe('WorkerList orchestrators and workers', () => {
+  it('labels Codex rows and selects their transcript targets', async () => {
+    const onSelectTarget = vi.fn();
+    const el = await render(snapshot({
+      orchestrators: [{ provider: 'codex', sessionId: 'codex-session', workerIds: ['codex-child'], lastActivityAt: null }],
+      workers: [worker({ provider: 'codex', agentId: 'codex-child', sessionId: 'codex-session', status: 'running' })],
+    }), { onSelectTarget });
+    const header = el.querySelector('header[role="button"]') as HTMLElement;
+    const row = el.querySelector('li[role="button"]') as HTMLElement;
+    expect(header.getAttribute('aria-label')).toContain('Codex orchestrator session');
+    expect(row.getAttribute('aria-label')).toContain('Codex worker');
+    expect(el.textContent).toContain('Running');
+    await act(async () => header.click());
+    await act(async () => row.click());
+    expect(onSelectTarget).toHaveBeenNthCalledWith(1, 'session:codex-session');
+    expect(onSelectTarget).toHaveBeenNthCalledWith(2, 'agent:codex-child');
+  });
+
   it('renders an orchestrator with its worker count and each worker row', async () => {
     const el = await render(
       snapshot({
@@ -357,8 +380,8 @@ describe('WorkerList lease badge unique-suffix lookup (beads-ui-vscode-ext-ayq.5
   });
 });
 
-describe('WorkerList stale worktrees', () => {
-  it('renders an orphan worktree under "Stale worktrees" with its diffstat', async () => {
+describe('WorkerList unassociated worktrees', () => {
+  it('renders an unassociated worktree without claiming its worker is inactive', async () => {
     const el = await render(
       snapshot({
         worktrees: [worktree({ path: '/repo/wt-stale', dirName: 'wt-stale', beadId: 'proj-stale' })],
@@ -366,7 +389,9 @@ describe('WorkerList stale worktrees', () => {
       }),
     );
 
-    expect(el.textContent).toContain('Stale worktrees');
+    expect(el.textContent).toContain('Unassociated worktrees');
+    expect(el.textContent).toContain('worker link unknown');
+    expect(el.textContent).not.toContain('no active worker');
     expect(el.textContent).toContain('wt-stale');
     expect(el.textContent).toContain('proj-stale');
   });
@@ -379,7 +404,7 @@ describe('WorkerList stale worktrees', () => {
       }),
     );
 
-    expect(el.textContent).not.toContain('Stale worktrees');
+    expect(el.textContent).not.toContain('Unassociated worktrees');
   });
 });
 

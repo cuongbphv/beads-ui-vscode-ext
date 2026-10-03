@@ -135,7 +135,7 @@ export class FleetService implements vscode.Disposable {
     options: FleetServiceOptions = {},
   ) {
     this.projectsRoot = options.projectsRoot ?? join(homedir(), '.claude', 'projects');
-    this.codexSessionsRoot = options.codexSessionsRoot ?? join(homedir(), '.codex', 'sessions');
+    this.codexSessionsRoot = options.codexSessionsRoot ?? join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'sessions');
     this.intervalMs = options.intervalMs ?? DISCOVERY_INTERVAL_MS;
     this.now = options.now ?? Date.now;
     this.gitProbe = new WorktreeGitProbe(undefined, this.now);

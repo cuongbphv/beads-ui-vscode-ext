@@ -1,8 +1,7 @@
 /**
  * The Fleet tab's main view: orchestrator sessions and the workers they
- * spawned, plus a separate section for worktrees on disk that no worker
- * currently claims (`orphanWorktrees` — the "stale" section that resolves
- * `beads-ui-vscode-ext-l3d`'s question of what a stale worktree even means).
+ * spawned, plus a separate section for worktrees whose worker association is
+ * unknown (`orphanWorktrees`). An unlinked worktree may still be active.
  *
  * A worker row and an orchestrator's header are both selectable — clicking
  * (or Enter/Space) calls `onSelectTarget` with the `TranscriptTarget` string
@@ -64,10 +63,9 @@ const STATUS_CLASS: Record<FleetWorker['status'], string> = {
   unknown: 'text-fg-muted',
 };
 
-const DEGRADED_HINT: Record<string, string> = {
-  'no-claude-dir':
-    'No ~/.claude/projects directory was found on this machine — the Fleet tab has nothing to watch yet.',
-};
+function providerLabel(provider: FleetWorker['provider']): string {
+  return provider === 'codex' ? 'Codex' : 'Claude Code';
+}
 
 export function WorkerList({
   snapshot,
@@ -93,12 +91,13 @@ export function WorkerList({
    */
   beadsById: ReadonlyMap<string, Bead>;
 }): ReactNode {
-  if (snapshot.degraded) {
+  if (snapshot.degraded && snapshot.providerDegraded?.codex === 'no-codex-dir'
+      && snapshot.orchestrators.length === 0 && snapshot.orphanWorktrees.length === 0) {
     return (
       <EmptyState
         icon={<Bot className="size-10" />}
-        title="No Claude Code session data"
-        hint={DEGRADED_HINT[snapshot.degraded.reason] ?? snapshot.degraded.reason}
+        title="No agent session data"
+        hint="No Claude Code or Codex session directory was found on this machine."
       />
     );
   }
@@ -118,7 +117,7 @@ export function WorkerList({
       <EmptyState
         icon={<Bot className="size-10" />}
         title="No fleet activity"
-        hint="No orchestrator session in this workspace has spawned a worker yet."
+        hint="No Claude Code or Codex session in this workspace has spawned a worker yet."
       />
     );
   }
@@ -138,7 +137,7 @@ export function WorkerList({
               role="button"
               tabIndex={0}
               aria-current={sessionSelected ? 'true' : undefined}
-              aria-label={`Orchestrator session ${orchestrator.sessionId}: view its transcript`}
+              aria-label={`${providerLabel(orchestrator.provider)} orchestrator session ${orchestrator.sessionId}: view its transcript`}
               onClick={() => onSelectTarget(sessionTarget)}
               onKeyDown={(event) => onSelectableKeyDown(event, () => onSelectTarget(sessionTarget))}
               className={cn(
@@ -147,6 +146,7 @@ export function WorkerList({
               )}
             >
               <Bot aria-hidden="true" className="size-3.5" />
+              <span>{providerLabel(orchestrator.provider)}</span>
               <span className="font-mono">orchestrator {orchestrator.sessionId.slice(0, 8)}</span>
               <span>· {workerCountLabel(workers.length, totalWorkers)}</span>
               {orchestrator.lastActivityAt ? (
@@ -170,7 +170,7 @@ export function WorkerList({
                     role="button"
                     tabIndex={0}
                     aria-current={workerSelected ? 'true' : undefined}
-                    aria-label={`Worker ${worker.agentId}: view its transcript`}
+                    aria-label={`${providerLabel(worker.provider)} worker ${worker.agentId}: view its transcript`}
                     onClick={() => onSelectTarget(workerTarget)}
                     onKeyDown={(event) => onSelectableKeyDown(event, () => onSelectTarget(workerTarget))}
                     className={cn(
@@ -180,6 +180,7 @@ export function WorkerList({
                   >
                     <div className="flex items-center gap-2">
                       <User aria-hidden="true" className="size-3.5 shrink-0" />
+                      <span className="text-fg-muted text-xs">{providerLabel(worker.provider)}</span>
                       <span className={cn('text-xs font-medium', STATUS_CLASS[worker.status])}>
                         {STATUS_LABEL[worker.status]}
                       </span>
@@ -218,9 +219,9 @@ export function WorkerList({
       })}
 
       {staleWorktrees.length > 0 ? (
-        <section className="border-warning/50 rounded-md border" aria-label="Stale worktrees">
+        <section className="border-warning/50 rounded-md border" aria-label="Unassociated worktrees">
           <header className="border-warning/50 text-warning border-b px-3 py-2 text-xs font-medium">
-            Stale worktrees — no active worker
+            Unassociated worktrees — worker link unknown
           </header>
           <ul className="divide-border divide-y">
             {staleWorktrees.map((worktree) => (

@@ -349,6 +349,7 @@
     "test:webview": "node scripts/run-webview-test.mjs",
     "test:e2e:editing": "node scripts/e2e/editing-suite.spec.mjs",
     "test:e2e:coordination": "node scripts/e2e/agent-coordination.spec.mjs",
+    "test:e2e:fleet": "node scripts/e2e/fleet-codex.spec.mjs",
     "test:e2e:insight": "node scripts/e2e/insight-health.spec.mjs",
     "test:e2e:board": "node scripts/e2e/sidebar-board-parity.spec.mjs",
     "test:e2e:molecules": "node scripts/e2e/molecules-gates.spec.mjs",

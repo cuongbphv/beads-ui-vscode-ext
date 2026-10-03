@@ -120,6 +120,9 @@ interface ActiveTail {
 
 export class TranscriptTailer {
   private active: ActiveTail | undefined;
+  /** Invalidates subscriptions still inside asynchronous path/backfill reads. */
+  private generation = 0;
+  private pendingTargetId: string | undefined;
   private readonly pollMs: number;
   private readonly flushMs: number;
   private readonly maxEventsPerFlush: number;
@@ -144,6 +147,8 @@ export class TranscriptTailer {
    * the initial backfill; `onAppend` receives every later batch.
    */
   async subscribe(targetId: string, onAppend: TranscriptAppendListener): Promise<TranscriptBackfill> {
+    const generation = ++this.generation;
+    this.pendingTargetId = targetId;
     this.cancelActive();
 
     const resolution = this.resolveTarget(targetId);
@@ -172,6 +177,12 @@ export class TranscriptTailer {
       totalBytes: window.size,
       ...(degraded ? { degraded: true } : {}),
     };
+
+    // Two RPC subscriptions can overlap while realpath/backfill await disk I/O.
+    // Only the latest may install a poller; the older response can still
+    // settle, but must not leak another tail or duplicate streamed events.
+    if (generation !== this.generation) return backfill;
+    this.pendingTargetId = undefined;
 
     const tail: ActiveTail = {
       targetId,
@@ -203,12 +214,17 @@ export class TranscriptTailer {
    * the state moved on is harmless" discipline.
    */
   unsubscribe(targetId?: string): void {
-    if (!this.active) return;
-    if (targetId !== undefined && this.active.targetId !== targetId) return;
+    const currentTargetId = this.active?.targetId ?? this.pendingTargetId;
+    if (currentTargetId === undefined) return;
+    if (targetId !== undefined && currentTargetId !== targetId) return;
+    ++this.generation;
+    this.pendingTargetId = undefined;
     this.cancelActive();
   }
 
   dispose(): void {
+    ++this.generation;
+    this.pendingTargetId = undefined;
     this.cancelActive();
   }
 

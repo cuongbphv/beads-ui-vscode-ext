@@ -152,13 +152,25 @@ describe('FleetView', () => {
   it('renders the degraded hint when discovery reports no-claude-dir', async () => {
     const el = await mount();
 
-    await act(async () => fire(snapshot({ degraded: { reason: 'no-claude-dir' } })));
+    await act(async () => fire(snapshot({ degraded: { reason: 'no-claude-dir' }, providerDegraded: { claude: 'no-claude-dir', codex: 'no-codex-dir' } })));
 
-    expect(el.textContent).toContain('No Claude Code session data');
+    expect(el.textContent).toContain('No agent session data');
   });
 });
 
 describe('FleetView transcript pane (beads-ui-vscode-ext-37b)', () => {
+  it('opens a provider-labelled Codex worker transcript', async () => {
+    const el = await mount();
+    await act(async () => fire(snapshot({
+      orchestrators: [{ provider: 'codex', sessionId: 'codex-parent', workerIds: ['codex-child'], lastActivityAt: null }],
+      workers: [{ provider: 'codex', agentId: 'codex-child', sessionId: 'codex-parent', beadId: null, worktreePath: null, briefSummary: '', lastActivityAt: null, status: 'running' }],
+    })));
+    const row = el.querySelector('li[role="button"]') as HTMLElement;
+    await act(async () => row.click());
+    expect(rpc.calls).toContainEqual({ method: 'subscribeTranscript', params: { targetId: 'agent:codex-child' } });
+    expect(el.querySelector('aside')?.getAttribute('aria-label')).toContain('Codex worker codex-child');
+  });
+
   it('mounts the transcript pane and calls subscribeTranscript when a worker row is selected', async () => {
     const el = await mount();
     await act(async () =>

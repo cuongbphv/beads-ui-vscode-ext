@@ -469,6 +469,25 @@ describe('TranscriptTailer — single subscription semantics', () => {
 });
 
 describe('TranscriptTailer.unsubscribe', () => {
+  it('does not leak duplicate pollers when two subscriptions overlap during disk reads', async () => {
+    const filePath = join(baseDir, 'overlap.jsonl');
+    await writeFile(filePath, jsonLine('user', 'initial'));
+    const tailer = new TranscriptTailer(resolver({ 'session:s1': { filePath, baseDir } }), undefined, FAST);
+    const first = vi.fn();
+    const second = vi.fn();
+    await Promise.all([
+      tailer.subscribe('session:s1', first),
+      tailer.subscribe('session:s1', second),
+    ]);
+
+    await appendFile(filePath, jsonLine('assistant', 'one append'));
+    await waitForCalls(second, 1);
+    await wait(FAST.pollMs! * 2);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+    tailer.dispose();
+  });
+
   it('stops streaming further appends once unsubscribed', async () => {
     const filePath = join(baseDir, 'unsub.jsonl');
     await writeFile(filePath, jsonLine('user', 'hi'), 'utf8');
