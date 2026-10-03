@@ -170,6 +170,39 @@ describe('MoleculesView', () => {
     expect(el.textContent).toContain('bd mol pour');
   });
 
+  it('shows the failed refresh and its last successful update while keeping the cards, then retries', async () => {
+    const el = await mount();
+    const first = populatedSnapshot({ fetchedAt: '2026-10-03T00:00:00Z' });
+    await resolveOldest(first);
+
+    await act(async () => fireIssuesChanged());
+    await act(async () => rpc.pending.shift()?.reject(new Error('backend unavailable')));
+
+    const warning = el.querySelector('[role="alert"]');
+    expect(warning?.textContent).toContain('Refresh failed:');
+    expect(warning?.textContent).toContain('backend unavailable');
+    expect(warning?.querySelector('time')?.getAttribute('datetime')).toBe(first.fetchedAt);
+    expect(el.textContent).toContain(rootBead.title);
+
+    const retry = Array.from(warning?.querySelectorAll('button') ?? []).find((button) => button.textContent?.includes('Retry'));
+    await act(async () => retry?.click());
+    expect(rpc.calls.filter((call) => call.method === 'getMolSnapshot')).toHaveLength(3);
+    await resolveOldest(populatedSnapshot({ fetchedAt: '2026-10-03T01:00:00Z' }));
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('offers Retry after the initial read fails', async () => {
+    const el = await mount();
+    await act(async () => rpc.pending.shift()?.reject(new Error('bd offline')));
+
+    expect(el.textContent).toContain('bd offline');
+    const retry = Array.from(el.querySelectorAll('button')).find((button) => button.textContent?.includes('Retry'));
+    await act(async () => retry?.click());
+    expect(rpc.calls.filter((call) => call.method === 'getMolSnapshot')).toHaveLength(2);
+    await resolveOldest(emptySnapshot());
+    expect(el.textContent).toContain('No molecules in this project');
+  });
+
   it('renders a card per molecule from the real fixture snapshot: id, title, progress, current step', async () => {
     const el = await mount();
     await resolveOldest(populatedSnapshot());
@@ -284,6 +317,22 @@ describe('MoleculesView', () => {
     const timerCard = section?.querySelector('article[aria-label^="bd-mol-fixtures-scratch-qpb"]');
     expect(humanCard?.querySelector('button')?.textContent).toContain('Resolve');
     expect(timerCard?.querySelector('button')).toBeNull();
+  });
+
+  it('links gate cards to issues whose blocks dependency targets that gate', async () => {
+    const onSelect = vi.fn();
+    const linkedIssue: Bead = {
+      id: 'step-behind-gate', title: 'Continue deployment', status: 'open', priority: 2, issue_type: 'task',
+      dependencies: [{ depends_on_id: gateFixtures[0].id, type: 'blocks' }],
+    };
+    const el = await mount({ beadsById: new Map([[linkedIssue.id, linkedIssue]]), onSelect });
+    await resolveOldest(populatedSnapshot({ gates: [gateFixtures[0]] }));
+
+    const gateCard = el.querySelector(`article[aria-label^="${gateFixtures[0].id}"]`);
+    const link = Array.from(gateCard?.querySelectorAll('button') ?? []).find((button) => button.textContent?.includes(linkedIssue.id));
+    expect(link?.textContent).toContain(linkedIssue.title);
+    await act(async () => link?.click());
+    expect(onSelect).toHaveBeenCalledWith(linkedIssue.id);
   });
 
   it('renders no gate section when snapshot.gates is empty, even with molecules present', async () => {

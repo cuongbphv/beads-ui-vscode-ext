@@ -130,6 +130,24 @@ describe('useMolecules', () => {
     expect(hook().error?.message).toContain('bd not found');
   });
 
+  it('retries a failed refresh while retaining stale data until the next success', async () => {
+    await mount();
+    const initial = makeSnapshot({ fetchedAt: '2026-10-03T00:00:00Z' });
+    await resolveOldest(initial);
+    await act(async () => fireIssuesChanged());
+    await act(async () => rpc.pending.shift()?.reject(new Error('backend unavailable')));
+
+    expect(hook().snapshot).toEqual(initial);
+    expect(hook().error?.message).toContain('backend unavailable');
+    await act(async () => hook().retry());
+    expect(rpc.calls).toHaveLength(3);
+
+    const refreshed = makeSnapshot({ fetchedAt: '2026-10-03T01:00:00Z' });
+    await resolveOldest(refreshed);
+    expect(hook().snapshot).toEqual(refreshed);
+    expect(hook().error).toBeUndefined();
+  });
+
   it('refetches on issuesChanged while mounted', async () => {
     await mount();
     await resolveOldest(makeSnapshot());

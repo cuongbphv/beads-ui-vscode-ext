@@ -111,7 +111,11 @@ describe('StepList', () => {
 
     expect(el.textContent).toContain('gate: human');
     const rows = Array.from(el.querySelectorAll('article'));
+    const gatedRow = rows.find((r) => r.getAttribute('aria-label')?.startsWith('gated:'));
+    expect(gatedRow?.textContent).toContain('Waiting for gate');
+    expect(gatedRow?.textContent).not.toContain('Ready');
     const openRow = rows.find((r) => r.getAttribute('aria-label')?.startsWith('open:'));
+    expect(openRow?.textContent).toContain('Ready');
     expect(openRow?.textContent).not.toContain('gate:');
   });
 

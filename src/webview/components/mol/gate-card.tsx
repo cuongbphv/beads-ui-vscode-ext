@@ -19,12 +19,20 @@ import { CheckCircle2, Lock } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 import { formatGateAwait } from '../../../shared/mol';
-import type { BdGate } from '../../../shared/types';
+import type { Bead, BdGate } from '../../../shared/types';
 import { asRpcError, call } from '../../bridge/rpc';
 import { Button } from '../primitives';
 import { useToast } from '../toast';
 
-export function GateCard({ gate }: { gate: BdGate }): ReactNode {
+export function GateCard({
+  gate,
+  affectedIssues = [],
+  onSelect,
+}: {
+  gate: BdGate;
+  affectedIssues?: readonly Bead[];
+  onSelect?: (id: string) => void;
+}): ReactNode {
   const { notify } = useToast();
   const [busy, setBusy] = useState(false);
 
@@ -58,6 +66,28 @@ export function GateCard({ gate }: { gate: BdGate }): ReactNode {
       <p className="text-fg-muted mt-1 text-xs">
         {gate.status}{gate.owner ? ` · Owner: ${gate.owner}` : ' · Unassigned'}
       </p>
+      <div className="mt-2 text-xs">
+        <p className="text-fg-muted">Affected issues:</p>
+        {affectedIssues.length > 0 ? (
+          <ul className="mt-1 flex flex-wrap gap-1.5">
+            {affectedIssues.map((issue) => (
+              <li key={issue.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect?.(issue.id)}
+                  disabled={!onSelect}
+                  className="border-border text-fg hover:bg-surface-hover rounded-sm border px-1.5 py-0.5 text-left disabled:cursor-default"
+                  title={issue.title}
+                >
+                  {issue.id}: {issue.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-fg-muted mt-1">No linked issue found in the loaded data.</p>
+        )}
+      </div>
       {gate.await_type === 'human' ? (
         <Button variant="secondary" disabled={busy} className="mt-2" onClick={() => void resolve()}>
           <CheckCircle2 aria-hidden="true" className="size-3.5" />
@@ -68,7 +98,15 @@ export function GateCard({ gate }: { gate: BdGate }): ReactNode {
   );
 }
 
-export function GatesSection({ gates }: { gates: BdGate[] }): ReactNode {
+export function GatesSection({
+  gates,
+  affectedByGate,
+  onSelect,
+}: {
+  gates: BdGate[];
+  affectedByGate?: ReadonlyMap<string, readonly Bead[]>;
+  onSelect?: (id: string) => void;
+}): ReactNode {
   if (gates.length === 0) return null;
 
   return (
@@ -77,7 +115,7 @@ export function GatesSection({ gates }: { gates: BdGate[] }): ReactNode {
       <ul className="grid grid-cols-1 gap-2 @2xl:grid-cols-2 @5xl:grid-cols-3">
         {gates.map((gate) => (
           <li key={gate.id}>
-            <GateCard gate={gate} />
+            <GateCard gate={gate} affectedIssues={affectedByGate?.get(gate.id)} onSelect={onSelect} />
           </li>
         ))}
       </ul>

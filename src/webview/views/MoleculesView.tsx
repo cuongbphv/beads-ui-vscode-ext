@@ -8,15 +8,15 @@
  * a project with zero molecules still reads project-wide gates so standalone
  * human approvals remain visible, and only while this tab is open.
  */
-import { AlertCircle, FlaskConical } from 'lucide-react';
-import { useCallback, useState, type ReactNode } from 'react';
+import { AlertCircle, FlaskConical, RefreshCw } from 'lucide-react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
-import type { Bead } from '../../shared/types';
+import { edgeKind, edgeTargetId, type Bead } from '../../shared/types';
 import { GatesSection } from '../components/mol/gate-card';
 import { MoleculeCard } from '../components/mol/molecule-card';
 import { MoleculeDetail } from '../components/mol/molecule-detail';
 import { WispStrip } from '../components/mol/wisp-strip';
-import { EmptyState, Skeleton } from '../components/primitives';
+import { Button, EmptyState, Skeleton } from '../components/primitives';
 import { useMolecules } from '../hooks/use-molecules';
 
 export function MoleculesView({
@@ -29,7 +29,21 @@ export function MoleculesView({
   onSelect: (id: string) => void;
   selectedId?: string;
 }): ReactNode {
-  const { snapshot, loading, error } = useMolecules();
+  const { snapshot, loading, error, retry } = useMolecules();
+  const affectedByGate = useMemo(() => {
+    const result = new Map<string, Bead[]>();
+    for (const bead of beadsById.values()) {
+      for (const dep of bead.dependencies ?? []) {
+        if (edgeKind(dep) !== 'blocks') continue;
+        const gateId = edgeTargetId(dep);
+        if (!gateId) continue;
+        const issues = result.get(gateId) ?? [];
+        if (!issues.some((issue) => issue.id === bead.id)) issues.push(bead);
+        result.set(gateId, issues);
+      }
+    }
+    return result;
+  }, [beadsById]);
   // Which molecule's step list is expanded inline below the grid. A card
   // click still calls `onSelect(root.id)` exactly as bead 8eo.3 wired it
   // (opens the App-level BeadDetail pane for the root) — this is additive,
@@ -53,21 +67,35 @@ export function MoleculesView({
       );
     }
     return (
-      <EmptyState
-        icon={<AlertCircle className="size-10" />}
-        title="Couldn't load molecules"
-        hint={error?.message ?? 'Waiting for the first read from bd.'}
-      />
+      <div className="grid justify-items-center gap-3 p-3">
+        <EmptyState
+          icon={<AlertCircle className="size-10" />}
+          title="Couldn't load molecules"
+          hint={error?.message ?? 'Waiting for the first read from bd.'}
+        />
+        <Button variant="secondary" onClick={retry}><RefreshCw aria-hidden="true" className="size-3.5" />Retry</Button>
+      </div>
     );
   }
 
+  const refreshError = error ? (
+    <div role="alert" className="border-warning text-warning mb-3 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm">
+      <AlertCircle aria-hidden="true" className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1">Refresh failed: {error.message}. Showing data last updated <time dateTime={snapshot.fetchedAt}>{new Date(snapshot.fetchedAt).toLocaleString()}</time>.</span>
+      <Button variant="secondary" onClick={retry}><RefreshCw aria-hidden="true" className="size-3.5" />Retry</Button>
+    </div>
+  ) : null;
+
   if (snapshot.molecules.length === 0 && snapshot.gates.length === 0 && snapshot.wisps.length === 0) {
     return (
-      <EmptyState
-        icon={<FlaskConical className="size-10" />}
-        title="No molecules in this project"
-        hint="Molecules are poured from formulas with `bd mol pour`."
-      />
+      <div className="p-3">
+        {refreshError}
+        <EmptyState
+          icon={<FlaskConical className="size-10" />}
+          title="No molecules in this project"
+          hint="Molecules are poured from formulas with `bd mol pour`."
+        />
+      </div>
     );
   }
 
@@ -75,7 +103,8 @@ export function MoleculesView({
 
   return (
     <div className="@container h-full overflow-y-auto p-3">
-      <GatesSection gates={snapshot.gates} />
+      {refreshError}
+      <GatesSection gates={snapshot.gates} affectedByGate={affectedByGate} onSelect={onSelect} />
       <WispStrip wisps={snapshot.wisps} />
 
       {snapshot.degraded ? (

@@ -95,6 +95,23 @@ function button(root: HTMLDivElement, text: string): HTMLButtonElement | null {
 }
 
 describe('GateCard', () => {
+  it('links known affected issues to the existing issue detail action', async () => {
+    const onSelect = vi.fn();
+    const affectedIssue = { id: 'step-1', title: 'Approve design', status: 'open', priority: 2, issue_type: 'task' };
+    const root = await mount(createElement(GateCard, { gate: gate(), affectedIssues: [affectedIssue], onSelect }));
+
+    expect(root.textContent).toContain('Affected issues:');
+    const issueButton = button(root, 'step-1: Approve design');
+    expect(issueButton).not.toBeNull();
+    await act(async () => issueButton?.click());
+    expect(onSelect).toHaveBeenCalledWith('step-1');
+  });
+
+  it('says when affected issues are unknown in the loaded data', async () => {
+    const root = await mount(createElement(GateCard, { gate: gate() }));
+    expect(root.textContent).toContain('No linked issue found in the loaded data.');
+  });
+
   it('shows a Resolve button for a human gate', async () => {
     const root = await mount(createElement(GateCard, { gate: gate({ await_type: 'human' }) }));
 

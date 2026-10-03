@@ -24,12 +24,15 @@ export interface MoleculesState {
   /** True only until the *first* `getMolSnapshot` round trip settles. */
   loading: boolean;
   error: RpcError | undefined;
+  /** Retry a failed read without discarding the last successful snapshot. */
+  retry: () => void;
 }
 
 export function useMolecules(): MoleculesState {
   const [snapshot, setSnapshot] = useState<MolSnapshot>();
   const [error, setError] = useState<RpcError>();
   const [loading, setLoading] = useState(true);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -77,7 +80,7 @@ export function useMolecules(): MoleculesState {
       live = false;
       unsubscribe();
     };
-  }, []);
+  }, [retryToken]);
 
-  return { snapshot, loading, error };
+  return { snapshot, loading, error, retry: () => setRetryToken((token) => token + 1) };
 }

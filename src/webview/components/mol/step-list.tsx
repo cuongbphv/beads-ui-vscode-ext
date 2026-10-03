@@ -5,9 +5,8 @@
  * (`done`/`current`/`ready`/`pending` — see `shared/mol.ts`'s doc comment on
  * `MolStepStatus`; there is no fifth "blocked" state, because bd itself
  * never emits one). A step waiting on an open gate still reports one of
- * those four (usually `ready`, since gates are invisible to `mol show
- * --parallel`'s own analysis) and gets a separate gate badge layered on top
- * — orthogonal information, not a state.
+ * those four. The presentation overrides Ready with Waiting for gate so the
+ * two signals cannot contradict each other; the bd status remains unchanged.
  *
  * Steps group into bordered clusters by `parallelGroup` when the parent
  * detail's `parallelAvailable` is true; otherwise (or for any ungrouped
@@ -49,15 +48,16 @@ function gateBadgeDetail(gate: MolStepGate): string | undefined {
   return undefined;
 }
 
-export function StepStatusBadge({ status }: { status: MolStepStatus }): ReactNode {
+export function StepStatusBadge({ status, waitingForGate = false }: { status: MolStepStatus; waitingForGate?: boolean }): ReactNode {
+  const waiting = status === 'ready' && waitingForGate;
   return (
     <span
       className={cn(
         'inline-flex shrink-0 items-center rounded-sm border px-1.5 py-0.5 text-[11px] font-medium',
-        STATUS_CLASS[status],
+        waiting ? 'text-warning border-warning/40' : STATUS_CLASS[status],
       )}
     >
-      {STATUS_LABEL[status]}
+      {waiting ? 'Waiting for gate' : STATUS_LABEL[status]}
     </span>
   );
 }
@@ -108,7 +108,7 @@ function StepRow({
         selected && 'border-border-strong bg-surface-active',
       )}
     >
-      <StepStatusBadge status={step.status} />
+      <StepStatusBadge status={step.status} waitingForGate={Boolean(step.gate)} />
       <span className="text-fg-muted shrink-0 truncate font-mono text-xs opacity-70">{step.issue.id}</span>
       <span className="text-fg-strong min-w-0 flex-1 truncate">{step.issue.title}</span>
       {step.gate ? <GateBadge gate={step.gate} /> : null}
