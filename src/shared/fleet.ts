@@ -116,6 +116,8 @@ export type TranscriptBlock =
 
 export interface TranscriptEvent {
   uuid: string | null;
+  /** Source-line digest for fetching a truncated block on demand. */
+  sourceKey?: string;
   /** Every other transcript line type (attachments, summaries, ...) collapses to `'other'`. */
   role: 'user' | 'assistant' | 'other';
   timestamp: string | null;

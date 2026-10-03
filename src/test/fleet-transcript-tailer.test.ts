@@ -139,11 +139,31 @@ describe('TranscriptTailer.subscribe — security', () => {
     }));
 
     await expect(tailer.subscribe('agent:codex', vi.fn())).rejects.toThrow(/symlink|outside|contain/i);
+    await expect(tailer.fullBlock('agent:codex', 'a'.repeat(64), 0)).rejects.toThrow(/symlink|outside|contain/i);
     tailer.dispose();
   });
 });
 
 describe('TranscriptTailer.subscribe — backfill', () => {
+  it.each(['claude', 'codex'] as const)('fetches a full %s block only after a truncated preview', async (provider) => {
+    const filePath = join(baseDir, `${provider}.jsonl`);
+    const content = 'a'.repeat(20 * 1024);
+    const line = provider === 'claude'
+      ? jsonLine('assistant', content)
+      : `${JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: content }] } })}\n`;
+    await writeFile(filePath, line, 'utf8');
+    const tailer = new TranscriptTailer(resolver({ 'agent:one': { filePath, baseDir, provider } }));
+    const backfill = await tailer.subscribe('agent:one', vi.fn());
+    const event = backfill.events[0];
+    expect(event.blocks[0]).toMatchObject({ type: 'text', truncated: true });
+    expect(event.sourceKey).toMatch(/^[a-f0-9]{64}$/);
+    const full = await tailer.fullBlock('agent:one', event.sourceKey!, 0);
+    expect(full).toEqual({ type: 'text', text: content, truncated: false });
+    await writeFile(filePath, jsonLine('assistant', 'replacement'), 'utf8');
+    await expect(tailer.fullBlock('agent:one', event.sourceKey!, 0)).rejects.toThrow(/changed|disappeared/);
+    tailer.dispose();
+  });
+
   it('backfills a small file in full, with truncated=false and offset pinned at the file size', async () => {
     const filePath = join(baseDir, 'small.jsonl');
     await writeFile(filePath, jsonLine('user', 'hello') + jsonLine('assistant', 'hi there'), 'utf8');

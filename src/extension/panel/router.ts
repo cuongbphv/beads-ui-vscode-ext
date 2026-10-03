@@ -7,7 +7,7 @@
  */
 import * as vscode from 'vscode';
 
-import type { TranscriptBackfill, TranscriptPage } from '../../shared/fleet';
+import type { TranscriptBackfill, TranscriptBlock, TranscriptPage } from '../../shared/fleet';
 import {
   MUTATING_METHODS,
   type RpcMethodName,
@@ -28,7 +28,9 @@ import {
   narrowUpdateTextParams,
   requireDueDate,
   requireTargetId,
+  requireTranscriptBlockIndex,
   requireTranscriptOffset,
+  requireTranscriptSourceKey,
 } from './param-validation';
 
 export interface RouterHost {
@@ -46,6 +48,7 @@ export interface RouterHost {
    */
   transcriptSubscribe(targetId: string): Promise<TranscriptBackfill>;
   transcriptPage(targetId: string, beforeOffset: number): Promise<TranscriptPage>;
+  transcriptBlock(targetId: string, sourceKey: string, blockIndex: number): Promise<TranscriptBlock>;
   /** Stop following a transcript target (`unsubscribeTranscript`). */
   transcriptUnsubscribe(targetId: string): void;
 }
@@ -239,6 +242,13 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       return host.transcriptPage(
         requireTargetId(params.targetId, 'targetId'),
         requireTranscriptOffset(params.beforeOffset),
+      );
+
+    case 'getTranscriptBlock':
+      return host.transcriptBlock(
+        requireTargetId(params.targetId, 'targetId'),
+        requireTranscriptSourceKey(params.sourceKey),
+        requireTranscriptBlockIndex(params.blockIndex),
       );
 
     case 'unsubscribeTranscript':

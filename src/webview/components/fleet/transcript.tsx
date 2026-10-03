@@ -28,6 +28,7 @@ import { AlertTriangle, Bot, Brain, Search, ScrollText, Terminal, Wrench } from 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import type { TranscriptBlock, TranscriptEvent } from '../../../shared/fleet';
+import { asRpcError, call } from '../../bridge/rpc';
 import { useTranscript } from '../../hooks/use-transcript';
 import { isNearBottom, nextScrollTop } from '../../lib/transcript-scroll';
 import { cn } from '../../lib/utils';
@@ -181,7 +182,7 @@ export function Transcript({ targetId }: { targetId: string }): ReactNode {
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-2">
         <ul className="flex flex-col gap-3">
           {visibleEvents.map((event, index) => (
-            <TranscriptEventRow key={event.uuid ?? index} event={event} />
+            <TranscriptEventRow key={event.uuid ?? index} event={event} targetId={targetId} />
           ))}
         </ul>
         {query && visibleEvents.length === 0 ? <p className="text-fg-muted text-xs">No matches in loaded events.</p> : null}
@@ -234,24 +235,58 @@ const ROLE_CLASS: Record<TranscriptEvent['role'], string> = {
   other: 'text-fg-muted',
 };
 
-function TranscriptEventRow({ event }: { event: TranscriptEvent }): ReactNode {
+function TranscriptEventRow({ event, targetId }: { event: TranscriptEvent; targetId: string }): ReactNode {
   return (
     <li className="flex flex-col gap-1.5">
       <span className={cn('text-[0.65rem] font-medium tracking-wide uppercase', ROLE_CLASS[event.role])}>
         {event.role}
       </span>
       {event.blocks.map((block, index) => (
-        <TranscriptBlockView key={index} block={block} />
+        <TranscriptBlockView key={`${targetId}:${event.sourceKey ?? event.uuid ?? event.timestamp ?? ''}:${index}`} block={block} targetId={targetId} sourceKey={event.sourceKey} blockIndex={index} />
       ))}
     </li>
   );
 }
 
-function TranscriptBlockView({ block }: { block: TranscriptBlock }): ReactNode {
-  if (block.type === 'text') {
-    return <Markdown source={block.text} />;
+function TranscriptBlockView({ block, targetId, sourceKey, blockIndex }: {
+  block: TranscriptBlock;
+  targetId: string;
+  sourceKey?: string;
+  blockIndex: number;
+}): ReactNode {
+  const [full, setFull] = useState<TranscriptBlock | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const shown = full ?? block;
+
+  async function showAll(): Promise<void> {
+    if (!sourceKey || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await call('getTranscriptBlock', { targetId, sourceKey, blockIndex });
+      if (result.type !== block.type) throw new Error('Transcript block changed; reopen the transcript.');
+      setFull(result);
+    } catch (rejection: unknown) {
+      setError(asRpcError(rejection).message);
+    } finally {
+      setLoading(false);
+    }
   }
-  return <TranscriptChip block={block} />;
+
+  const control = block.truncated && sourceKey ? (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+      <button type="button" className="surface-interactive rounded px-2 py-1" disabled={loading} onClick={() => full ? setFull(null) : void showAll()}>
+        {loading ? 'Loading full content…' : full ? 'Show less' : 'Show all'}
+      </button>
+      {error ? <span role="alert" className="text-danger">{error}</span> : null}
+    </div>
+  ) : null;
+
+  if (shown.type === 'text') {
+    return <div><Markdown source={shown.text} />{control}</div>;
+  }
+  return <TranscriptChip block={shown} previewTruncated={block.truncated} control={control} />;
 }
 
 const CHIP_ICON: Record<Exclude<TranscriptBlock['type'], 'text'>, ReactNode> = {
@@ -303,7 +338,11 @@ function chipBody(block: Exclude<TranscriptBlock, { type: 'text' }>): string {
 }
 
 /** A collapsed-by-default disclosure for a `thinking`/`tool_use`/`tool_result` block. */
-function TranscriptChip({ block }: { block: Exclude<TranscriptBlock, { type: 'text' }> }): ReactNode {
+function TranscriptChip({ block, previewTruncated, control }: {
+  block: Exclude<TranscriptBlock, { type: 'text' }>;
+  previewTruncated: boolean;
+  control: ReactNode;
+}): ReactNode {
   return (
     <details
       className="transcript-chip rounded-md border text-xs"
@@ -312,7 +351,7 @@ function TranscriptChip({ block }: { block: Exclude<TranscriptBlock, { type: 'te
       <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1">
         {CHIP_ICON[block.type]}
         {chipLabel(block)}
-        {block.truncated ? <span className="text-fg-muted">(truncated)</span> : null}
+        {previewTruncated && block.truncated ? <span className="text-fg-muted">(truncated)</span> : null}
       </summary>
       <div className="border-border text-fg border-t px-2 py-1.5">
         {block.type === 'thinking' ? (
@@ -320,6 +359,7 @@ function TranscriptChip({ block }: { block: Exclude<TranscriptBlock, { type: 'te
         ) : (
           <div className="whitespace-pre-wrap">{chipBody(block)}</div>
         )}
+        {control}
       </div>
     </details>
   );

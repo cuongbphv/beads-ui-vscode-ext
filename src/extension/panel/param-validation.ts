@@ -54,6 +54,20 @@ export function requireTranscriptOffset(value: unknown): number {
   return value;
 }
 
+export function requireTranscriptSourceKey(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) {
+    throw new Error('Invalid parameter "sourceKey": expected a transcript digest.');
+  }
+  return value;
+}
+
+export function requireTranscriptBlockIndex(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 10000) {
+    throw new Error('Invalid parameter "blockIndex": expected a nonnegative block index.');
+  }
+  return value;
+}
+
 /**
  * `updateText`'s allowlist of settable fields. This is CLI shape, not beads
  * vocabulary — the fixed set of dedicated `bd update` flags — so hardcoding

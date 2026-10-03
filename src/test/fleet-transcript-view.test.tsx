@@ -22,6 +22,12 @@ declare global {
 const hookState = vi.hoisted(() => ({
   current: undefined as unknown as TranscriptState,
 }));
+const blockRpc = vi.hoisted(() => ({ call: vi.fn(), }));
+
+vi.mock('../webview/bridge/rpc', () => ({
+  call: blockRpc.call,
+  asRpcError: (error: Error) => error,
+}));
 
 vi.mock('../webview/hooks/use-transcript', () => ({
   useTranscript: () => hookState.current,
@@ -63,6 +69,7 @@ beforeAll(() => {
 });
 
 afterEach(async () => {
+  blockRpc.call.mockReset();
   if (mounted) {
     await act(async () => mounted?.unmount());
     mounted = undefined;
@@ -98,6 +105,36 @@ describe('Transcript — loading/error/empty', () => {
 });
 
 describe('Transcript — blocks', () => {
+  it('loads the full text block on Show all and restores the preview on Show less', async () => {
+    const event = makeEvent({
+      sourceKey: 'a'.repeat(64),
+      blocks: [{ type: 'text', text: 'preview', truncated: true }],
+    });
+    blockRpc.call.mockResolvedValue({ type: 'text', text: 'preview and the full ending', truncated: false });
+    const el = await render(baseState({ events: [event] }));
+    const button = el.querySelector('button') as HTMLButtonElement;
+    expect(button.textContent).toBe('Show all');
+    await act(async () => button.click());
+    expect(blockRpc.call).toHaveBeenCalledWith('getTranscriptBlock', {
+      targetId: 'agent:worker-1', sourceKey: event.sourceKey, blockIndex: 0,
+    });
+    expect(el.textContent).toContain('preview and the full ending');
+    expect(button.textContent).toBe('Show less');
+    await act(async () => button.click());
+    expect(el.textContent).not.toContain('full ending');
+  });
+
+  it('shows a read error without losing the truncated preview', async () => {
+    const event = makeEvent({ sourceKey: 'a'.repeat(64), blocks: [
+      { type: 'tool_result', toolUseId: 'x', content: 'preview', isError: false, truncated: true },
+    ] });
+    blockRpc.call.mockRejectedValue(new Error('Transcript content changed'));
+    const el = await render(baseState({ events: [event] }));
+    const button = Array.from(el.querySelectorAll('button')).find((item) => item.textContent === 'Show all')!;
+    await act(async () => button.click());
+    expect(el.textContent).toContain('preview');
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('changed');
+  });
   it('renders a text block through the markdown renderer — "**bold**" becomes a real <strong> (reverses the prior plain-text decision, 2026-08-20)', async () => {
     const event = makeEvent({
       blocks: [{ type: 'text', text: 'plain **bold** text', truncated: false }],

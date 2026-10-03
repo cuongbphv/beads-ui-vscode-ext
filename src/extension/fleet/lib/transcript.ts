@@ -42,6 +42,10 @@ function truncateUtf8(value: string, maxBytes: number): Truncated {
   return { value: new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, end)), truncated: true };
 }
 
+function preview(value: string, maxBytes: number, full: boolean): Truncated {
+  return full ? { value, truncated: false } : truncateUtf8(value, maxBytes);
+}
+
 /** Flatten `tool_result` content, whether it arrived as a string or as content blocks. */
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -85,19 +89,20 @@ function readableCodexToolInput(rawInput: unknown, name: unknown): string {
   }
 }
 
-function parseBlock(raw: unknown): TranscriptBlock | null {
+function parseBlock(raw: unknown, full: boolean): TranscriptBlock | null {
   if (!raw || typeof raw !== 'object') return null;
   const block = raw as Record<string, unknown>;
 
   switch (block.type) {
     case 'text': {
-      const { value, truncated } = truncateUtf8(typeof block.text === 'string' ? block.text : '', TEXT_CAP_BYTES);
+      const { value, truncated } = preview(typeof block.text === 'string' ? block.text : '', TEXT_CAP_BYTES, full);
       return { type: 'text', text: value, truncated };
     }
     case 'thinking': {
-      const { value, truncated } = truncateUtf8(
+      const { value, truncated } = preview(
         typeof block.thinking === 'string' ? block.thinking : '',
         THINKING_CAP_BYTES,
+        full,
       );
       return { type: 'thinking', thinking: value, truncated };
     }
@@ -115,7 +120,7 @@ function parseBlock(raw: unknown): TranscriptBlock | null {
       } catch {
         serialized = '';
       }
-      const { value, truncated } = truncateUtf8(serialized, TOOL_USE_CAP_BYTES);
+      const { value, truncated } = preview(serialized, TOOL_USE_CAP_BYTES, full);
       return {
         type: 'tool_use',
         id: typeof block.id === 'string' ? block.id : '',
@@ -125,7 +130,7 @@ function parseBlock(raw: unknown): TranscriptBlock | null {
       };
     }
     case 'tool_result': {
-      const { value, truncated } = truncateUtf8(textOf(block.content), TOOL_RESULT_CAP_BYTES);
+      const { value, truncated } = preview(textOf(block.content), TOOL_RESULT_CAP_BYTES, full);
       return {
         type: 'tool_result',
         toolUseId: typeof block.tool_use_id === 'string' ? block.tool_use_id : '',
@@ -152,7 +157,7 @@ function roleOf(type: unknown): TranscriptEvent['role'] {
  * `attachment` event) parses to an event with empty `blocks` rather than
  * being rejected: only unparseable input is `null`.
  */
-export function parseTranscriptLine(line: string): TranscriptEvent | null {
+export function parseTranscriptLine(line: string, full = false): TranscriptEvent | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
@@ -174,10 +179,10 @@ export function parseTranscriptLine(line: string): TranscriptEvent | null {
 
   let blocks: TranscriptBlock[];
   if (typeof content === 'string') {
-    const { value, truncated } = truncateUtf8(content, TEXT_CAP_BYTES);
+    const { value, truncated } = preview(content, TEXT_CAP_BYTES, full);
     blocks = content ? [{ type: 'text', text: value, truncated }] : [];
   } else if (Array.isArray(content)) {
-    blocks = content.map(parseBlock).filter((block): block is TranscriptBlock => block !== null);
+    blocks = content.map((block) => parseBlock(block, full)).filter((block): block is TranscriptBlock => block !== null);
   } else {
     blocks = [];
   }
@@ -193,7 +198,7 @@ export function parseTranscriptLine(line: string): TranscriptEvent | null {
 }
 
 /** Translate one Codex rollout JSONL record without exposing metadata rows. */
-export function parseCodexTranscriptLine(line: string): TranscriptEvent | null {
+export function parseCodexTranscriptLine(line: string, full = false): TranscriptEvent | null {
   if (!line.trim()) return null;
   let raw: unknown;
   try {
@@ -221,7 +226,7 @@ export function parseCodexTranscriptLine(line: string): TranscriptEvent | null {
       const block = item as Record<string, unknown>;
       if (!['input_text', 'output_text', 'text'].includes(String(block.type))) continue;
       if (typeof block.text !== 'string') continue;
-      const { value, truncated } = truncateUtf8(block.text, TEXT_CAP_BYTES);
+      const { value, truncated } = preview(block.text, TEXT_CAP_BYTES, full);
       blocks.push({ type: 'text', text: value, truncated });
     }
     return { ...base, role: payload.role, blocks };
@@ -235,14 +240,14 @@ export function parseCodexTranscriptLine(line: string): TranscriptEvent | null {
       .filter((part) => part.type === 'summary_text' || part.type === 'reasoning_text')
       .map((part) => typeof part.text === 'string' ? part.text : '')
       .filter(Boolean).join('\n');
-    const { value, truncated } = truncateUtf8(text, THINKING_CAP_BYTES);
+    const { value, truncated } = preview(text, THINKING_CAP_BYTES, full);
     return { ...base, role: 'assistant', blocks: text ? [{ type: 'thinking', thinking: value, truncated }] : [] };
   }
 
   if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
     const rawInput = payload.type === 'function_call' ? payload.arguments : payload.input;
     const input = readableCodexToolInput(rawInput, payload.name);
-    const { value, truncated } = truncateUtf8(input, TOOL_USE_CAP_BYTES);
+    const { value, truncated } = preview(input, TOOL_USE_CAP_BYTES, full);
     return { ...base, role: 'assistant', blocks: [{
       type: 'tool_use',
       id: typeof payload.call_id === 'string' ? payload.call_id : '',
@@ -253,7 +258,7 @@ export function parseCodexTranscriptLine(line: string): TranscriptEvent | null {
   }
 
   if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
-    const { value, truncated } = truncateUtf8(textOf(payload.output), TOOL_RESULT_CAP_BYTES);
+    const { value, truncated } = preview(textOf(payload.output), TOOL_RESULT_CAP_BYTES, full);
     return { ...base, role: 'assistant', blocks: [{
       type: 'tool_result',
       toolUseId: typeof payload.call_id === 'string' ? payload.call_id : '',

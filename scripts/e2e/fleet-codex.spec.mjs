@@ -46,6 +46,7 @@ try {
   const parentFile = join(rollouts, `rollout-2026-10-03T10-00-00-${parentId}.jsonl`);
   const childFile = join(rollouts, `rollout-2026-10-03T10-00-01-${childId}.jsonl`);
   const opaqueMessage = `gAAAAAB${'q7_+-'.repeat(24)}=`;
+  const longOutput = `${'tool output line\n'.repeat(450)}FULL_OUTPUT_END`;
   await writeFile(parentFile,
     JSON.stringify({ type: 'session_meta', payload: { id: parentId, cwd: workspace, source: 'vscode' } }) + '\n'
     + codexLine({ type: 'function_call', name: 'spawn_agent', arguments: JSON.stringify({ task_name: 'e2e_abc', message: `Implement bead e2e-abc in worktree ${worktree}.` }) }));
@@ -55,7 +56,8 @@ try {
     + Array.from({ length: 70 }, (_, index) => JSON.stringify({ type: 'event_msg', payload: { index, padding: 'x'.repeat(4096) } }) + '\n').join('')
     + codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic backfill' }] })
     + codexLine({ type: 'function_call', name: 'send_message', call_id: 'msg-1', arguments: JSON.stringify({ target: '/root', message: opaqueMessage }) })
-    + codexLine({ type: 'function_call_output', call_id: 'msg-1', output: '' }));
+    + codexLine({ type: 'function_call_output', call_id: 'msg-1', output: '' })
+    + codexLine({ type: 'function_call_output', call_id: 'long-1', output: longOutput }));
 
   await run('npm', ['run', 'build'], { cwd: repoRoot, shell: process.platform === 'win32' });
   const executablePath = await downloadAndUnzipVSCode(version);
@@ -99,6 +101,13 @@ try {
   await messageCall.getByText('Opaque agent message', { exact: false }).waitFor();
   if ((await transcript.textContent())?.includes(opaqueMessage)) throw new Error('Opaque Codex agent token leaked into transcript');
   await transcript.getByText('Tool result — no output').waitFor();
+  const longResult = transcript.locator('details:has(summary:has-text("Tool result"))').last();
+  await longResult.locator('summary').click();
+  if ((await longResult.textContent())?.includes('FULL_OUTPUT_END')) throw new Error('Full tool output loaded before Show all');
+  await longResult.getByRole('button', { name: 'Show all' }).click();
+  await longResult.getByText('FULL_OUTPUT_END', { exact: false }).waitFor();
+  await longResult.getByRole('button', { name: 'Show less' }).click();
+  if ((await longResult.textContent())?.includes('FULL_OUTPUT_END')) throw new Error('Show less did not restore the bounded preview');
   if (await transcript.getByText('Synthetic older history').count()) {
     throw new Error('Older Codex history appeared inside the bounded initial backfill');
   }
@@ -115,7 +124,7 @@ try {
   if (await transcript.getByText('Synthetic append').count() !== 1) {
     throw new Error('Codex transcript append rendered more than once');
   }
-  console.log('Fleet Codex E2E passed: discovery, labels, worktree link, transcript history/search/latest and append');
+  console.log('Fleet Codex E2E passed: discovery, labels, worktree link, full tool output, history/search/latest and append');
 } finally {
   if (app) await app.close().catch(() => {});
   await rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

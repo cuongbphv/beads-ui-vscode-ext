@@ -34,10 +34,12 @@
  * resolved path landed, so this check exists to catch it regardless of how
  * the path was built.
  */
-import { promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createReadStream, promises as fs } from 'node:fs';
 import { resolve as resolvePath, sep } from 'node:path';
+import { createInterface } from 'node:readline';
 
-import type { TranscriptBackfill, TranscriptEvent, TranscriptPage, TranscriptTarget } from '../../shared/fleet';
+import type { TranscriptBackfill, TranscriptBlock, TranscriptEvent, TranscriptPage, TranscriptTarget } from '../../shared/fleet';
 import { decodeUtf8Chunk, trimPartialFirstLine } from './lib/tail-decode';
 import { parseCodexTranscriptLine, parseTranscriptLine } from './lib/transcript';
 
@@ -239,6 +241,36 @@ export class TranscriptTailer {
       hasOlder: start > 0,
       ...(total > 0 && failed / total > SCHEMA_DRIFT_THRESHOLD ? { degraded: true } : {}),
     };
+  }
+
+  /** Re-read one requested block only; normal backfills remain bounded previews. */
+  async fullBlock(targetId: string, sourceKey: string, blockIndex: number): Promise<TranscriptBlock> {
+    const resolution = this.resolveTarget(targetId);
+    if (!resolution) throw new Error(`Unknown transcript target: ${targetId}`);
+    if (!isPathContained(resolution.filePath, resolution.baseDir)) {
+      throw new Error(`Refused to read a transcript path outside its expected directory: ${targetId}`);
+    }
+    const [filePath, baseDir] = await Promise.all([
+      fs.realpath(resolution.filePath), fs.realpath(resolution.baseDir),
+    ]);
+    if (!isPathContained(filePath, baseDir)) {
+      throw new Error(`Refused to read a transcript symlink outside its expected directory: ${targetId}`);
+    }
+    const stream = createReadStream(filePath, { encoding: 'utf8' });
+    const lines = createInterface({ input: stream, crlfDelay: Infinity });
+    try {
+      for await (const line of lines) {
+        if (transcriptLineKey(line) !== sourceKey) continue;
+        const event = (resolution.provider === 'codex' ? parseCodexTranscriptLine : parseTranscriptLine)(line, true);
+        const block = event?.blocks[blockIndex];
+        if (!block) throw new Error('Transcript block changed; reopen the transcript.');
+        return block;
+      }
+    } finally {
+      lines.close();
+      stream.destroy();
+    }
+    throw new Error('Transcript content changed or disappeared; reopen the transcript.');
   }
 
   /**
@@ -445,9 +477,16 @@ function parseLines(lines: string[], provider: 'claude' | 'codex'): { events: Tr
       failed += 1;
       continue;
     }
-    if ((parsed.role === 'user' || parsed.role === 'assistant') && (provider === 'claude' || parsed.blocks.length > 0)) events.push(parsed);
+    if ((parsed.role === 'user' || parsed.role === 'assistant') && (provider === 'claude' || parsed.blocks.length > 0)) {
+      if (parsed.blocks.some((block) => block.truncated)) parsed.sourceKey = transcriptLineKey(line);
+      events.push(parsed);
+    }
   }
   return { events, total, failed };
+}
+
+function transcriptLineKey(line: string): string {
+  return createHash('sha256').update(line.trimEnd()).digest('hex');
 }
 
 function errorMessage(error: unknown): string {

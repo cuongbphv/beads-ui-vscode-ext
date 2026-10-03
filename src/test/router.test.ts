@@ -163,6 +163,7 @@ function makeHost(overrides: Partial<RouterHost> = {}): RouterHost {
       totalBytes: 0,
     })) as RouterHost['transcriptSubscribe'],
     transcriptPage: vi.fn(async () => ({ events: [], beforeOffset: 0, hasOlder: false })),
+    transcriptBlock: vi.fn(async () => ({ type: 'text' as const, text: 'full', truncated: false })),
     transcriptUnsubscribe: vi.fn(),
     ...overrides,
   };
@@ -1064,6 +1065,23 @@ describe('router Fleet wiring', () => {
 });
 
 describe('router transcript wiring', () => {
+  it('validates a full-block request before reading the transcript', async () => {
+    const localHost = makeHost();
+    const sourceKey = 'a'.repeat(64);
+    const valid = await handleRequest(makeStore(new FakeMutations()), localHost,
+      request('getTranscriptBlock', { targetId: 'agent:worker-1', sourceKey, blockIndex: 0 }));
+    expect(valid.ok).toBe(true);
+    expect(localHost.transcriptBlock).toHaveBeenCalledWith('agent:worker-1', sourceKey, 0);
+    for (const params of [
+      { targetId: '../bad', sourceKey, blockIndex: 0 },
+      { targetId: 'agent:worker-1', sourceKey: 'bad', blockIndex: 0 },
+      { targetId: 'agent:worker-1', sourceKey, blockIndex: -1 },
+    ]) {
+      const invalid = await handleRequest(makeStore(new FakeMutations()), localHost, request('getTranscriptBlock', params));
+      expect(invalid.ok).toBe(false);
+    }
+    expect(localHost.transcriptBlock).toHaveBeenCalledTimes(1);
+  });
   it('validates the older-page cursor and forwards only a safe target and offset', async () => {
     const localHost = makeHost();
     const response = await handleRequest(

@@ -80,6 +80,25 @@ describe('parseCodexTranscriptLine', () => {
     expect(input).toContain('"target": "/root"');
     expect(input).toContain('Opaque agent message');
     expect(input).not.toContain(token);
+    const full = parseCodexTranscriptLine(line({
+      type: 'response_item', payload: {
+        type: 'function_call', name: 'send_message', arguments: JSON.stringify({ target: '/root', message: token }),
+      },
+    }), true);
+    expect(JSON.stringify(full)).not.toContain(token);
+  });
+
+  it('returns complete Codex tool input, tool output and reasoning only when requested', () => {
+    const cases = [
+      { payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: 'r'.repeat(THINKING_CAP_BYTES + 50) }] }, kind: 'thinking' },
+      { payload: { type: 'function_call', name: 'exec', arguments: JSON.stringify({ command: 'c'.repeat(TOOL_USE_CAP_BYTES + 50) }) }, kind: 'tool_use' },
+      { payload: { type: 'function_call_output', output: 'o'.repeat(TOOL_RESULT_CAP_BYTES + 50) }, kind: 'tool_result' },
+    ];
+    for (const { payload, kind } of cases) {
+      const source = line({ type: 'response_item', payload });
+      expect(parseCodexTranscriptLine(source)?.blocks[0]).toMatchObject({ type: kind, truncated: true });
+      expect(parseCodexTranscriptLine(source, true)?.blocks[0]).toMatchObject({ type: kind, truncated: false });
+    }
   });
 });
 
@@ -264,6 +283,19 @@ describe('parseTranscriptLine', () => {
   });
 
   describe('size caps', () => {
+    it('returns complete Claude text, thinking, tool input and tool result on demand', () => {
+      const source = line({ type: 'assistant', message: { content: [
+        { type: 'text', text: 'a'.repeat(TEXT_CAP_BYTES + 1) },
+        { type: 'thinking', thinking: 'b'.repeat(THINKING_CAP_BYTES + 1) },
+        { type: 'tool_use', id: 'x', name: 'Write', input: { content: 'c'.repeat(TOOL_USE_CAP_BYTES + 1) } },
+        { type: 'tool_result', tool_use_id: 'x', content: 'd'.repeat(TOOL_RESULT_CAP_BYTES + 1) },
+      ] } });
+      expect(parseTranscriptLine(source)?.blocks.every((block) => block.truncated)).toBe(true);
+      const full = parseTranscriptLine(source, true)?.blocks;
+      expect(full?.every((block) => !block.truncated)).toBe(true);
+      expect(full?.[0]).toMatchObject({ text: 'a'.repeat(TEXT_CAP_BYTES + 1) });
+      expect(full?.[3]).toMatchObject({ content: 'd'.repeat(TOOL_RESULT_CAP_BYTES + 1) });
+    });
     it('truncates an oversized text block to 16KB', () => {
       const big = 'x'.repeat(TEXT_CAP_BYTES + 500);
       const event = parseTranscriptLine(line({ type: 'assistant', message: { content: [{ type: 'text', text: big }] } }));
