@@ -255,7 +255,7 @@ try {
   await window.waitForTimeout(600);
   await shot(window, 'fleet');
 
-  await inner.getByRole('button', { name: /^Worker /i }).first().click();
+  await inner.getByRole('button', { name: /^(?:Claude Code|Codex) worker /i }).first().click();
   await window.waitForTimeout(600);
   await shot(window, 'fleet-transcript');
 
