@@ -18,6 +18,7 @@ const bridgeState = vi.hoisted(() => ({
     roadmapGutter: 347,
   },
   persisted: new Array<unknown>(),
+  listeners: new Array<(event: { name: string; id: string }) => void>(),
 }));
 
 const selection = vi.hoisted(() => ({ focusedId: undefined as string | undefined }));
@@ -27,7 +28,10 @@ vi.mock('../webview/bridge/rpc', () => ({
   persist: (state: unknown) => {
     bridgeState.persisted.push(state);
   },
-  onHostEvent: () => () => {},
+  onHostEvent: (listener: (event: { name: string; id: string }) => void) => {
+    bridgeState.listeners.push(listener);
+    return () => { bridgeState.listeners = bridgeState.listeners.filter((item) => item !== listener); };
+  },
   // The detail pane fetches the full record on mount. Never settling keeps it
   // on its skeleton, which is all these assertions need it to be.
   call: () => new Promise(() => {}),
@@ -102,6 +106,7 @@ beforeAll(() => {
 beforeEach(() => {
   installResizeObserver();
   selection.focusedId = undefined;
+  bridgeState.listeners.length = 0;
 });
 
 afterEach(async () => {
@@ -221,6 +226,19 @@ describe('App dashboard tabs', () => {
     const roadmapTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
       .find((button) => button.textContent?.trim() === 'Roadmap')!;
     await act(async () => roadmapTab.click());
+    expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).not.toBeNull();
+  });
+
+  it('keeps an unrelated Roadmap detail out of Molecules and restores it on return', async () => {
+    selection.focusedId = 'epic-a';
+    const container = await mountApp();
+    expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).not.toBeNull();
+    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    await act(async () => tabs.find((button) => button.textContent?.trim() === 'Molecules')?.click());
+    expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).toBeNull();
+    await act(async () => bridgeState.listeners.forEach((listener) => listener({ name: 'focusBead', id: 'epic-a' })));
+    expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).not.toBeNull();
+    await act(async () => tabs.find((button) => button.textContent?.trim() === 'Roadmap')?.click());
     expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).not.toBeNull();
   });
 

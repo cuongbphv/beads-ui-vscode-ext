@@ -172,7 +172,18 @@ try {
     await inner.locator(`[role="tab"]:has-text("${tab}")`).first().click();
     await shot(window, tab.toLowerCase());
 
+    if (tab === 'Overview') {
+      await inner.locator('section[aria-label="Ready to start"]').evaluate((section) => {
+        section.scrollIntoView({ block: 'start' });
+        section.closest('[class*="overflow-y-auto"]')?.scrollBy(0, -24);
+      });
+      await shot(window, 'overview-ready');
+    }
+
     if (tab === 'Board') {
+      await inner.getByRole('button', { name: /Ready only/ }).click();
+      await shot(window, 'board-ready');
+      await inner.getByRole('button', { name: /Ready only/ }).click();
       // Swimlanes: 'board' above is the default, unposed view. Toggle the
       // taxonomy-lane grouping on for a second shot, then back off — leaving
       // it on would pose Board differently for anything that revisits the tab
@@ -253,10 +264,10 @@ try {
   // real fleet uses, not a fixture the extension is told to trust.
   await inner.locator('[role="tab"]:has-text("Fleet")').first().click();
   await window.waitForTimeout(600);
-  await shot(window, 'fleet');
-
   await inner.getByRole('button', { name: /^(?:Claude Code|Codex) worker /i }).first().click();
   await window.waitForTimeout(600);
+  await shot(window, 'fleet');
+  await inner.locator('details:has(summary:has-text("Tool result"))').first().locator('summary').click();
   await shot(window, 'fleet-transcript');
 
   // ── Molecules: bd mol cards, gates, and a step list in 5 distinct states ───

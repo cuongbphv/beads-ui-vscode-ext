@@ -21,53 +21,81 @@
 
 ![Beads Dashboard: sidebar, roadmap, kéo thả 1 thẻ trên board, và board tự cập nhật khi agent tạo/cập nhật issue từ terminal](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/demo.gif)
 
-> Vài giây cuối mới là điểm mấu chốt: không có thao tác click nào cả. Một agent chạy `bd create`
-> và `bd update` bên ngoài editor, và board tự cập nhật theo.
+> Gần cuối đoạn demo, agent chạy `bd create` và `bd update` trong terminal. Board
+> cập nhật mà không cần thao tác trong editor.
 
 ## Nó làm gì
 
-Beads Dashboard đọc database beads cục bộ của bạn qua CLI `bd` và hiển thị theo năm cách:
+Beads Dashboard đọc database beads cục bộ của bạn qua CLI `bd` và hiển thị qua năm tab:
 
-- **Overview** — tổng số, phân bố trạng thái, tiến độ epic, và hai danh sách quan trọng ngay khi
-  mở lên: việc nào sẵn sàng bắt đầu, việc nào đang bị chặn.
-- **Roadmap** — drill-down Epic → Task với thanh tiến độ và số lượng theo từng epic.
+- **Overview** — tổng số, phân bố trạng thái, tiến độ epic, danh sách Ready của Beads với
+  **Show more** và **Claim**, cùng những việc đang bị chặn và kiểm tra Project health khi cần.
+- **Roadmap** — timeline Epic → Task và chế độ List/Graph cho quan hệ phụ thuộc.
 - **Board** — bảng kanban có các cột được suy ra từ *category* trạng thái của dự án bạn ngay lúc
-  chạy. Kéo 1 thẻ để đổi trạng thái, hoặc bật swimlane để nhóm các cột theo label taxonomy
-  (`auto-ok` / `auto-partial` / `needs-human`).
-- **Graph** — quan hệ phụ thuộc (blocked-by) của 1 issue dưới dạng đồ thị DAG, tự động sắp xếp và
-  kéo thả được từng node.
-- **Fleet** — các phiên Claude Code đang chạy như orchestrator/worker trên workspace này, các git
-  worktree chúng để lại, và (bấm vào 1 worker) transcript trực tiếp của nó. Xem mục
+  chạy. Có bộ lọc **Ready only**, Claim issue được chọn, kéo thẻ đổi trạng thái và swimlane theo
+  taxonomy (`auto-ok` / `auto-partial` / `needs-human`).
+- **Molecules** — molecule đang chạy, các bước song song, wisp và human gate; gate cho biết
+  những issue đang bị chặn và có nút Resolve khi người dùng cần xử lý.
+- **Fleet** — các phiên Claude Code và Codex gắn với workspace, git worktree và transcript
+  của orchestrator/worker. Xem mục
   [Fleet monitor](#fleet-monitor) bên dưới.
 
-Kèm theo sidebar **Epics & Tasks** với mục "Needs You" — các gate đang mở hiện cùng với issue được
-gán cho bạn, mỗi gate có sẵn action Resolve — và các thao tác nhanh (status, priority, assignee,
+Sidebar **Epics & Tasks** có mục "Needs You" cho các gate đang mở và issue được
+gán cho bạn. Mỗi gate có action Resolve. Các thao tác nhanh (status, priority, assignee,
 claim, close) dùng được từ cây thư mục, board và detail pane.
 
 Mọi thứ đều đọc/ghi qua `bd --json`. Extension không bao giờ đọc trực tiếp `.beads/issues.jsonl`
 hay file Dolt — export đó mặc định tắt tự làm mới, và upstream cũng nói rõ đọc trực tiếp là không
 tương thích.
 
+## Beads Workbench trong v0.2.0
+
+Workbench lấy workspace theo `bd context`, kể cả worktree hoặc `BEADS_DIR`, rồi dùng tập Ready
+do Beads xác định để quyết định việc có thể bắt đầu. Overview cho duyệt thêm issue Ready và
+**Claim** ngay trên dòng; Board có **Ready only**. **Needs You** tập hợp việc được giao và human
+gate; Molecules chỉ rõ issue nào bị mỗi gate chặn. Thao tác Claim và sửa issue dùng precondition
+của CLI để xung đột được báo và tải lại, không âm thầm ghi đè.
+
+Fleet đọc transcript Claude Code và Codex: có tải trang sự kiện cũ; khối text, thinking, lệnh
+gọi tool và kết quả dài mặc định hiện bản xem trước, với **Show all / Show less** để đọc đầy đủ
+từ file gốc khi cần. Payload liên-agent dạng mã hóa opaque của Codex không thể giải mã từ
+transcript nên được ghi nhãn rõ.
+
+Workbench này hiện ở `develop`, dành cho v0.2.0 chưa phát hành. Bản v0.1.7 trên `main` chưa có
+toàn bộ luồng này.
+
 ## Xem trực tiếp
 
-Mỗi ảnh dưới đây là chụp từ 1 editor thật, trên cùng 1 dự án demo đang dở dang — năm epic, 46
-issue, bốn người và một agent. Ảnh được sinh ra tự động, không phải dàn dựng: `npm run
-capture:demo` seed dữ liệu rồi chụp lại toàn bộ.
+Các ảnh dưới đây được chụp trong editor từ dự án demo gồm năm epic, 54 issue, bốn người
+và một agent. Lệnh `npm run capture:demo` tạo dữ liệu demo rồi chụp lại ảnh.
 
 **Overview** — tổng số, phân bố trạng thái, tỷ lệ priority, khối lượng việc theo từng người, và
 biểu đồ burn-up những gì đã đóng:
 
-![Tab Overview: 46 issue, 15 sẵn sàng, 4 bị chặn, 2 quá hạn, donut 30% hoàn thành, phân bố priority và loại issue, đường burn-up tăng dần trong sáu tuần, và khối lượng việc theo người phụ trách](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview.png)
+![Tab Overview với thống kê tổng quan, issue Ready, blocked và tiến độ dự án](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview.png)
+
+**Ready → Claim** — Overview cuộn tới danh sách Ready, hiện số issue đã tải và nút Claim trên từng dòng:
+
+![Danh sách Ready trong Overview cùng nút Claim và phạm vi dữ liệu](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview-ready.png)
+
+**Overview, sync và sức khỏe dự án** — sau khi bấm Refresh và Run checks, header cho biết backend
+còn hoạt động hay không, còn drawer hiển thị các kiểm tra stale/orphan/lint/dependency:
+
+![Overview với trạng thái đồng bộ và kết quả Project health](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview-health.png)
 
 **Roadmap** — timeline thật với mốc hôm nay, mỗi epic mang theo số liệu tiến độ riêng. Việc đã
 đóng được gấp gọn lại phía sau:
 
-![Tab Roadmap: năm epic dạng hàng Gantt với thanh theo từng task trải dài chín tuần, đường mốc hôm nay, và chip "14 closed hidden — show"](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap.png)
+![Roadmap với timeline các epic, task, mốc hôm nay và bộ đếm issue đã đóng đang ẩn](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/roadmap.png)
 
 **Board** — các cột được suy ra từ *category* trạng thái ngay lúc chạy, nên 1 status tuỳ biến vẫn
 rơi đúng cột. Cột Done bắt đầu ở trạng thái gấp gọn:
 
-![Kanban board với Open 19, In Progress 9, On Hold 4 và cột Done 14 đang gấp gọn; thẻ mang theo type, id, title, label, priority, ngày hạn và assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board.png)
+![Board với các cột trạng thái và thẻ chứa loại issue, nhãn, ưu tiên, hạn và assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board.png)
+
+**Board, chỉ việc Ready** — lọc theo tập Ready gốc của Beads, không suy đoán qua status:
+
+![Board bật bộ lọc Ready only và chỉ hiện những issue có thể bắt đầu](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board-ready.png)
 
 **Board, bật swimlane** — cùng 1 board, chỉ cách 1 nút bấm để nhóm theo label taxonomy thay vì 1
 cột dài duy nhất: `auto-ok`, `auto-partial` và `needs-human`, mỗi lane bốn issue trong dự án này:
@@ -78,20 +106,28 @@ cột dài duy nhất: `auto-ok`, `auto-partial` và `needs-human`, mỗi lane b
 ý, nhích bằng phím mũi tên, hoặc đưa về vị trí gốc bằng **Reset layout**; issue đang bị chặn được
 đánh dấu màu đỏ dù nằm ở đâu trong layout:
 
-![Tab Graph: đồ thị phụ thuộc phân lớp với vài issue bị chặn viền đỏ, nút zoom và reset-layout trên thanh công cụ, cùng mục Gates(1) ở sidebar bên cạnh](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
+![Graph phụ thuộc phân lớp với issue bị chặn, nút zoom và reset layout](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/graph.png)
 
-**Fleet** — một orchestrator, một worker đang chạy trên một git worktree `wt-*`
-thật, stream trực tiếp từ đúng file JSONL mà Claude Code tự ghi ra. Xem
+**Molecules** — human gate và molecule đang chạy, kèm issue bị gate chặn:
+
+![Molecules hiện hai gate và một molecule đang thực hiện](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules.png)
+
+**Molecules, mở danh sách bước** — các bước gated, đang làm, ready, done và pending:
+
+![Danh sách bước của molecule với trạng thái và gate liên quan](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules-detail.png)
+
+**Fleet** — một orchestrator và worker gắn với git worktree `wt-*`, transcript mở bên cạnh
+danh sách. Nhãn hoạt động chỉ nói về thời điểm ghi transcript, không khẳng định tiến trình còn chạy. Xem
 [Fleet monitor](#fleet-monitor) bên dưới:
 
-![Tab Fleet: orchestrator demo-orc với một worker đang chạy trên harbor-201, spawn brief của nó ghi rõ bead và đường dẫn worktree wt-201](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
+![Fleet với worker Claude Code được chọn và transcript mở bên cạnh](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
 
 **Fleet, transcript của một worker** — block text và thinking render qua
 markdown renderer tự viết tay: heading, bold, inline code, một code block, và
 kết quả `✓ PASSED`, vẽ trực tiếp thành React element, không bao giờ dùng
 `dangerouslySetInnerHTML`:
 
-![Transcript worker trên Fleet: chip Thinking, một lệnh gọi tool Read và kết quả, rồi phần tóm tắt của assistant với chữ đậm, hai đường dẫn file inline-code, một code block ts, và dòng kết quả PASSED in đậm](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+![Transcript Fleet với kết quả tool đã mở và phần tóm tắt của assistant](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
 
 **Detail pane** — toàn bộ issue mà không cần rời khỏi board. Status, priority và assignee áp dụng
 ngay khi bạn chỉnh, comment và composer ghi chú append-only nằm ngay bên dưới, hiện sẵn kể cả khi
@@ -102,12 +138,13 @@ chưa có comment nào:
 **Sidebar** — việc cần bạn nằm trên cùng, rồi mới tới plan. Gate đang mở giờ đứng trên cả issue
 được gán cho bạn, vì nó chặn công việc thật cho tới khi có người xử lý:
 
-![Sidebar với mục Needs You dẫn đầu bởi mục Gates(1) và action Resolve, năm issue được gán cho bạn bên dưới, rồi tới Epics & Milestones mở rộng hiện các task con kèm icon loại và priority; status bar hiện 16 ready và icon khiên với số 1](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/sidebar-tree-expanded.png)
+![Sidebar có Needs You, human gate, issue được giao và cây Epics & Milestones](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/sidebar-tree-expanded.png)
 
 ## Yêu cầu
 
 - [`bd` CLI](https://github.com/steveyegge/beads) có trong `PATH` (hoặc set `beadsDashboard.bdPath`).
-- Một workspace folder chứa thư mục `.beads`. Extension chỉ activate khi tìm thấy thư mục này.
+- Workspace có database mà `bd context` resolve được; `.beads` tại chỗ, worktree redirect hoặc
+  `BEADS_DIR` đều có thể cung cấp đường dẫn này.
 
 Có gì đó không chạy? [docs/TROUBLESHOOTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/docs/TROUBLESHOOTING.md) mô tả bốn trạng thái degraded mà
 extension chủ động xử lý — không có workspace folder, không có thư mục `.beads`, không có `bd`
@@ -173,47 +210,45 @@ database. Xem [ghi chú tương thích Beads 1.3.1](docs/BEADS-1.3.1.md).
 
 ## Fleet monitor
 
-Tab **Fleet** trả lời câu hỏi "phi đội agent của tôi đang làm gì với workspace này ngay lúc này?"
-— phiên Claude Code nào đang chạy như orchestrator, chúng đã sinh ra worker nào, các git worktree
-những worker đó để lại trên đĩa, và worktree nào đã cũ (không worker nào còn nhận nó, nên hoặc là
-bỏ quên, hoặc đang chờ review). Bấm vào 1 worker hay 1 orchestrator để xem transcript trực tiếp,
-stream thẳng từ file JSONL mà chính Claude Code ghi ra. Block `text` và `thinking` được render qua
+Tab **Fleet** cho biết các phiên Claude Code và Codex được phát hiện trong workspace, worker
+và git worktree liên quan. Worktree chưa liên kết worker được ghi là **Unassociated worktrees**;
+nhãn này không khẳng định agent đã dừng. Bấm vào worker hoặc orchestrator để theo dõi transcript
+từ file JSONL của chính provider. Có thể tải sự kiện cũ theo trang, tìm kiếm trong phần đã tải,
+và mở nội dung khối bị cắt bằng **Show all**. Block `text` và `thinking` được render qua
 một markdown renderer tự viết tay — heading, list, code fence, table, bold/italic, không phụ thuộc
 thư viện ngoài — parse ra plain-data AST rồi vẽ trực tiếp thành React element, không bao giờ dùng
 `dangerouslySetInnerHTML`; transcript là kênh do agent/tool kiểm soát, nên renderer này chính là
 lớp bảo vệ, không phải chuyện tiện thể thêm sau.
 
-![Transcript worker trên Fleet: chip Thinking, một lệnh gọi tool Read và kết quả, rồi phần tóm tắt của assistant với chữ đậm, hai đường dẫn file inline-code, một code block ts, và dòng kết quả PASSED in đậm](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+![Transcript Fleet với kết quả tool đã mở và phần tóm tắt của assistant](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
 
 Dữ liệu lấy từ đâu:
 
-- **Phiên và worker** — đọc từ `~/.claude/projects/<mangled-cwd>`, kho transcript riêng của Claude
-  Code, đối chiếu với workspace này theo đúng cách Claude Code tự làm. Một phiên chỉ tính là
-  orchestrator khi đã sinh ít nhất một worker (có file `subagents/agent-*.jsonl`); phiên chat thường
-  không thuộc fleet.
+- **Phiên và worker** — Claude Code từ `~/.claude/projects/<mangled-cwd>`; Codex từ
+  `~/.codex/sessions` hoặc `CODEX_HOME/sessions`. Đường dẫn transcript phải nằm trong kho tương ứng.
 - **Worktree và git status** — `git worktree list --porcelain`, sau đó `git status` /
   `git diff --numstat` cho từng worktree, đối chiếu với id bead từ brief lúc spawn worker. Worktree
-  không còn worker nào nhận sẽ nằm ở mục "Stale worktrees" — câu trả lời cho câu hỏi gốc của
+  chưa đối chiếu được worker sẽ nằm ở mục "Unassociated worktrees — worker link unknown" — không
+  suy luận rằng agent đã ngừng làm việc. Xem
   [#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11) về thế nào là một worktree cũ.
 - **Tần suất quét** — poll mỗi 5 giây là baseline luôn bật; một `FileSystemWatcher` trên
   `~/.claude/projects` được thêm vào như một fast path khi OS báo thay đổi sớm hơn. Poll không bao
   giờ bị bỏ: watcher về bản chất là best-effort (một watcher vừa khởi tạo có thể bỏ lỡ sự kiện ngay
   sau đó — đã đo thật, không suy đoán, trên một Extension Development Host thật), nên trường hợp
   xấu nhất vẫn nhanh y như chỉ poll, không chậm hơn hay bị kẹt.
-- **Suy giảm, không vỡ** — không có `~/.claude/projects` trên máy, thư mục rỗng, `git` lỗi, hay một
-  worktree hỏng đều hiện trạng thái rỗng rõ ràng hoặc lỗi inline, chứ không crash hay để trắng panel.
+- **Suy giảm, không vỡ** — provider mất dữ liệu, `git` lỗi hoặc một worktree hỏng được báo lỗi
+  và giữ snapshot thành công gần nhất; có thời điểm dữ liệu và nút Retry.
 
 Đây không phải dữ liệu `bd`, nên không đi qua `BdService` — `src/extension/fleet/` là điểm thứ ba,
 có chủ đích, nằm ngoài `BdService` mà vẫn spawn process (sau probe `git config user.name` chỉ-đọc
 của `actor.ts`): mọi lệnh spawn ở đây chỉ đọc, có timeout, và một worktree lỗi không bao giờ làm
 trắng cả snapshot. Nó là module riêng thay vì gộp vào `actor.ts` hay `BdService` vì trả lời một câu
-hỏi khác (cái gì đang trên đĩa và trong kho transcript của Claude Code) — xem doc comment ở đầu
+hỏi khác (cái gì đang trên đĩa và trong các kho transcript của agent) — xem doc comment ở đầu
 `src/extension/fleet/FleetService.ts` và `src/extension/fleet/worktree-git.ts` để rõ lý do.
 
 ## Roadmap
 
-Không có deadline, và không có gạch đầu dòng nào dưới đây là lời hứa. Danh sách này tồn tại để câu
-"bắt đầu từ đâu?" có câu trả lời: mỗi hạng mục Planned đều là một issue đang mở.
+Phân biệt tính năng đã có trong mã nguồn và kiểm chứng còn cần trước khi phát hành.
 
 **Shipped** — đã xong, và đã có trong extension:
 
@@ -223,15 +258,12 @@ Không có deadline, và không có gạch đầu dòng nào dưới đây là l
 - **Fleet monitor** — các worktree và nhánh `work/bead-*` trên đĩa, xếp cạnh đúng bead chúng đang
   mang, để một worktree bỏ quên trở nên nhìn thấy được, cộng theo dõi transcript trực tiếp theo
   từng worker. Xem [Fleet monitor](#fleet-monitor) ở trên. ([#11](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/11))
+- **Molecules** — molecule, các bước, wisp và human gate với action Resolve. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
+- **CI cho pull request** — lint, typecheck, build, unit test và bài tương thích Beads 1.3.1
+  dùng database riêng. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
 
-**Planned** — thiết kế bám đúng kiến trúc đã có:
-
-- **Tiến độ molecule** — `bd mol` hiện chưa có UI nào. Một thanh tiến độ cho molecule đang chạy và
-  những wisp sắp tự hủy. ([#10](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/10))
-- **Workflow chạy trên pull request** — hiện chưa có, vì một phần test suite gọi thẳng binary `bd`
-  thật. ([#9](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/9))
-- **Windows, do người dùng Windows xác nhận** — nhánh fallback cho `.cmd` shim và đường dẫn Git-Bash
-  đã viết nhưng chưa ai chạy thử trên máy Windows thật. ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
+**Còn cần kiểm chứng** — chạy smoke test thật trên Windows cho toàn bộ luồng v0.2.0; đường dẫn
+`.cmd` shim và Git-Bash đã có test. ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
 
 **Exploring** — là một hướng đi, không phải cam kết. Chưa thiết kế, chưa mở issue.
 
@@ -268,7 +300,7 @@ npm run gif          # seed rồi ghi docs/screenshots/demo.gif
 npm run preview      # render dashboard trong Chromium ở 420/900/1440px
 ```
 
-Mọi ảnh trong README này đều đến từ `capture:demo` / `gif`, không có ảnh nào dàn dựng bằng tay.
+Ảnh trong README này được tạo bằng `capture:demo` và `gif`.
 Dự án demo là 1 fixture trong [`scripts/lib/demo-project.mjs`](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/scripts/lib/demo-project.mjs),
 được seed qua `bd import` vào 1 workspace dùng 1 lần trong thư mục temp — chính tracker của
 extension này gần như đã đóng hết, chụp ảnh trên đó sẽ khiến 1 công cụ đang sống trông như đã
@@ -276,7 +308,7 @@ xong việc. Bộ test unit đảm bảo fixture này luôn ở trạng thái đ
 "nghĩa địa" toàn việc đã đóng.
 
 Các lệnh này, `capture` và `preview` đều chạy `bd --json` thật, nên cần CLI `bd` cài sẵn trên máy.
-Đó là lý do chúng không chạy trong CI. `gif` còn cần `ffmpeg` trong `PATH`.
+CI chạy bộ kiểm tra tương thích Beads 1.3.1 trong workspace riêng; công cụ chụp ảnh và editor E2E chạy tại máy phát triển. `gif` còn cần `ffmpeg` trong `PATH`.
 
 ### Phát hành
 
@@ -286,9 +318,10 @@ Open VSX. Tag phải khớp với `version` trong `package.json`, nếu không w
 khi build.
 
 ```bash
-npm run verify       # workflow không chạy được test dựa trên bd — chạy ở đây
-git tag v0.1.0
-git push origin v0.1.0
+npm run verify
+npm run test:e2e:workbench
+npm run package
+# Chỉ tạo tag v<package.json version> sau khi kiểm tra và duyệt bản phát hành.
 ```
 
 Việc publish cần 2 secret của repository. Mỗi bước publish sẽ bị skip kèm cảnh báo nếu thiếu
@@ -321,7 +354,7 @@ sidebar lẫn trên board.
 
 ## Hệ thống thiết kế
 
-Quyết định thiết kế không tuỳ hứng — đọc [design-system/MASTER.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/design-system/MASTER.md) trước
+Trước khi sửa UI, đọc [design-system/MASTER.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/design-system/MASTER.md) trước
 khi đụng vào code UI. Những quy tắc hay bị vi phạm nhất:
 
 - **Không font/asset từ CDN bên ngoài.** CSP của webview chặn host bên ngoài; dùng

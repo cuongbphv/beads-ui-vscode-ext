@@ -94,8 +94,8 @@ since each test can spawn several Dolt processes under concurrent suite load.
 Unit cases separately cover malformed output, fallback and page-budget bounds,
 proxy backend health, CLI replacement, and the 12-tick backstop.
 
-Local qualification was on macOS; the CI job runs on Linux. Neither is a claim that Windows or an externally managed
-shared proxy has been tested. Remote sync and raw SQL are deliberately outside
+Local qualification ran on macOS, and the CI job runs on Linux. Windows and externally managed
+shared proxies remain untested. Remote sync and raw SQL are deliberately outside
 the journal; the periodic full snapshot remains necessary.
 
 ## Release tooling

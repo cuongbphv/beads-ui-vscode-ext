@@ -21,12 +21,12 @@
 
 ![Beads Dashboard: the sidebar, the roadmap, dragging a card across the board, and the board updating itself when an agent files and starts an issue from the terminal](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/demo.gif)
 
-> The last few seconds are the point: nothing is clicked. An agent runs `bd create`
-> and `bd update` outside the editor, and the board follows on its own.
+> Near the end, an agent runs `bd create` and `bd update` in a terminal. The board
+> updates without a click in the editor.
 
 ## What it does
 
-Beads Dashboard reads your local beads database through the `bd` CLI and renders it six ways:
+Beads Dashboard reads your local Beads database through the `bd` CLI. The dashboard has five tabs:
 
 - **Overview** — totals, a status breakdown, epic progress, and the two lists that matter on
   arrival (what is ready to start, with inline Claim and Show more, and what is blocked), plus an on-demand **Project health**
@@ -40,10 +40,10 @@ Beads Dashboard reads your local beads database through the `bd` CLI and renders
   runtime. Filter to Beads' native Ready set or claim the selected ready issue, drag a card to change its status, toggle swimlanes to group the columns by taxonomy
   label (`auto-ok` / `auto-partial` / `needs-human`), or use a column's "+ Add issue" row to
   create one directly in that status.
-- **Molecules** — a viewer onto `bd mol`: the running molecules as cards, a detail view with its
+- **Molecules** — shows running molecules from `bd mol` as cards, with a detail view and its
   step list, parallel groups and gate badges, a wisp strip with a heuristic TTL countdown, and
-  gate cards with an inline Resolve action for gates a human can clear. View-only by design — no
-  pour/wisp/burn/squash/bond from the UI.
+  gate cards with an inline Resolve action for gates a human can clear. The UI does not expose
+  pour, wisp, burn, squash or bond actions.
 - **Fleet** — Claude Code and Codex sessions against this workspace, their worktrees and branches,
   and (click a worker) its live transcript. See
   [Fleet monitor](#fleet-monitor) below.
@@ -55,7 +55,7 @@ fields edit inline with a save/cancel affordance; labels add and remove as chips
 add and remove from an issue picker or from Graph link mode; and **Defer / Undefer / Close /
 Reopen** cover the rest of an issue's lifecycle.
 
-Plus an **Epics & Tasks** sidebar with a "Needs You" section — open gates alongside your assigned
+The **Epics & Tasks** sidebar has a "Needs You" section with open gates alongside your assigned
 issues, each with an inline Resolve action — and quick actions (status, priority, assignee, claim,
 close, reopen) available from the tree, the board and the detail pane, all three converging on the
 same result. A board card and a Fleet worker row both carry a lease/claim liveness badge (live /
@@ -78,16 +78,37 @@ Everything is read and written through `bd --json`. The extension never reads `.
 or the Dolt files directly — that export has auto-refresh off by default, and upstream declares
 direct readers incompatible.
 
+## Beads Workbench in v0.2.0
+
+The Workbench flow starts with the workspace that `bd context` resolves (including worktrees and
+`BEADS_DIR`), then uses Beads' native Ready set to decide what can start. **Overview** lists ready
+issues beyond the first eight with **Show more** and inline **Claim**; **Board** has a **Ready only**
+filter and a claim action for the selected ready issue. **Needs You** brings assigned work and
+human gates together, while Molecules shows which issues each gate blocks. Claims and issue edits
+use CLI preconditions so a conflicting update refreshes the issue instead of silently overwriting it.
+
+Fleet follows Claude Code and Codex transcripts. Older events load by page; long individual text,
+thinking, tool-call and tool-result blocks start as bounded previews with **Show all / Show less**.
+Full content is read from the source transcript only when requested. An opaque encoded Codex
+inter-agent payload cannot be decoded from the transcript and is labelled accordingly.
+
+These Workbench changes are on `develop` for the unreleased v0.2.0. The released v0.1.7 on `main`
+does not contain this entire flow.
+
 ## See it in action
 
-Every shot below is a real editor against the same mid-flight demo project — five
-epics, 54 issues, four people and an agent. It is generated, not curated: `npm run
-capture:demo` seeds it and re-takes every image.
+The screenshots come from a demo project with five epics, 54 issues, four people and an agent.
+`npm run capture:demo` seeds the project and captures the images in an editor.
 
 **Overview** — totals, status split, priority mix, workload per person, and a
 burn-up of everything closed so far:
 
 ![Overview tab: 54 issues, 18 ready, 7 blocked, 2 overdue, a 29% done donut, priority and issue-type breakdowns, a rising burn-up over seven weeks, and workload per assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview.png)
+
+**Ready → Claim** — the same Overview scrolled to its native Ready list, with the loaded/project
+scope and an inline claim action:
+
+![Overview Ready list with issue rows, scope and Claim actions](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/overview-ready.png)
 
 **Overview, sync status and health checks** — both the header's sync-status chip
 and the **Project health** drawer fetch nothing until you act: this is the chip
@@ -105,6 +126,11 @@ progress count. Closed work is folded away behind a count you can click:
 status lands in the right column. Done starts folded:
 
 ![Kanban board with Open 23, In Progress 10, On Hold 4 and a folded Done 15; cards carry type, id, title, labels, priority, due date and assignee](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board.png)
+
+**Board, Ready only** — the native Beads Ready set filters cards without guessing readiness from
+their status:
+
+![Board with Ready only filter selected and ready work visible](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/board-ready.png)
 
 **Board, swimlanes on** — the same board, one toggle away from grouped by taxonomy
 label instead of one long column: `auto-ok`, `auto-partial` and `needs-human`, four
@@ -126,20 +152,20 @@ surfaced right alongside them:
 **Molecules, a step list expanded** — one molecule, five visually distinct step
 states: done, current, ready, pending and gated:
 
-![Molecule detail step list for "ssepatch" grouped into a parallel cluster: a Ready step tagged with a gate: human badge, an In progress step, another Ready step, and a Done step struck through, plus a Pending step outside the group blocked by one of the ready steps](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules-detail.png)
+![Molecule detail step list for "ssepatch" with gated, in-progress, ready, done and pending steps](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/molecules-detail.png)
 
-**Fleet** — one orchestrator, one worker running against a real `wt-*` git
-worktree, streamed straight from the same JSONL transcript Claude Code itself
-writes. See [Fleet monitor](#fleet-monitor) below:
+**Fleet** — an orchestrator and a worker associated with a `wt-*` git worktree. The worker's
+transcript is open beside the list. Activity labels reflect recent transcript writes.
+See [Fleet monitor](#fleet-monitor) below:
 
-![Fleet tab: orchestrator demo-orc with one running worker on harbor-201, its spawn brief naming the bead and the wt-201 worktree path](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
+![Fleet tab with a Claude Code worker selected and its transcript beside the worker list](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet.png)
 
 **Fleet, a worker's transcript** — text and thinking blocks rendered through
 the hand-rolled markdown renderer: headings, bold, inline code, a fenced code
 block, and a `✓ PASSED` result, drawn as React elements, never
 `dangerouslySetInnerHTML`:
 
-![Fleet worker transcript: a Thinking chip, a Read tool call and its result, then an assistant summary with bold text, two inline-code file paths, a fenced ts code block, and a bold PASSED result line](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+![Fleet worker transcript with a tool result expanded and an assistant summary below it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
 
 **Detail pane** — the full issue without leaving the board. Status, priority and
 assignee apply as you set them, and comments plus an append-only notes composer sit
@@ -158,9 +184,8 @@ your own assigned issues, since it blocks real work until someone clears it:
 - A workspace whose database `bd context` can resolve. A local `.beads`, a worktree redirect,
   or `BEADS_DIR` can provide it; the header shows the resolved database location.
 
-Something not behaving? [docs/TROUBLESHOOTING.md](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/docs/TROUBLESHOOTING.md) covers the four degraded states the
-extension handles on purpose — no workspace folder, unresolved Beads database, no `bd` on your `PATH`,
-and a `bd` that runs but refuses — what each one shows, why it happens, and how to clear it.
+If setup or refresh fails, [Troubleshooting](docs/TROUBLESHOOTING.md) covers workspace
+resolution, the `bd` executable, CLI errors and the output log.
 
 ## Install
 
@@ -236,7 +261,7 @@ bold/italic, no third-party dependency — parsed to a plain-data AST and drawn 
 directly, never `dangerouslySetInnerHTML`; a transcript is an agent/tool-controlled channel, so
 that renderer is the security boundary, not an afterthought.
 
-![Fleet worker transcript: a Thinking chip, a Read tool call and its result, then an assistant summary with bold text, two inline-code file paths, a fenced ts code block, and a bold PASSED result line](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
+![Fleet worker transcript with a tool result expanded and an assistant summary below it](https://raw.githubusercontent.com/cuongbphv/beads-ui-vscode-ext/main/docs/screenshots/fleet-transcript.png)
 
 Where the data comes from:
 
@@ -262,7 +287,7 @@ third, deliberate place outside `BdService` that spawns a process (after `actor.
 `git config user.name` probe): every spawn here is read-only, bounded by a timeout, and a single
 worktree's failure never blanks the rest of the snapshot. It is its own module rather than folded
 into `actor.ts` or `BdService` because it answers a different question (what is on disk and in
-Claude Code's own transcript store) than either of those — see the doc comments atop
+the agent transcript stores) than either of those — see the doc comments atop
 `src/extension/fleet/FleetService.ts` and `src/extension/fleet/worktree-git.ts` for the reasoning.
 
 ## Roadmap
@@ -288,15 +313,12 @@ This distinguishes shipped behavior from checks still needed for the next releas
 Windows smoke run is needed before claiming the full v0.2.0 workflow works on Windows.
 ([#12](https://github.com/cuongbphv/beads-ui-vscode-ext/issues/12))
 
-**Exploring** — a direction, not a commitment. Nothing is designed and no issue is open yet.
+**Exploring** — remote handling of human gates. No design or issue is open yet.
 
-A `human` gate in beads is already a "wait for a person" primitive, which makes remote approval
-possible without changing beads core: an agent fleet stops on a gate, and whoever is on the hook
-sees it, reads the context, and resolves it — not necessarily at their desk. The opt-in
-`beadsDashboard.notifications` toast (see [Settings](#settings)) already covers "sees it" while the
-editor is open; the still-unbuilt half of this direction is resolving from *outside* the editor
-entirely — a phone notification, a Slack message — with no desk required at all. Arguing with that
-direction is useful; open an issue and say so.
+A `human` gate waits for a person to resolve it. The opt-in
+`beadsDashboard.notifications` setting (see [Settings](#settings)) can show a toast while the
+editor is open. Resolving a gate outside the editor, such as from a phone notification or Slack,
+is only an idea at this stage. Open an issue if you want to discuss it.
 
 **Not planned:** orchestrating work. This is a viewer with quick actions — it shows what `bd` knows
 and writes back through `bd`. What runs next is `bd`'s business, and that of whatever drives it.
@@ -324,7 +346,7 @@ npm run gif          # seed it, then record docs/screenshots/demo.gif
 npm run preview      # render the dashboard in Chromium at 420/900/1440px
 ```
 
-Every image in this README comes from `capture:demo` / `gif`, never from a hand-posed editor.
+The images in this README come from `capture:demo` and `gif`.
 The demo project is a fixture in [`scripts/lib/demo-project.mjs`](https://github.com/cuongbphv/beads-ui-vscode-ext/blob/main/scripts/lib/demo-project.mjs),
 seeded through `bd import` into a throwaway workspace in your temp directory — the extension's own
 tracker is nearly all closed, and screenshots taken against it make a live tool look finished. The

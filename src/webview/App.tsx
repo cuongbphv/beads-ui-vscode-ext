@@ -114,6 +114,9 @@ export function App(): ReactNode {
   // Not persisted: a create-in-flight form is a live editing session, not a
   // preference the panel should reopen into.
   const [creating, setCreating] = useState(false);
+  // Molecules has its own selection. A Roadmap/Board issue must not squeeze
+  // the gates and molecule cards before the reader selects something here.
+  const [moleculesFocusedId, setMoleculesFocusedId] = useState<string>();
   const mainRef = useRef<HTMLElement>(null);
   const [mainWidth, setMainWidth] = useState(0);
 
@@ -183,6 +186,7 @@ export function App(): ReactNode {
     () =>
       onHostEvent((event) => {
         if (event.name === 'setTab') setTab(event.tab);
+        if (event.name === 'focusBead' && tab === 'molecules') setMoleculesFocusedId(event.id);
         if (event.name === 'settings') {
           const isFirst = !settingsSeen.current;
           settingsSeen.current = true;
@@ -190,7 +194,7 @@ export function App(): ReactNode {
           setQuery((current) => ({ ...current, includeClosed: event.settings.showClosed }));
         }
       }),
-    [hadSavedQuery],
+    [hadSavedQuery, tab],
   );
 
   const onSelect = useCallback((id: string) => setFocusedId(id), [setFocusedId]);
@@ -208,16 +212,18 @@ export function App(): ReactNode {
   const onCreated = useCallback(
     (id: string) => {
       setCreating(false);
-      setFocusedId(id);
+      if (tab === 'molecules') setMoleculesFocusedId(id);
+      else setFocusedId(id);
     },
-    [setFocusedId],
+    [setFocusedId, tab],
   );
 
   /** Cancelling drops the form; no issue is left selected in its place. */
   const onCancelCreate = useCallback(() => {
     setCreating(false);
-    setFocusedId(undefined);
-  }, [setFocusedId]);
+    if (tab === 'molecules') setMoleculesFocusedId(undefined);
+    else setFocusedId(undefined);
+  }, [setFocusedId, tab]);
 
   // Only fires against the whole project once the client-side filter can no
   // longer see it (`snapshot.truncated`) and the typed query is long enough
@@ -229,7 +235,8 @@ export function App(): ReactNode {
     () => mergeSearchResults(snapshot?.beads ?? [], serverSearch.extraBeads),
     [snapshot?.beads, serverSearch.extraBeads],
   );
-  const selected = focusedId ? beads.find((bead) => bead.id === focusedId) : undefined;
+  const detailId = tab === 'molecules' ? moleculesFocusedId : focusedId;
+  const selected = detailId ? beads.find((bead) => bead.id === detailId) : undefined;
   const blockedIds = useMemo(() => new Set(snapshot?.blockedIds ?? []), [snapshot?.blockedIds]);
   const readyIds = useMemo(() => new Set(snapshot?.readyIds ?? []), [snapshot?.readyIds]);
   // Full-id lookup the Fleet tab uses to pair a worker's claimed bead with its
@@ -394,7 +401,7 @@ export function App(): ReactNode {
                 beadsById={beadsById}
               />
             ) : (
-              <MoleculesView beadsById={beadsById} onSelect={onSelect} selectedId={focusedId} />
+              <MoleculesView beadsById={beadsById} onSelect={setMoleculesFocusedId} selectedId={moleculesFocusedId} />
             )}
           </div>
 
@@ -431,8 +438,8 @@ export function App(): ReactNode {
                         bead={selected}
                         beads={beads}
                         index={index}
-                        onClose={() => setFocusedId(undefined)}
-                        onSelect={onSelect}
+                        onClose={() => tab === 'molecules' ? setMoleculesFocusedId(undefined) : setFocusedId(undefined)}
+                        onSelect={tab === 'molecules' ? setMoleculesFocusedId : onSelect}
                         refreshKey={snapshot?.fetchedAt}
                       />
                     </div>
