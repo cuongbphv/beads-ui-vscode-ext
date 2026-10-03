@@ -176,12 +176,17 @@ export function RoadmapView({
   // One clock reading per render, so every bar agrees on where "today" is.
   // Built once and re-ticked: the density needs the window, but the bars do not
   // need the density, so a second full build would only redo work.
+  // Measurement must not advance the clock/window: at fixed zoom that would
+  // change track width again and feed another render back into the chart.
+  const built = useMemo(
+    () => buildTimeline(groups, (bead) => index.isDone(bead.status), Date.now()),
+    [groups, index],
+  );
   const timeline = useMemo(() => {
-    const built = buildTimeline(groups, (bead) => index.isDone(bead.status), Date.now());
     const pxPerDay = pxPerDayFor(zoom, trackPx, built.end - built.start);
     const withTicks = withTickDensity(built, pxPerDay);
     return { ...withTicks, epics: sortTimeline(withTicks.epics, sort) };
-  }, [groups, index, sort, trackPx, zoom]);
+  }, [built, sort, trackPx, zoom]);
 
   const listGroups = useMemo(() => sortGroups(groups, sort), [groups, sort]);
 

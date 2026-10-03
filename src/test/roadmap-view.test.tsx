@@ -200,6 +200,43 @@ function listEpicRowIndex(html: string, title: string): number {
 }
 
 describe('RoadmapView wiring', () => {
+  it('keeps the timeline window stable while measuring a fixed zoom', async () => {
+    const now = Date.parse('2026-10-03T00:00:00.000Z');
+    let readings = 0;
+    // Advance between builds to expose measurement feedback. Cap the clock so
+    // a regression settles and fails the assertion instead of hanging Vitest.
+    const clock = vi
+      .spyOn(Date, 'now')
+      .mockImplementation(() => now + Math.min(readings++, 20) * 1000);
+    try {
+      const container = document.createElement('div');
+      document.body.append(container);
+      mountedRoot = createRoot(container);
+      await act(async () =>
+        mountedRoot?.render(
+          createElement(
+            RoadmapView,
+            roadmapProps({ shape: 'timeline', zoom: 'week' }),
+          ),
+        ),
+      );
+      const builds = clock.mock.calls.length;
+      const observation = TestResizeObserver.instances
+        .flatMap((observer) =>
+          [...observer.observed].map((target) => ({ observer, target })),
+        )
+        .find(({ target }) => target.classList.contains('overflow-auto'));
+      expect(observation).toBeDefined();
+      await act(async () => {
+        if (observation) observation.observer.emit(observation.target, 1200);
+      });
+      expect(clock.mock.calls.length).toBe(builds);
+      expect(builds).toBe(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('applies the selected sort to the list shape', () => {
     // Catches wiring the Sort select without feeding the same value into the
     // list ordering: type order puts Bug before Task despite its lower priority.
