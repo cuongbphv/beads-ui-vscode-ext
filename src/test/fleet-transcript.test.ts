@@ -63,6 +63,24 @@ describe('parseCodexTranscriptLine', () => {
     expect(unknown).toMatchObject({ role: 'other', blocks: [] });
     expect(JSON.stringify(unknown)).not.toContain('do-not-render');
   });
+
+  it('summarizes opaque Codex send_message input without showing its encoded token', () => {
+    const token = `gAAAAAB${'q7_+-'.repeat(24)}=`;
+    const call = parseCodexTranscriptLine(line({
+      type: 'response_item',
+      payload: {
+        type: 'function_call', name: 'send_message', call_id: 'msg-1',
+        arguments: JSON.stringify({ target: '/root', message: token }),
+      },
+    }));
+    expect(call?.blocks[0]).toMatchObject({
+      type: 'tool_use', name: 'send_message', truncated: false,
+    });
+    const input = call?.blocks[0]?.type === 'tool_use' ? call.blocks[0].input : '';
+    expect(input).toContain('"target": "/root"');
+    expect(input).toContain('Opaque agent message');
+    expect(input).not.toContain(token);
+  });
 });
 
 describe('parseTranscriptLine', () => {

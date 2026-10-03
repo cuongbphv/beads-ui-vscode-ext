@@ -48,7 +48,9 @@ function run(command, args, label) {
 
 /** First editor CLI that answers `--version`. */
 function detectEditorCli() {
-  const explicit = valueOf('--cli') ?? process.env.VSCODE_CLI;
+  // VS Code sets VSCODE_CLI=1 inside extension terminals; that flag is not a CLI path.
+  const envCli = process.env.VSCODE_CLI;
+  const explicit = valueOf('--cli') ?? (envCli && !['0', '1', 'true', 'false'].includes(envCli) ? envCli : undefined);
   if (explicit) return explicit;
 
   for (const candidate of ['code', 'code-insiders', 'cursor', 'windsurf', 'codium']) {

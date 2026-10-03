@@ -45,6 +45,7 @@ try {
   await mkdir(rollouts, { recursive: true });
   const parentFile = join(rollouts, `rollout-2026-10-03T10-00-00-${parentId}.jsonl`);
   const childFile = join(rollouts, `rollout-2026-10-03T10-00-01-${childId}.jsonl`);
+  const opaqueMessage = `gAAAAAB${'q7_+-'.repeat(24)}=`;
   await writeFile(parentFile,
     JSON.stringify({ type: 'session_meta', payload: { id: parentId, cwd: workspace, source: 'vscode' } }) + '\n'
     + codexLine({ type: 'function_call', name: 'spawn_agent', arguments: JSON.stringify({ task_name: 'e2e_abc', message: `Implement bead e2e-abc in worktree ${worktree}.` }) }));
@@ -52,7 +53,9 @@ try {
     JSON.stringify({ type: 'session_meta', payload: { id: childId, cwd: worktree, parent_thread_id: parentId, agent_path: '/root/e2e_abc' } }) + '\n'
     + codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic older history' }] })
     + Array.from({ length: 70 }, (_, index) => JSON.stringify({ type: 'event_msg', payload: { index, padding: 'x'.repeat(4096) } }) + '\n').join('')
-    + codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic backfill' }] }));
+    + codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic backfill' }] })
+    + codexLine({ type: 'function_call', name: 'send_message', call_id: 'msg-1', arguments: JSON.stringify({ target: '/root', message: opaqueMessage }) })
+    + codexLine({ type: 'function_call_output', call_id: 'msg-1', output: '' }));
 
   await run('npm', ['run', 'build'], { cwd: repoRoot, shell: process.platform === 'win32' });
   const executablePath = await downloadAndUnzipVSCode(version);
@@ -91,6 +94,11 @@ try {
   if (await transcript.getByText('Synthetic backfill').count() !== 1) {
     throw new Error('Codex backfill rendered more than once');
   }
+  const messageCall = transcript.locator('details:has(summary:has-text("Tool call: send_message"))');
+  await messageCall.locator('summary').click();
+  await messageCall.getByText('Opaque agent message', { exact: false }).waitFor();
+  if ((await transcript.textContent())?.includes(opaqueMessage)) throw new Error('Opaque Codex agent token leaked into transcript');
+  await transcript.getByText('Tool result — no output').waitFor();
   if (await transcript.getByText('Synthetic older history').count()) {
     throw new Error('Older Codex history appeared inside the bounded initial backfill');
   }

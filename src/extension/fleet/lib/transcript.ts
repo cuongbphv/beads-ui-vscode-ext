@@ -67,6 +67,24 @@ function textOf(content: unknown): string {
   }
 }
 
+/** Codex sometimes stores inter-agent messages as opaque Fernet-like tokens. */
+function readableCodexToolInput(rawInput: unknown, name: unknown): string {
+  if (typeof rawInput !== 'string') return '';
+  try {
+    const parsed: unknown = JSON.parse(rawInput);
+    if (name === 'send_message' && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const fields = parsed as Record<string, unknown>;
+      const message = fields.message;
+      if (typeof message === 'string' && message.length >= 80 && /^gAAAA[A-Za-z0-9+/_=-]+$/.test(message)) {
+        return JSON.stringify({ ...fields, message: '[Opaque agent message; text unavailable in transcript]' }, null, 2);
+      }
+    }
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return rawInput;
+  }
+}
+
 function parseBlock(raw: unknown): TranscriptBlock | null {
   if (!raw || typeof raw !== 'object') return null;
   const block = raw as Record<string, unknown>;
@@ -223,8 +241,7 @@ export function parseCodexTranscriptLine(line: string): TranscriptEvent | null {
 
   if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
     const rawInput = payload.type === 'function_call' ? payload.arguments : payload.input;
-    let input = typeof rawInput === 'string' ? rawInput : '';
-    try { input = JSON.stringify(JSON.parse(input), null, 2); } catch { /* Keep opaque command text. */ }
+    const input = readableCodexToolInput(rawInput, payload.name);
     const { value, truncated } = truncateUtf8(input, TOOL_USE_CAP_BYTES);
     return { ...base, role: 'assistant', blocks: [{
       type: 'tool_use',

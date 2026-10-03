@@ -286,7 +286,8 @@ function chipLabel(block: Exclude<TranscriptBlock, { type: 'text' }>): string {
     case 'tool_use':
       return `Tool call: ${block.name || 'unnamed'}`;
     case 'tool_result':
-      return block.isError ? 'Tool result — error' : 'Tool result';
+      if (block.isError) return 'Tool result — error';
+      return block.content.trim() ? 'Tool result' : 'Tool result — no output';
   }
 }
 
@@ -297,7 +298,7 @@ function chipBody(block: Exclude<TranscriptBlock, { type: 'text' }>): string {
     case 'tool_use':
       return block.input;
     case 'tool_result':
-      return block.content;
+      return block.content.trim() ? block.content : 'This tool call returned no text.';
   }
 }
 

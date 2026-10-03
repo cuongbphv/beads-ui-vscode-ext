@@ -166,6 +166,15 @@ describe('Transcript — blocks', () => {
 
     expect(el.textContent?.toLowerCase()).toContain('error');
   });
+
+  it('explains an empty Codex tool result instead of opening a blank chip', async () => {
+    const event = makeEvent({
+      blocks: [{ type: 'tool_result', toolUseId: 'msg-1', content: '', isError: false, truncated: false }],
+    });
+    const el = await render(baseState({ events: [event] }));
+    expect(el.querySelector('summary')?.textContent).toContain('no output');
+    expect(el.querySelector('details')?.textContent).toContain('This tool call returned no text.');
+  });
 });
 
 describe('Transcript — block colour (beads-ui-vscode-ext-w9a color upgrade)', () => {
