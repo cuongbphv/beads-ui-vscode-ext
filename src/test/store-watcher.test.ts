@@ -45,6 +45,7 @@ const configListeners = new Set<(event: { affectsConfiguration: (key: string) =>
 vi.mock('vscode', () => ({
   EventEmitter: FakeEventEmitter,
   RelativePattern: FakeRelativePattern,
+  Uri: { file: (fsPath: string) => ({ fsPath }) },
   workspace: {
     getConfiguration: vi.fn(),
     onDidChangeConfiguration: vi.fn(
@@ -82,7 +83,7 @@ function makeWatcher(): FakeWatcher {
   return {
     onDidChange: changeEmitter.event,
     onDidCreate: createEmitter.event,
-    dispose: vi.fn(),
+    dispose: vi.fn(() => { changeEmitter.dispose(); createEmitter.dispose(); }),
     fireChange: () => changeEmitter.fire(undefined),
     fireCreate: () => createEmitter.fire(undefined),
   };
@@ -109,6 +110,23 @@ function fireConfigChange(changedKey: string): void {
 let configValues: Record<string, unknown>;
 let watcher: FakeWatcher;
 
+async function loadedStore(beadsDir = '/external/.beads'): Promise<InstanceType<typeof BeadsStore>> {
+  const store = new BeadsStore(makeFolder(), makeOutput());
+  vi.spyOn(store.queries, 'snapshot').mockResolvedValue({
+    context: { bd_version: '1.3.1', beads_dir: beadsDir, repo_root: '/fake/workspace' },
+    vocabulary: { statuses: [], types: [] },
+    stats: {
+      total_issues: 0, open_issues: 0, in_progress_issues: 0,
+      blocked_issues: 0, closed_issues: 0, deferred_issues: 0,
+      pinned_issues: 0, ready_issues: 0,
+    },
+    beads: [], readyIds: [], blockedIds: [], gates: [], truncated: false,
+    fetchedAt: new Date().toISOString(),
+  });
+  await store.refresh();
+  return store;
+}
+
 beforeEach(() => {
   configListeners.clear();
   configValues = { pollIntervalSeconds: 5, issueLimit: 2000 };
@@ -118,6 +136,7 @@ beforeEach(() => {
   vi.mocked(vscode.workspace.getConfiguration).mockReturnValue({
     get: (key: string) => configValues[key],
   } as unknown as import('vscode').WorkspaceConfiguration);
+  vi.mocked(vscode.workspace.createFileSystemWatcher).mockReset();
   vi.mocked(vscode.workspace.createFileSystemWatcher).mockReturnValue(
     watcher as unknown as import('vscode').FileSystemWatcher,
   );
@@ -128,8 +147,11 @@ afterEach(() => {
 });
 
 describe('BeadsStore watcher wiring', () => {
-  it('probes the board when the watcher fires while a view is on screen', () => {
-    const store = new BeadsStore(makeFolder(), makeOutput());
+  it('probes the board when the resolved database watcher fires while a view is on screen', async () => {
+    const store = await loadedStore();
+    const pattern = vi.mocked(vscode.workspace.createFileSystemWatcher).mock.calls[0][0] as FakeRelativePattern;
+    expect((pattern.base as { fsPath: string }).fsPath).toBe('/external/.beads');
+    expect(pattern.pattern).toBe('last-touched');
     const tick = vi.spyOn(store, 'tick').mockResolvedValue();
     const hold = store.observe();
     tick.mockClear(); // observe() itself probes once; that is not this test's subject
@@ -142,8 +164,8 @@ describe('BeadsStore watcher wiring', () => {
     store.dispose();
   });
 
-  it('ignores the watcher entirely when no view is observing', () => {
-    const store = new BeadsStore(makeFolder(), makeOutput());
+  it('ignores the watcher entirely when no view is observing', async () => {
+    const store = await loadedStore();
     const tick = vi.spyOn(store, 'tick').mockResolvedValue();
 
     watcher.fireChange();
@@ -153,8 +175,8 @@ describe('BeadsStore watcher wiring', () => {
     store.dispose();
   });
 
-  it('treats onDidCreate the same as onDidChange, since the file may not exist yet', () => {
-    const store = new BeadsStore(makeFolder(), makeOutput());
+  it('treats onDidCreate the same as onDidChange, since the file may not exist yet', async () => {
+    const store = await loadedStore();
     const tick = vi.spyOn(store, 'tick').mockResolvedValue();
     const hold = store.observe();
     tick.mockClear();
@@ -167,8 +189,8 @@ describe('BeadsStore watcher wiring', () => {
     store.dispose();
   });
 
-  it('coalesces a rapid burst of watcher events into a single probe', () => {
-    const store = new BeadsStore(makeFolder(), makeOutput());
+  it('coalesces a rapid burst of watcher events into a single probe', async () => {
+    const store = await loadedStore();
     const tick = vi.spyOn(store, 'tick').mockResolvedValue();
     const hold = store.observe();
     tick.mockClear();
@@ -181,10 +203,10 @@ describe('BeadsStore watcher wiring', () => {
     store.dispose();
   });
 
-  it('keeps the configured cadence until the watcher proves itself, then backs it off', () => {
+  it('keeps the configured cadence until the watcher proves itself, then backs it off', async () => {
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
 
-    const store = new BeadsStore(makeFolder(), makeOutput());
+    const store = await loadedStore();
     vi.spyOn(store, 'tick').mockResolvedValue();
     const hold = store.observe();
 
@@ -200,11 +222,72 @@ describe('BeadsStore watcher wiring', () => {
     store.dispose();
   });
 
-  it('disposes the watcher when the store is disposed', () => {
-    const store = new BeadsStore(makeFolder(), makeOutput());
+  it('disposes the watcher when the store is disposed', async () => {
+    const store = await loadedStore();
     store.dispose();
 
     expect(watcher.dispose).toHaveBeenCalled();
+  });
+
+  it('rebinds when bd context moves to another database and ignores the old watcher', async () => {
+    const oldWatcher = watcher;
+    const newWatcher = makeWatcher();
+    vi.mocked(vscode.workspace.createFileSystemWatcher)
+      .mockReturnValueOnce(oldWatcher as unknown as import('vscode').FileSystemWatcher)
+      .mockReturnValueOnce(newWatcher as unknown as import('vscode').FileSystemWatcher);
+    const store = await loadedStore('/main/.beads');
+    const tick = vi.spyOn(store, 'tick').mockResolvedValue();
+    const hold = store.observe();
+    tick.mockClear();
+
+    vi.spyOn(store.queries, 'snapshot').mockResolvedValue({
+      ...store.current.snapshot!,
+      context: { ...store.current.snapshot!.context, beads_dir: '/redirect/.beads' },
+    });
+    await store.refresh();
+
+    const pattern = vi.mocked(vscode.workspace.createFileSystemWatcher).mock.calls[1][0] as FakeRelativePattern;
+    expect((pattern.base as { fsPath: string }).fsPath).toBe('/redirect/.beads');
+    expect(oldWatcher.dispose).toHaveBeenCalled();
+    oldWatcher.fireChange();
+    expect(tick).not.toHaveBeenCalled();
+    newWatcher.fireChange();
+    expect(tick).toHaveBeenCalledTimes(1);
+
+    hold.dispose();
+    store.dispose();
+  });
+
+  it('keeps the configured poll fallback when watcher creation fails', async () => {
+    vi.mocked(vscode.workspace.createFileSystemWatcher).mockImplementation(() => {
+      throw new Error('watch unavailable');
+    });
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const store = await loadedStore();
+    vi.spyOn(store, 'tick').mockResolvedValue();
+    const hold = store.observe();
+
+    expect(setIntervalSpy.mock.calls.at(-1)?.[1]).toBe(5_000);
+    expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalledTimes(1);
+
+    hold.dispose();
+    store.dispose();
+  });
+
+  it('does not probe from external writes while views are hidden, then catches up on show', async () => {
+    const store = await loadedStore();
+    const tick = vi.spyOn(store, 'tick').mockResolvedValue();
+    const hold = store.observe();
+    hold.dispose();
+    tick.mockClear();
+
+    watcher.fireChange();
+    expect(tick).not.toHaveBeenCalled();
+
+    const returned = store.observe();
+    expect(tick).toHaveBeenCalledTimes(1);
+    returned.dispose();
+    store.dispose();
   });
 });
 

@@ -6,6 +6,7 @@
  * place that decides when a refresh is due.
  */
 import * as vscode from 'vscode';
+import * as path from 'node:path';
 
 import type { DashboardSnapshot } from '../shared/types';
 import type { RpcError } from '../shared/protocol';
@@ -106,7 +107,9 @@ export class BeadsStore implements vscode.Disposable {
    */
   private watcherActive = false;
   /** Coalesces a burst of writes behind one `.beads/last-touched` event into one probe. */
-  private readonly watchDebouncer = new Debouncer();
+  private watchDebouncer = new Debouncer();
+  private watchedBeadsDir: string | undefined;
+  private watcherBinding: vscode.Disposable[] = [];
 
   private readonly emitter = new vscode.EventEmitter<StoreState>();
   /** Fires on every state transition: loading, loaded, failed. */
@@ -130,19 +133,6 @@ export class BeadsStore implements vscode.Disposable {
     // Any write we make invalidates the cache immediately — this is the
     // "refresh after mutation" half of DEC-004.
     this.disposables.push({ dispose: this.mutations.onChanged(() => void this.refresh()) });
-
-    // The doorbell for *someone else's* write (DEC-001: a signal only — never
-    // read the file's contents, the real data always comes back through `bd`).
-    // `.beads/last-touched` may not exist yet when the watcher is created, so
-    // both onDidChange and onDidCreate feed the same handler.
-    const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(workspaceFolder, '.beads/last-touched'),
-    );
-    this.disposables.push(
-      watcher,
-      watcher.onDidChange(this.handleWatcherSignal),
-      watcher.onDidCreate(this.handleWatcherSignal),
-    );
 
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
@@ -189,6 +179,34 @@ export class BeadsStore implements vscode.Disposable {
     if (!this.watchDebouncer.signal()) return;
     void this.tick();
   };
+
+  /** Bind the doorbell to the directory that this snapshot's bd commands used.
+   * A worktree or BEADS_DIR may resolve outside the opened workspace folder. */
+  private bindWatcher(beadsDir: string | undefined): void {
+    if (typeof beadsDir !== 'string' || !path.isAbsolute(beadsDir) || beadsDir === this.watchedBeadsDir) return;
+    for (const disposable of this.watcherBinding) disposable.dispose();
+    this.watcherBinding = [];
+    this.watchedBeadsDir = undefined;
+    this.watcherActive = false;
+    this.watchDebouncer = new Debouncer();
+    this.restartPolling();
+
+    try {
+      // last-touched may be created later; both events are doorbells only.
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(beadsDir), 'last-touched'),
+      );
+      this.watcherBinding = [
+        watcher,
+        watcher.onDidChange(this.handleWatcherSignal),
+        watcher.onDidCreate(this.handleWatcherSignal),
+      ];
+      this.watchedBeadsDir = beadsDir;
+    } catch (error) {
+      this.output.appendLine(`watcher unavailable: ${toRpcError(error).message}`);
+      // The normal probe timer remains at the configured cadence.
+    }
+  }
 
   get current(): StoreState {
     return this.state;
@@ -267,6 +285,7 @@ export class BeadsStore implements vscode.Disposable {
     try {
       const limit = config().get<number>('issueLimit') ?? 2000;
       const snapshot = await this.queries.snapshot(limit);
+      this.bindWatcher(snapshot.context.beads_dir);
       // The data is now current by definition; let the next probe re-establish
       // the fingerprint instead of guessing it from these rows.
       this.changeProbe.reset();
@@ -330,6 +349,7 @@ export class BeadsStore implements vscode.Disposable {
 
   dispose(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    for (const disposable of this.watcherBinding) disposable.dispose();
     this.emitter.dispose();
     for (const disposable of this.disposables) disposable.dispose();
   }
