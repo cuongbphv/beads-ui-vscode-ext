@@ -12,32 +12,42 @@
 import { useEffect, useState } from 'react';
 
 import type { FleetSnapshot } from '../../shared/fleet';
-import { call, onHostEvent } from '../bridge/rpc';
+import type { RpcError } from '../../shared/protocol';
+import { asRpcError, call, onHostEvent } from '../bridge/rpc';
 
 export interface FleetState {
   snapshot: FleetSnapshot | undefined;
-  /** True only until the initial `subscribeFleet` round trip settles. */
+  /** True until the current `subscribeFleet` attempt settles. */
   loading: boolean;
+  error: RpcError | undefined;
+  retry: () => void;
 }
 
 export function useFleet(): FleetState {
   const [snapshot, setSnapshot] = useState<FleetSnapshot>();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<RpcError>();
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const unsubscribeEvents = onHostEvent((event) => {
       if (event.name === 'fleetChanged') {
         setSnapshot(event.fleet);
+        setError(undefined);
         setLoading(false);
       }
     });
 
     let live = true;
-    void call('subscribeFleet', undefined).finally(() => {
-      // The first `fleetChanged` may already have landed by the time this
-      // settles; either way there is nothing more to wait on.
-      if (live) setLoading(false);
-    });
+    void call('subscribeFleet', undefined)
+      .catch((cause: unknown) => {
+        if (live) setError(asRpcError(cause));
+      })
+      .finally(() => {
+        // The first `fleetChanged` may already have landed by the time this
+        // settles; either way there is nothing more to wait on.
+        if (live) setLoading(false);
+      });
 
     return () => {
       live = false;
@@ -47,7 +57,13 @@ export function useFleet(): FleetState {
         // regardless of whether the host heard the goodbye.
       });
     };
-  }, []);
+  }, [attempt]);
 
-  return { snapshot, loading };
+  const retry = (): void => {
+    setError(undefined);
+    setLoading(true);
+    setAttempt((previous) => previous + 1);
+  };
+
+  return { snapshot, loading, error, retry };
 }

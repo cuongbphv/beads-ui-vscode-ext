@@ -52,9 +52,9 @@ function workerCountLabel(filteredCount: number, totalCount: number): string {
 }
 
 const STATUS_LABEL: Record<FleetWorker['status'], string> = {
-  running: 'Running',
-  idle: 'Idle',
-  unknown: 'Unknown',
+  running: 'Recent activity',
+  idle: 'No recent activity',
+  unknown: 'Activity unknown',
 };
 
 const STATUS_CLASS: Record<FleetWorker['status'], string> = {

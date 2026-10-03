@@ -133,7 +133,7 @@ describe('WorkerList orchestrators and workers', () => {
     const row = el.querySelector('li[role="button"]') as HTMLElement;
     expect(header.getAttribute('aria-label')).toContain('Codex orchestrator session');
     expect(row.getAttribute('aria-label')).toContain('Codex worker');
-    expect(el.textContent).toContain('Running');
+    expect(el.textContent).toContain('Recent activity');
     await act(async () => header.click());
     await act(async () => row.click());
     expect(onSelectTarget).toHaveBeenNthCalledWith(1, 'session:codex-session');
@@ -157,7 +157,7 @@ describe('WorkerList orchestrators and workers', () => {
     );
 
     expect(el.textContent).toContain('1 worker');
-    expect(el.textContent).toContain('Running');
+    expect(el.textContent).toContain('Recent activity');
     expect(el.textContent).toContain('proj-7pi');
     expect(el.textContent).toContain('Implementing bead proj-7pi');
   });

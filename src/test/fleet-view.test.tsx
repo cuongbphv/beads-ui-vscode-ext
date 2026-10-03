@@ -26,11 +26,14 @@ declare global {
 const rpc = vi.hoisted(() => ({
   calls: [] as Array<{ method: string; params: unknown }>,
   listeners: new Set<(event: HostEvent) => void>(),
+  subscribeImpl: undefined as (() => Promise<unknown>) | undefined,
 }));
 
 vi.mock('../webview/bridge/rpc', () => ({
+  asRpcError: (error: unknown) => ({ kind: 'unknown', message: error instanceof Error ? error.message : String(error) }),
   call: (method: string, params: unknown) => {
     rpc.calls.push({ method, params });
+    if (method === 'subscribeFleet' && rpc.subscribeImpl) return rpc.subscribeImpl();
     if (method === 'subscribeTranscript') {
       const backfill: TranscriptBackfill = {
         target: (params as { targetId: string }).targetId as TranscriptBackfill['target'],
@@ -77,6 +80,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   rpc.calls.length = 0;
+  rpc.subscribeImpl = undefined;
 });
 
 afterEach(async () => {
@@ -147,6 +151,24 @@ describe('FleetView', () => {
 
     expect(el.textContent).toContain('session-1'.slice(0, 8));
     expect(el.textContent).not.toContain('No fleet data yet');
+  });
+
+  it('shows subscribe errors with Retry, then keeps the last snapshot timestamp visible', async () => {
+    rpc.subscribeImpl = async () => { throw new Error('Host unavailable'); };
+    const el = await mount();
+    expect(el.getAttribute('aria-busy')).not.toBe('true');
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('Host unavailable');
+    expect(el.textContent).not.toContain('No fleet data yet');
+
+    rpc.subscribeImpl = async () => ({ ok: true });
+    const retry = el.querySelector('button') as HTMLButtonElement;
+    await act(async () => retry.click());
+    expect(rpc.calls.filter((call) => call.method === 'subscribeFleet')).toHaveLength(2);
+
+    const generatedAt = '2026-10-03T01:00:00.000Z';
+    await act(async () => fire(snapshot({ generatedAt })));
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+    expect(el.querySelector('[title="2026-10-03T01:00:00.000Z"]')?.textContent).toContain('Last Fleet snapshot');
   });
 
   it('renders the degraded hint when discovery reports no-claude-dir', async () => {
@@ -347,8 +369,12 @@ describe('FleetView status filter (beads-ui-vscode-ext-w9a.6)', () => {
     );
 
     expect(el.querySelectorAll('li[role="button"]')).toHaveLength(2);
+    expect(el.textContent).toContain('Recent activity');
+    expect(el.textContent).toContain('No recent activity');
+    expect(el.textContent).not.toContain('Running');
+    expect(el.textContent).not.toContain('Idle');
 
-    const select = el.querySelector('select[aria-label="Status"]') as HTMLSelectElement;
+    const select = el.querySelector('select[aria-label="Activity"]') as HTMLSelectElement;
     expect(select).not.toBeNull();
     await act(async () => {
       select.value = 'running';

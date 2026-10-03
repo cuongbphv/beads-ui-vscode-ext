@@ -20,7 +20,7 @@
  * and persisted by `App.tsx` alongside `fleetDetailWidth`; `WorkerList` itself
  * stays a pure function of `snapshot` + `statusFilter`.
  */
-import { Bot, ScrollText, X } from 'lucide-react';
+import { Bot, RefreshCw, ScrollText, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { FLEET_STATUS_FILTERS, type FleetStatusFilter } from '../../shared/fleet-filter';
@@ -49,9 +49,9 @@ function targetLabel(targetId: string, snapshot: FleetSnapshot): string {
 }
 
 const STATUS_FILTER_LABELS: Record<FleetStatusFilter, string> = {
-  all: 'All statuses',
-  running: 'Running',
-  idle: 'Idle',
+  all: 'All activity',
+  running: 'Recent activity',
+  idle: 'No recent activity',
 };
 
 const STATUS_FILTER_OPTIONS = FLEET_STATUS_FILTERS.map((value) => ({
@@ -75,7 +75,7 @@ export function FleetView({
   /** Issues by full id, for the worker rows' lease badges (beads-ui-vscode-ext-ayq.1). */
   beadsById: ReadonlyMap<string, Bead>;
 }): ReactNode {
-  const { snapshot, loading } = useFleet();
+  const { snapshot, loading, error, retry } = useFleet();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -122,13 +122,21 @@ export function FleetView({
       className="@container flex h-full min-h-0 flex-col"
       style={{ '--fleet-detail-w': `${detailPx}px` } as CSSProperties}
     >
+      {error ? (
+        <div role="alert" className="border-danger/50 bg-danger/10 text-danger flex items-center gap-2 border-b px-3 py-2 text-sm">
+          <span>Fleet connection failed: {error.message}</span>
+          <button type="button" onClick={retry} className="ml-auto inline-flex shrink-0 items-center gap-1 underline">
+            <RefreshCw aria-hidden="true" className="size-3.5" /> Retry
+          </button>
+        </div>
+      ) : null}
       {!snapshot ? (
-        loading ? (
+        loading && !error ? (
           <div className="grid gap-2 p-3" aria-busy="true" aria-label="Loading fleet">
             <Skeleton className="h-16 rounded-lg" />
             <Skeleton className="h-16 rounded-lg" />
           </div>
-        ) : (
+        ) : error ? null : (
           <EmptyState
             icon={<Bot className="size-10" />}
             title="No fleet data yet"
@@ -143,11 +151,14 @@ export function FleetView({
               text query to filter, so a single picker fills the whole band. */}
           <div className="border-border flex items-center gap-2 border-b px-3 py-2">
             <Select
-              label="Status"
+              label="Activity"
               value={statusFilter}
               onChange={(value) => onStatusFilterChange(value as FleetStatusFilter)}
               options={STATUS_FILTER_OPTIONS}
             />
+            <span className="text-fg-muted ml-auto text-xs" title={snapshot.generatedAt}>
+              Last Fleet snapshot: {snapshot.generatedAt ? new Date(snapshot.generatedAt).toLocaleString() : 'unknown'}
+            </span>
           </div>
 
           {/* Row, not column: mirrors `App.tsx`'s own `<main className="flex ...">`

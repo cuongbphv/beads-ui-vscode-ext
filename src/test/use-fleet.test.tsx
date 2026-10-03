@@ -21,11 +21,14 @@ declare global {
 const rpc = vi.hoisted(() => ({
   calls: [] as Array<{ method: string; params: unknown }>,
   listeners: new Set<(event: HostEvent) => void>(),
+  subscribeImpl: undefined as (() => Promise<unknown>) | undefined,
 }));
 
 vi.mock('../webview/bridge/rpc', () => ({
+  asRpcError: (error: unknown) => ({ kind: 'unknown', message: error instanceof Error ? error.message : String(error) }),
   call: (method: string, params: unknown) => {
     rpc.calls.push({ method, params });
+    if (method === 'subscribeFleet' && rpc.subscribeImpl) return rpc.subscribeImpl();
     return Promise.resolve({ ok: true });
   },
   onHostEvent: (listener: (event: HostEvent) => void) => {
@@ -76,6 +79,7 @@ afterEach(async () => {
   state = undefined;
   rpc.calls.length = 0;
   rpc.listeners.clear();
+  rpc.subscribeImpl = undefined;
 });
 
 async function mount(): Promise<void> {
@@ -116,6 +120,28 @@ describe('useFleet', () => {
     await act(async () => fire(makeSnapshot({ orphanWorktrees: ['/repo/wt-b'] })));
 
     expect(hook().snapshot?.orphanWorktrees).toEqual(['/repo/wt-b']);
+  });
+
+  it('exposes a failed subscribe and retries without discarding the last snapshot', async () => {
+    rpc.subscribeImpl = async () => { throw new Error('Host unavailable'); };
+    await mount();
+    expect(hook().error?.message).toContain('Host unavailable');
+    expect(hook().loading).toBe(false);
+
+    const previous = makeSnapshot({ generatedAt: '2026-10-03T01:00:00.000Z' });
+    await act(async () => fire(previous));
+    rpc.subscribeImpl = async () => { throw new Error('Still unavailable'); };
+    await act(async () => hook().retry());
+    expect(hook().snapshot).toEqual(previous);
+    expect(hook().error?.message).toContain('Still unavailable');
+    expect(rpc.calls.filter((call) => call.method === 'subscribeFleet')).toHaveLength(2);
+
+    rpc.subscribeImpl = async () => ({ ok: true });
+    await act(async () => hook().retry());
+    const latest = makeSnapshot({ generatedAt: '2026-10-03T02:00:00.000Z' });
+    await act(async () => fire(latest));
+    expect(hook().error).toBeUndefined();
+    expect(hook().snapshot).toEqual(latest);
   });
 
   it('calls unsubscribeFleet on unmount', async () => {
