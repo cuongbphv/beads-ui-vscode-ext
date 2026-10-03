@@ -31,12 +31,26 @@ describe.skipIf(!executable)('Beads 1.3 journal CLI qualification (isolated embe
     if (cwd) await rm(cwd, { recursive: true, force: true, maxRetries: 15, retryDelay: 100 });
   });
 
+  async function expectWatermarkOrBackstop(probe: ChangeProbeStrategy, write: () => Promise<unknown>): Promise<void> {
+    const before = await queries.watermark();
+    await write();
+    const after = await queries.watermark();
+    const changed = after !== before;
+    expect(await probe.shouldRefresh()).toBe(changed);
+    if (changed) return;
+
+    // bd timestamps have one-second resolution. The first fallback tick
+    // adopted the watermark, the probe above was tick 2; the 12th is a
+    // guaranteed full resync even when two writes have the same fingerprint.
+    for (let tick = 3; tick < 12; tick++) expect(await probe.shouldRefresh()).toBe(false);
+    expect(await probe.shouldRefresh()).toBe(true);
+  }
+
   it('keeps journal-off workspaces on watermark and detects outside changes', async () => {
     const probe = new ChangeProbeStrategy(queries);
     await bd.exec(['create', 'first', '--silent']);
     expect(await probe.shouldRefresh()).toBe(false);
-    await bd.exec(['create', 'second', '--silent']);
-    expect(await probe.shouldRefresh()).toBe(true);
+    await expectWatermarkOrBackstop(probe, () => bd.exec(['create', 'second', '--silent']));
   });
 
   it('baselines history, parses multiple real JSON Lines and resumes at the newest seq', async () => {
@@ -57,16 +71,17 @@ describe.skipIf(!executable)('Beads 1.3 journal CLI qualification (isolated embe
   });
 
   it('refreshes immediately when the journal is disabled mid-session', async () => {
+    vi.stubEnv('BD_EVENTS_JOURNAL', '1');
+    await bd.exec(['create', 'journal seed', '--silent']);
     const probe = new ChangeProbeStrategy(queries);
-    await probe.shouldRefresh();
+    expect(await probe.shouldRefresh()).toBe(true);
     probe.reset();
     vi.stubEnv('BD_EVENTS_JOURNAL', '0');
     await bd.exec(['create', 'unjournaled', '--silent']);
     expect(await probe.shouldRefresh()).toBe(true);
     probe.reset();
     expect(await probe.shouldRefresh()).toBe(false);
-    await bd.exec(['create', 'watermark still works', '--silent']);
-    expect(await probe.shouldRefresh()).toBe(true);
+    await expectWatermarkOrBackstop(probe, () => bd.exec(['create', 'watermark still works', '--silent']));
   });
 
   it('recovers from a real retention truncation and baselines already-pruned history', async () => {
@@ -76,15 +91,18 @@ describe.skipIf(!executable)('Beads 1.3 journal CLI qualification (isolated embe
     probe.reset();
     await bd.exec(['create', 'to prune one', '--silent']);
     await bd.exec(['create', 'to prune two', '--silent']);
+    const headToPrune = await queries.eventsHead();
     await bd.exec(['config', 'set', 'events-journal-auto-prune', 'false']);
     await bd.exec(['config', 'set', 'events-journal-retain-days', '0']);
     await bd.exec(['config', 'set', 'events-journal-retain-rows', '0']);
-    await bd.exec(['events', 'prune', '--before', '5', '--json']);
-    await expect(queries.eventsTail(3, 50)).rejects.toMatchObject({ rpcError: { code: 'events_journal_truncated' }, output: { head: 5 } });
+    await bd.exec(['events', 'prune', '--before', String(headToPrune), '--json']);
+    await expect(queries.eventsTail(headToPrune - 2, 50)).rejects.toMatchObject({
+      rpcError: { code: 'events_journal_truncated' }, output: { head: headToPrune },
+    });
     expect(await probe.shouldRefresh()).toBe(true);
     probe.reset();
     expect(await probe.shouldRefresh()).toBe(false);
-    expect(await queries.eventsHead()).toBe(5);
+    expect(await queries.eventsHead()).toBe(headToPrune);
     await bd.exec(['create', 'after recovery', '--silent']);
     expect(await probe.shouldRefresh()).toBe(true);
   });

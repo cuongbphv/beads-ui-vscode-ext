@@ -119,6 +119,18 @@ describe('journal change probe', () => {
     expect(await probe.shouldRefresh()).toBe(false);
   });
 
+  it('detects a distinct watermark immediately and rescues a same-second collision at tick 12', async () => {
+    const { queries, probe } = fixture();
+    queries.eventsHead.mockRejectedValueOnce(new Error('journal disabled'));
+    expect(await probe.shouldRefresh()).toBe(false); // adopt a@1
+    queries.watermark.mockResolvedValue('b@1');
+    expect(await probe.shouldRefresh()).toBe(true); // distinct issue ID, same second
+    probe.reset();
+    expect(await probe.shouldRefresh()).toBe(false); // adopt b@1
+    for (let tick = 2; tick < 12; tick++) expect(await probe.shouldRefresh()).toBe(false);
+    expect(await probe.shouldRefresh()).toBe(true); // same b@1, forced resync
+  });
+
   it('propagates watermark errors to the store', async () => {
     const { queries, probe } = fixture();
     queries.eventsHead.mockRejectedValueOnce(new Error('disabled'));
