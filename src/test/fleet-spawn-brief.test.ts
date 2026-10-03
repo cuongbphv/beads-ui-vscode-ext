@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseSpawnBrief } from '../extension/fleet/lib/spawn-brief';
+import { parseCodexAssignment, parseSpawnBrief } from '../extension/fleet/lib/spawn-brief';
 
 describe('parseSpawnBrief', () => {
   it('parses a Vietnamese brief and keeps its diacritics — bead id and worktree path with a dot preserved', () => {
@@ -58,5 +58,39 @@ describe('parseSpawnBrief', () => {
     const result = parseSpawnBrief(brief);
 
     expect(result?.worktreePath).toBe('C:\\Users\\me\\Workspace\\wt-velox-bez');
+  });
+});
+
+describe('parseCodexAssignment', () => {
+  it('resolves an explicit bead to the one registered worktree with its short name', () => {
+    expect(parseCodexAssignment(
+      'Implement bead beads-ui-vscode-ext-mk0.15; use the assigned worktree.',
+      'attribution',
+      ['/repo/wt-mk0-15', '/repo/wt-unrelated'],
+    )).toEqual({ beadId: 'beads-ui-vscode-ext-mk0.15', worktreePath: '/repo/wt-mk0-15' });
+  });
+
+  it('uses a structured Codex task name with an explicit matching worktree path', () => {
+    expect(parseCodexAssignment(
+      'Implement the assigned task in /repo/wt-mk0-15.',
+      'bead_mk0_15',
+      [],
+    )).toEqual({ beadId: 'mk0.15', worktreePath: '/repo/wt-mk0-15' });
+  });
+
+  it('does not guess from a generic task name or from multiple matching worktrees', () => {
+    expect(parseCodexAssignment('Inspect the UI.', 'ready', ['/repo/wt-mk0-15'])).toBeNull();
+    expect(parseCodexAssignment(
+      'Implement bead mk0.15.', 'ready', ['/repo/wt-mk0-15', '/repo/wt-mk015'],
+    )).toBeNull();
+  });
+
+  it('rejects conflicting bead IDs or an explicit worktree for another bead', () => {
+    expect(parseCodexAssignment(
+      'Implement bead mk0.15 after bead mk0.14.', 'bead_mk0_15', ['/repo/wt-mk0-15'],
+    )).toBeNull();
+    expect(parseCodexAssignment(
+      'Implement bead mk0.15 in /repo/wt-mk0-14.', 'ready', ['/repo/wt-mk0-15'],
+    )).toBeNull();
   });
 });

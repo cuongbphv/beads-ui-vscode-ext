@@ -47,3 +47,67 @@ export function parseSpawnBrief(text: string): SpawnBriefMatch | null {
 
   return { beadId: beadMatch[1], worktreePath };
 }
+
+/** Codex task names can carry an issue ID even when the free-text brief only
+ * names a worktree. This narrow prefix is intentional: generic names such as
+ * `ready` or `workspace` are not ownership evidence. */
+function beadFromCodexTaskName(taskName: string): string | null {
+  const match = /^(?:work[_-])?bead[_-]([a-z][a-z0-9]*)(?:[._-](\d+))?$/i.exec(taskName);
+  return match ? `${match[1]}${match[2] ? `.${match[2]}` : ''}` : null;
+}
+
+function identity(value: string): string {
+  return value.toLowerCase().replace(/[._-]/g, '');
+}
+
+function matchesBead(worktreePath: string, beadId: string): boolean {
+  const dirName = worktreePath.replace(/[\\/]+$/, '').split(/[\\/]/).at(-1) ?? '';
+  if (!/^wt-/i.test(dirName)) return false;
+  const worktreeId = identity(dirName.slice(3));
+  const bead = identity(beadId);
+  return worktreeId.length > 0 && (bead === worktreeId || bead.endsWith(worktreeId) || worktreeId.endsWith(bead));
+}
+
+function samePath(a: string, b: string): boolean {
+  return a.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() ===
+    b.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+/**
+ * Resolve only evidence-backed Codex assignments. A brief may name the bead
+ * and omit its path, or use a structured `bead_mk0_15` task name and name the
+ * worktree. In either case exactly one worktree must match; generic tasks and
+ * ambiguous candidates remain unclaimed.
+ *
+ * Claude's existing `parseSpawnBrief` contract is deliberately untouched.
+ */
+export function parseCodexAssignment(
+  brief: string,
+  taskName: string,
+  worktreePaths: readonly string[],
+): SpawnBriefMatch | null {
+  const explicitIds = [...brief.matchAll(/\bbeads?\s+`?([A-Za-z][A-Za-z0-9._-]*)`?/gi)]
+    .map((match) => stripTrailingPunctuation(match[1]));
+  const distinctIds = [...new Set(explicitIds.map(identity))];
+  if (distinctIds.length > 1) return null;
+
+  const namedId = beadFromCodexTaskName(taskName);
+  const beadId = explicitIds[0] ?? namedId;
+  if (!beadId) return null;
+  if (namedId && !identity(beadId).endsWith(identity(namedId))) return null;
+
+  const explicitPaths = [...brief.matchAll(PATH_RE)]
+    .map((match) => stripTrailingPunctuation(match[1]))
+    .filter((candidate) => /[\\/]wt-[^\\/]+$/i.test(candidate));
+  const uniqueExplicit = explicitPaths.filter((candidate, index) =>
+    explicitPaths.findIndex((other) => samePath(candidate, other)) === index);
+  if (uniqueExplicit.length > 1) return null;
+
+  if (uniqueExplicit.length === 1) {
+    return matchesBead(uniqueExplicit[0], beadId)
+      ? { beadId, worktreePath: uniqueExplicit[0] } : null;
+  }
+
+  const candidates = worktreePaths.filter((candidate) => matchesBead(candidate, beadId));
+  return candidates.length === 1 ? { beadId, worktreePath: candidates[0] } : null;
+}

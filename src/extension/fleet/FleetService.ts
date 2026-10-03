@@ -49,7 +49,7 @@ import * as vscode from 'vscode';
 import type { FleetOrchestrator, FleetSnapshot, FleetWorker, FleetWorktree } from '../../shared/fleet';
 import { matchWorktreesToBeads, type MatchableWorker, type MatchableWorktree } from './lib/bead-match';
 import { findProjectDirFor } from './lib/session-locator';
-import { parseSpawnBrief } from './lib/spawn-brief';
+import { parseCodexAssignment, parseSpawnBrief } from './lib/spawn-brief';
 import { Debouncer } from '../poll-gate';
 import { listWorktrees, WorktreeGitProbe, type DiscoveredWorktree } from './worktree-git';
 import type { TranscriptResolution } from './TranscriptTailer';
@@ -493,6 +493,17 @@ export class FleetService implements vscode.Disposable {
 
     const orchestrators: FleetOrchestrator[] = [];
     const workers: FleetWorker[] = [];
+    // Only registered worktrees are candidates for an assignment inferred from
+    // a bead ID/task name. A missing or ambiguous match stays unclaimed.
+    let codexWorktreePaths: string[] = [];
+    try {
+      codexWorktreePaths = (await listWorktrees(this.cwd))
+        .filter((worktree) => !worktree.bare && /^wt-/i.test(worktree.dirName))
+        .map((worktree) => worktree.path);
+    } catch {
+      // Explicit path briefs can still resolve; discoverWorktrees reports the
+      // git failure separately, and no guessed path is introduced here.
+    }
     for (const meta of metas) {
       const directChildren = children.get(meta.id);
       if (!directChildren?.length || resolve(meta.cwd) !== workspace) continue;
@@ -500,7 +511,7 @@ export class FleetService implements vscode.Disposable {
       for (const child of directChildren) {
         const taskName = child.agentPath?.split('/').filter(Boolean).at(-1) ?? '';
         const brief = briefs.get(taskName) ?? '';
-        const parsed = parseSpawnBrief(brief);
+        const parsed = parseCodexAssignment(brief, taskName, codexWorktreePaths);
         const lastActivityAt = await mtimeIso(child.filePath);
         workers.push({
           provider: 'codex',

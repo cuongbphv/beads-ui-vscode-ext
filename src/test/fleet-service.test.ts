@@ -271,6 +271,42 @@ describe('FleetService session discovery', () => {
 });
 
 describe('FleetService Codex discovery', () => {
+  it('links a task-name assignment to one registered worktree when the brief omits the bead ID', async () => {
+    const worktree = join(root, 'wt-mk0-15');
+    await writeCodexFleet('codex-root', 'codex-child', 'bead_mk0_15',
+      'Implement the assigned task in the prepared worktree.', worktree);
+    worktreeGit.listWorktrees.mockResolvedValue([
+      { path: worktree, dirName: 'wt-mk0-15', branch: 'work/bead-mk0-15', bare: false },
+    ]);
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.workers[0]).toMatchObject({
+      provider: 'codex', beadId: 'mk0.15', worktreePath: worktree,
+    });
+    expect(service.snapshot?.orphanWorktrees).toEqual([]);
+    service.dispose();
+  });
+
+  it('leaves a generic Codex agent unattached even when only one worktree exists', async () => {
+    const worktree = join(root, 'wt-mk0-15');
+    await writeCodexFleet('codex-root', 'codex-child', 'workspace',
+      'Review the assigned feature.', worktree);
+    worktreeGit.listWorktrees.mockResolvedValue([
+      { path: worktree, dirName: 'wt-mk0-15', branch: 'work/bead-mk0-15', bare: false },
+    ]);
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.workers[0]).toMatchObject({ beadId: null, worktreePath: null });
+    expect(service.snapshot?.orphanWorktrees).toEqual([worktree]);
+    service.dispose();
+  });
+
   it('links a Codex child to its parent and spawn brief, so its live worktree is not stale', async () => {
     const parentId = 'root-1';
     const childId = 'child-1';
