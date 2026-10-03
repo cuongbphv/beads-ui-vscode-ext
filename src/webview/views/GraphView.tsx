@@ -8,7 +8,7 @@
  * edge are drawn at all, so a 2000-issue board stays a small SVG rather than
  * one node per issue.
  */
-import { Link2, RotateCcw, ZoomIn, ZoomOut, Waypoints } from 'lucide-react';
+import { Maximize2, Link2, RotateCcw, ZoomIn, ZoomOut, Waypoints } from 'lucide-react';
 import {
   useEffect,
   useId,
@@ -32,7 +32,7 @@ import {
   buildGraphLayout,
   edgeEndpoints,
   NODE_H,
-  NODE_W,
+  nodeTitleLines,
   type GraphEdgePoint,
 } from '../lib/graph-layout';
 import { cn } from '../lib/utils';
@@ -99,9 +99,23 @@ export function GraphView({
   blockedIds: Set<string>;
 }): ReactNode {
   const [zoom, setZoom] = useState(1);
+  const [zoomMode, setZoomMode] = useState<'auto' | 'fit' | 'manual'>('auto');
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
   // Recomputing the whole layered layout is O(nodes + edges) work that has
   // nothing to do with zoom or selection, so it is keyed on `beads` alone.
   const layout = useMemo(() => buildGraphLayout(beads), [beads]);
+
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) return;
+    const measure = (): void => setViewport({ width: element.clientWidth, height: element.clientHeight });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [layout.nodes.length]);
 
   // Manual repositioning, by drag or arrow-key nudge. Deliberately session-only
   // state — never written back to `beads` or persisted — so reopening the
@@ -114,6 +128,7 @@ export function GraphView({
   // pixel dragged.
   const dragRef = useRef<DragState | null>(null);
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
+  const [focusedId, setFocusedId] = useState<string | undefined>(undefined);
 
   const { notify } = useToast();
 
@@ -128,6 +143,7 @@ export function GraphView({
   const kindPickerId = useId();
 
   const nodeIds = useMemo(() => new Set(layout.nodes.map((node) => node.id)), [layout]);
+  const nodeWidths = useMemo(() => new Map(layout.nodes.map((node) => [node.id, node.width])), [layout]);
 
   // A bead disappearing from the board (closed, filtered, deleted) must not
   // leave its dragged position sitting in state forever — that would both
@@ -173,11 +189,11 @@ export function GraphView({
       if (!(id in overrides)) continue;
       minX = Math.min(minX, position.x);
       minY = Math.min(minY, position.y);
-      maxX = Math.max(maxX, position.x + NODE_W);
+      maxX = Math.max(maxX, position.x + (nodeWidths.get(id) ?? 0));
       maxY = Math.max(maxY, position.y + NODE_H);
     }
     return { minX, minY, width: maxX - minX, height: maxY - minY };
-  }, [layout, positions, overrides]);
+  }, [layout, positions, overrides, nodeWidths]);
 
   const moveNode = (id: string, position: GraphEdgePoint): void =>
     setOverrides((prev) => ({ ...prev, [id]: position }));
@@ -350,8 +366,14 @@ export function GraphView({
     );
   }
 
-  const zoomIn = (): void => setZoom((z) => Math.min(ZOOM_MAX, Number((z + ZOOM_STEP).toFixed(2))));
-  const zoomOut = (): void => setZoom((z) => Math.max(ZOOM_MIN, Number((z - ZOOM_STEP).toFixed(2))));
+  const fitZoom = viewport.width && viewport.height
+    ? Math.max(ZOOM_MIN, Math.min(1.6, (viewport.width - 32) / bounds.width, (viewport.height - 32) / bounds.height))
+    : 1;
+  // Auto enlarges compact diagrams but never makes a dense board unreadable.
+  // Explicit Fit can shrink to 50% when a whole-board overview is wanted.
+  const activeZoom = zoomMode === 'auto' ? Math.max(1, fitZoom) : zoomMode === 'fit' ? fitZoom : zoom;
+  const zoomIn = (): void => { setZoom(Math.min(ZOOM_MAX, Number((activeZoom + ZOOM_STEP).toFixed(2)))); setZoomMode('manual'); };
+  const zoomOut = (): void => { setZoom(Math.max(ZOOM_MIN, Number((activeZoom - ZOOM_STEP).toFixed(2)))); setZoomMode('manual'); };
 
   const linkCount = layout.edges.length;
   const summary = `${layout.nodes.length} issue${layout.nodes.length === 1 ? '' : 's'}, ${linkCount} dependency link${linkCount === 1 ? '' : 's'}`;
@@ -392,14 +414,18 @@ export function GraphView({
             <span className="sr-only">Reset layout</span>
           </Button>
           <span aria-hidden="true" className="border-border mx-1 h-4 border-l" />
-          <Button variant="ghost" title="Zoom out" onClick={zoomOut} disabled={zoom <= ZOOM_MIN}>
+          <Button variant="ghost" title="Fit graph to view" onClick={() => setZoomMode('fit')}>
+            <Maximize2 aria-hidden="true" className="size-3.5" />
+            <span className="sr-only">Fit graph to view</span>
+          </Button>
+          <Button variant="ghost" title="Zoom out" onClick={zoomOut} disabled={activeZoom <= ZOOM_MIN}>
             <ZoomOut aria-hidden="true" className="size-3.5" />
             <span className="sr-only">Zoom out</span>
           </Button>
           <span aria-hidden="true" className="w-9 text-center tabular-nums">
-            {Math.round(zoom * 100)}%
+            {Math.round(activeZoom * 100)}%
           </span>
-          <Button variant="ghost" title="Zoom in" onClick={zoomIn} disabled={zoom >= ZOOM_MAX}>
+          <Button variant="ghost" title="Zoom in" onClick={zoomIn} disabled={activeZoom >= ZOOM_MAX}>
             <ZoomIn aria-hidden="true" className="size-3.5" />
             <span className="sr-only">Zoom in</span>
           </Button>
@@ -411,10 +437,11 @@ export function GraphView({
           Overview's charts (`components/charts.tsx`). */}
       <p className="sr-only">{summary}</p>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={viewportRef} className="min-h-0 flex-1 overflow-auto">
         <svg
-          width={bounds.width * zoom}
-          height={bounds.height * zoom}
+          className="mx-auto block"
+          width={bounds.width * activeZoom}
+          height={bounds.height * activeZoom}
           viewBox={`${bounds.minX} ${bounds.minY} ${bounds.width} ${bounds.height}`}
         >
           <defs>
@@ -446,6 +473,8 @@ export function GraphView({
             {layout.edges.map((edge) => {
               const isBlocks = edge.kind === 'blocks';
               const isLive = isBlocks && blockedIds.has(edge.to);
+              const activeId = focusedId ?? selectedId;
+              const connected = !activeId || edge.from === activeId || edge.to === activeId;
               // Recomputed from each end's *current* position (drag override
               // or original layout coordinate) rather than the fixed points
               // `buildGraphLayout` produced, so a dragged node's edges follow
@@ -453,14 +482,15 @@ export function GraphView({
               const fromPos = positions.get(edge.from);
               const toPos = positions.get(edge.to);
               if (!fromPos || !toPos) return null;
-              const [start, end] = edgeEndpoints(fromPos, toPos);
+              const [start, end] = edgeEndpoints(fromPos, toPos, nodeWidths.get(edge.from));
               return (
                 <path
                   key={`${edge.from}->${edge.to}:${edge.kind}`}
                   d={`M${start.x},${start.y} L${end.x},${end.y}`}
                   fill="none"
                   stroke={isLive ? 'var(--color-warning)' : 'var(--color-fg-muted)'}
-                  strokeWidth={1.5}
+                  strokeWidth={activeId && connected ? 2.25 : 1.5}
+                  opacity={!connected ? 0.12 : isBlocks ? 0.85 : activeId ? 0.7 : 0.28}
                   strokeDasharray={isBlocks ? undefined : '4 3'}
                   markerEnd={isBlocks ? `url(#${isLive ? 'graph-arrow-blocked' : 'graph-arrow'})` : undefined}
                 />
@@ -480,8 +510,9 @@ export function GraphView({
                 const dragging = node.id === draggingId;
                 const isLinkSource = node.id === linkSource;
                 const pos = positions.get(node.id) ?? { x: node.x, y: node.y };
-                const title =
-                  node.bead.title.length > 22 ? `${node.bead.title.slice(0, 21)}…` : node.bead.title;
+                const titleLines = nodeTitleLines(node.bead.title, node.width);
+                const idLimit = Math.floor((node.width - 20) / 6.2);
+                const displayId = node.id.length > idLimit ? `${node.id.slice(0, idLimit - 1)}…` : node.id;
 
                 return (
                   <g
@@ -499,17 +530,22 @@ export function GraphView({
                     )}
                     style={dragging ? { filter: 'drop-shadow(0 4px 6px rgb(0 0 0 / 0.35))' } : undefined}
                     onPointerDown={(event) => onNodePointerDown(event, node.id)}
+                    onPointerEnter={() => setFocusedId(node.id)}
+                    onPointerLeave={() => setFocusedId((current) => current === node.id ? undefined : current)}
+                    onFocus={() => setFocusedId(node.id)}
+                    onBlur={() => setFocusedId((current) => current === node.id ? undefined : current)}
                     onPointerMove={(event) => onNodePointerMove(event, node.id)}
                     onPointerUp={(event) => endDrag(event, node.id)}
                     onPointerCancel={(event) => endDrag(event, node.id)}
                     onLostPointerCapture={() => onNodeLostPointerCapture(node.id)}
                     onKeyDown={(event) => onNodeKeyDown(event, node.id)}
                   >
+                    <title>{`${node.id}: ${node.bead.title}`}</title>
                     {isLinkSource ? (
                       <rect
                         x={-4}
                         y={-4}
-                        width={NODE_W + 8}
+                        width={node.width + 8}
                         height={NODE_H + 8}
                         rx={11}
                         fill="none"
@@ -519,7 +555,7 @@ export function GraphView({
                       />
                     ) : null}
                     <rect
-                      width={NODE_W}
+                      width={node.width}
                       height={NODE_H}
                       rx={8}
                       fill={selected ? 'var(--color-surface-active)' : 'var(--color-surface)'}
@@ -529,13 +565,13 @@ export function GraphView({
                       style={{ outlineColor: 'var(--color-border-strong)' }}
                     />
                     <text x={8} y={18} fontSize={10} fill="var(--color-fg-muted)" fontFamily="monospace">
-                      {node.id}
+                      {displayId}
                     </text>
-                    <text x={8} y={34} fontSize={12} fill="var(--color-fg-strong)">
-                      {title}
+                    <text x={8} y={38} fontSize={12} fill="var(--color-fg-strong)">
+                      {titleLines.map((line, index) => <tspan key={index} x={8} dy={index === 0 ? 0 : 16}>{line}</tspan>)}
                     </text>
                     {blocked ? (
-                      <text x={8} y={48} fontSize={10} fill="var(--color-warning)">
+                      <text x={8} y={75} fontSize={10} fill="var(--color-warning)">
                         Blocked
                       </text>
                     ) : null}

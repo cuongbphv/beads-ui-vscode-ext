@@ -1,6 +1,6 @@
 /**
  * Sugiyama-lite layout for the dependency graph: layered DAG, longest-path
- * layering, one barycenter ordering pass, fixed grid coordinates.
+ * layering, alternating barycenter ordering, and measured node widths.
  *
  * Pure — no React, no DOM — so the whole algorithm is unit-testable without a
  * browser. `GraphView` only turns the numbers this produces into SVG.
@@ -13,12 +13,41 @@ import { compareBeads } from '../../shared/model';
 import { edgeKind, edgeTargetId, type Bead } from '../../shared/types';
 
 /** Horizontal distance between layers (blocker → blocked, epic → child). */
-export const COL_W = 220;
+export const COL_W = 340;
 /** Vertical distance between siblings ordered within the same layer. */
-export const ROW_H = 72;
-/** Node box size, used by `GraphView` for the `<rect>` and hit target. */
-export const NODE_W = 160;
-export const NODE_H = 56;
+export const ROW_H = 104;
+/** Node box limits leave room for a readable two-line title and long issue IDs. */
+export const NODE_W = 200;
+export const NODE_MAX_W = 280;
+export const NODE_H = 84;
+
+export function nodeWidth(bead: Bead): number {
+  const estimatedTextWidth = Math.max(bead.id.length * 6.2, bead.title.length * 3.5);
+  return Math.min(NODE_MAX_W, Math.max(NODE_W, Math.ceil(estimatedTextWidth + 20)));
+}
+
+/** Wrap without splitting words where possible; clip only after two visible lines. */
+export function nodeTitleLines(title: string, width: number): string[] {
+  const maxChars = Math.max(12, Math.floor((width - 20) / 6.4));
+  const words = title.trim().split(/\s+/).flatMap((word) => {
+    const pieces: string[] = [];
+    for (let start = 0; start < word.length; start += maxChars) pieces.push(word.slice(start, start + maxChars));
+    return pieces;
+  });
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    if (!word) continue;
+    if (line && `${line} ${word}`.length > maxChars) {
+      lines.push(line);
+      line = word;
+    } else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  if (lines.length <= 2) return lines;
+  const second = lines.slice(1).join(' ');
+  return [lines[0].slice(0, maxChars), `${second.slice(0, maxChars - 1).trimEnd()}…`];
+}
 
 /** Edge kinds the v1 graph draws. `related` / `discovered-from` are a later toggle. */
 const RENDERED_KINDS = new Set(['blocks', 'parent-child']);
@@ -28,6 +57,7 @@ export interface GraphNode {
   x: number;
   y: number;
   bead: Bead;
+  width: number;
 }
 
 /** Keyboard nudge step for a node without Shift held (see `arrowNudge`). */
@@ -48,9 +78,9 @@ export interface GraphEdgePoint {
  * and arrives at the left-center of `to`, mirroring the fixed formula this
  * replaced (previously inlined at layout-build time only).
  */
-export function edgeEndpoints(from: GraphEdgePoint, to: GraphEdgePoint): GraphEdgePoint[] {
+export function edgeEndpoints(from: GraphEdgePoint, to: GraphEdgePoint, fromWidth = NODE_W): GraphEdgePoint[] {
   return [
-    { x: from.x + NODE_W, y: from.y + NODE_H / 2 },
+    { x: from.x + fromWidth, y: from.y + NODE_H / 2 },
     { x: to.x, y: to.y + NODE_H / 2 },
   ];
 }
@@ -169,10 +199,9 @@ function computeLayers(nodeIds: string[], edges: RawEdge[]): Map<string, number>
 }
 
 /**
- * One barycenter pass: within each layer, order nodes by the average layer
- * position of their predecessors (the nodes pointing into them), falling
- * back to `compareBeads` then id so two siblings with no shared neighbour —
- * or no neighbours at all — still land in a stable, deterministic order.
+ * Alternating forward/backward sweeps let shared successors influence earlier
+ * layers too. Stable ties preserve the previous order, so every sweep is
+ * deterministic and disconnected groups do not jump around.
  */
 function orderLayers(
   layersOf: Map<string, number>,
@@ -184,39 +213,44 @@ function orderLayers(
   for (const [id, layer] of layersOf) layerBuckets[layer].push(id);
 
   const order = new Map<string, number>();
-  // Seed layer 0 by the deterministic tie-break; every later layer's
-  // barycenter is computed against the previous layer's *already assigned*
-  // order, so this seed is what everything else is built on.
-  layerBuckets[0].sort((a, b) => compareBeads(byId.get(a)!, byId.get(b)!) || a.localeCompare(b));
-  layerBuckets[0].forEach((id, index) => order.set(id, index));
-
-  const predecessorsOf = new Map<string, string[]>();
-  for (const edge of edges) {
-    const list = predecessorsOf.get(edge.to);
-    if (list) list.push(edge.from);
-    else predecessorsOf.set(edge.to, [edge.from]);
+  for (const bucket of layerBuckets) {
+    bucket.sort((a, b) => compareBeads(byId.get(a)!, byId.get(b)!) || a.localeCompare(b));
+    bucket.forEach((id, index) => order.set(id, index));
   }
 
-  for (let layer = 1; layer <= maxLayer; layer++) {
+  const predecessorsOf = new Map<string, string[]>();
+  const successorsOf = new Map<string, string[]>();
+  for (const edge of edges) {
+    const predecessors = predecessorsOf.get(edge.to) ?? [];
+    predecessors.push(edge.from);
+    predecessorsOf.set(edge.to, predecessors);
+    const successors = successorsOf.get(edge.from) ?? [];
+    successors.push(edge.to);
+    successorsOf.set(edge.from, successors);
+  }
+
+  function sweep(layer: number, neighboursOf: Map<string, string[]>): void {
     const bucket = layerBuckets[layer];
     const barycenterOf = new Map<string, number>();
     for (const id of bucket) {
-      const predecessors = (predecessorsOf.get(id) ?? []).filter((p) => order.has(p));
-      if (predecessors.length === 0) {
-        barycenterOf.set(id, Number.POSITIVE_INFINITY);
-      } else {
-        const sum = predecessors.reduce((acc, p) => acc + (order.get(p) ?? 0), 0);
-        barycenterOf.set(id, sum / predecessors.length);
-      }
+      const neighbours = (neighboursOf.get(id) ?? []).filter((other) => layersOf.get(other) !== layer);
+      barycenterOf.set(id, neighbours.length
+        ? neighbours.reduce((sum, other) => sum + (order.get(other) ?? 0), 0) / neighbours.length
+        : order.get(id) ?? 0);
     }
 
     bucket.sort((a, b) => {
-      const ba = barycenterOf.get(a) ?? Number.POSITIVE_INFINITY;
-      const bb = barycenterOf.get(b) ?? Number.POSITIVE_INFINITY;
+      const ba = barycenterOf.get(a) ?? 0;
+      const bb = barycenterOf.get(b) ?? 0;
       if (ba !== bb) return ba - bb;
-      return compareBeads(byId.get(a)!, byId.get(b)!) || a.localeCompare(b);
+      return (order.get(a) ?? 0) - (order.get(b) ?? 0);
     });
     bucket.forEach((id, index) => order.set(id, index));
+  }
+
+  for (let pass = 0; pass < 4; pass++) {
+    for (let layer = 1; layer <= maxLayer; layer++) sweep(layer, predecessorsOf);
+    for (let layer = maxLayer - 1; layer >= 0; layer--) sweep(layer, successorsOf);
   }
 
   return order;
@@ -244,12 +278,21 @@ export function buildGraphLayout(beads: Bead[]): GraphLayout {
   const nodeIds = [...visible];
   const layers = computeLayers(nodeIds, edges);
   const order = orderLayers(layers, byId, edges);
+  const layerCounts = new Map<number, number>();
+  for (const layer of layers.values()) layerCounts.set(layer, (layerCounts.get(layer) ?? 0) + 1);
+  const maxRows = Math.max(...layerCounts.values());
 
   const nodes: GraphNode[] = nodeIds
     .map((id) => {
       const layer = layers.get(id) ?? 0;
       const position = order.get(id) ?? 0;
-      return { id, x: layer * COL_W, y: position * ROW_H, bead: byId.get(id)! };
+      const bead = byId.get(id)!;
+      // Center compact diagrams, but start tall graphs at the top so their
+      // roots remain visible when the viewport initially opens at scroll 0.
+      const centeredOffset = maxRows <= 6
+        ? ((maxRows - (layerCounts.get(layer) ?? 0)) * ROW_H) / 2
+        : 0;
+      return { id, x: layer * COL_W, y: position * ROW_H + centeredOffset, bead, width: nodeWidth(bead) };
     })
     // Deterministic output order regardless of Set iteration order.
     .sort((a, b) => a.x - b.x || a.y - b.y || a.id.localeCompare(b.id));
@@ -263,17 +306,15 @@ export function buildGraphLayout(beads: Bead[]): GraphLayout {
       from: edge.from,
       to: edge.to,
       kind: edge.kind,
-      points: edgeEndpoints(from, to),
+      points: edgeEndpoints(from, to, from.width),
     };
   });
 
   const maxLayer = Math.max(...nodes.map((n) => n.x / COL_W));
-  const maxOrder = Math.max(...nodes.map((n) => n.y / ROW_H));
-
   return {
     nodes,
     edges: graphEdges,
     width: (maxLayer + 1) * COL_W,
-    height: (maxOrder + 1) * ROW_H,
+    height: maxRows * ROW_H,
   };
 }

@@ -191,6 +191,36 @@ describe('GraphView', () => {
     expect(summary?.textContent).toMatch(/1 dependency link/);
   });
 
+  it('wraps long titles inside a wider node instead of using a 22-character cutoff', async () => {
+    const long = bead({ id: 'issue-with-a-long-id-12345', title: 'A descriptive issue title across multiple readable words' });
+    const root = await mount({ beads: [long, bead({ id: 'child', dependencies: [{ depends_on_id: long.id, type: 'blocks' }] })] });
+    const node = root.querySelector<SVGElement>('[aria-label^="issue-with-a-long-id-12345:"]')!;
+    expect(Number(node.querySelector('rect')?.getAttribute('width'))).toBeGreaterThan(200);
+    expect(node.querySelectorAll('tspan')).toHaveLength(2);
+    expect(node.textContent).toContain('A descriptive issue title');
+  });
+
+  it('restores fit mode after manual zoom', async () => {
+    const root = await mount();
+    const zoomIn = root.querySelector<HTMLButtonElement>('button[title="Zoom in"]')!;
+    await act(async () => zoomIn.click());
+    expect(root.textContent).toContain('115%');
+    const fit = root.querySelector<HTMLButtonElement>('button[title="Fit graph to view"]')!;
+    await act(async () => fit.click());
+    expect(root.textContent).toContain('100%');
+  });
+
+  it('fades unrelated links when a node receives keyboard focus', async () => {
+    const root = await mount({ beads: [
+      bead({ id: 'a' }), bead({ id: 'b', dependencies: [{ depends_on_id: 'a', type: 'blocks' }] }),
+      bead({ id: 'c' }), bead({ id: 'd', dependencies: [{ depends_on_id: 'c', type: 'blocks' }] }),
+    ] });
+    const node = root.querySelector<SVGElement>('[aria-label^="a:"]')!;
+    await act(async () => node.focus());
+    const paths = [...root.querySelectorAll('g[aria-hidden="true"] path')];
+    expect(paths.map((path) => path.getAttribute('opacity')).sort()).toEqual(['0.12', '0.85']);
+  });
+
   describe('dragging a node', () => {
     /** `translate(x, y)` off the node group's own `transform` attribute. */
     function transformOf(node: Element): { x: number; y: number } {

@@ -8,6 +8,8 @@ import {
   edgeEndpoints,
   NODE_H,
   NODE_W,
+  NODE_MAX_W,
+  nodeTitleLines,
   NUDGE_PX,
   ROW_H,
 } from '../webview/lib/graph-layout';
@@ -148,6 +150,38 @@ describe('buildGraphLayout', () => {
     expect(layout.edges[0]).toMatchObject({ from: 'epic', to: 'task', kind: 'parent-child' });
   });
 
+  it('sizes long issue cards within a cap and anchors links at their actual right edge', () => {
+    const beads: Bead[] = [
+      bead({ id: 'long-id-012345678901234567890123456789', title: 'A descriptive long title that needs two lines' }),
+      bead({ id: 'next', dependencies: [blocks('long-id-012345678901234567890123456789')] }),
+    ];
+    const layout = buildGraphLayout(beads);
+    const source = layout.nodes.find((node) => node.id === beads[0].id)!;
+    expect(source.width).toBeGreaterThan(NODE_W);
+    expect(source.width).toBeLessThanOrEqual(NODE_MAX_W);
+    expect(layout.edges[0].points[0].x).toBe(source.x + source.width);
+  });
+
+  it('orders opposing branches by dependency instead of alphabetical sink ID', () => {
+    const beads: Bead[] = [
+      bead({ id: 'a' }), bead({ id: 'z' }),
+      bead({ id: 'b', dependencies: [blocks('z')] }),
+      bead({ id: 'y', dependencies: [blocks('a')] }),
+    ];
+    const layout = buildGraphLayout(beads);
+    const byId = new Map(layout.nodes.map((node) => [node.id, node]));
+    expect(byId.get('y')!.y).toBeLessThan(byId.get('b')!.y);
+    expect(buildGraphLayout([...beads].reverse()).nodes.map(({ id, x, y }) => ({ id, x, y })))
+      .toEqual(layout.nodes.map(({ id, x, y }) => ({ id, x, y })));
+  });
+
+  it('keeps roots at the top of a tall graph instead of burying them halfway down', () => {
+    const beads = [bead({ id: 'root' }), ...Array.from({ length: 12 }, (_, index) =>
+      bead({ id: `child-${index}`, dependencies: [blocks('root')] }))];
+    const layout = buildGraphLayout(beads);
+    expect(layout.nodes.find((node) => node.id === 'root')?.y).toBe(0);
+  });
+
   it('drops related/discovered-from edges for v1 and does not surface beads that only carry them', () => {
     const beads: Bead[] = [
       bead({ id: 'a' }),
@@ -165,6 +199,17 @@ describe('buildGraphLayout', () => {
     expect(layout.edges).toEqual([]);
     expect(layout.width).toBe(0);
     expect(layout.height).toBe(0);
+  });
+});
+
+describe('nodeTitleLines', () => {
+  it('wraps readable titles and ellipsizes only beyond two lines', () => {
+    expect(nodeTitleLines('A meaningful issue title that fits across two lines', NODE_W))
+      .toHaveLength(2);
+    const lines = nodeTitleLines('one two three four five six seven eight nine ten eleven twelve thirteen', NODE_W);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatch(/…$/);
+    expect(lines.every((line) => line.length <= Math.floor((NODE_W - 20) / 6.4))).toBe(true);
   });
 });
 
