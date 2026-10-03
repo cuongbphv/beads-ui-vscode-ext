@@ -206,6 +206,23 @@ describe('App dashboard tabs', () => {
 
     expect(tabs).toEqual(['Overview', 'Roadmap', 'Board', 'Fleet', 'Molecules']);
   });
+
+  it('gives Fleet the issue-detail space and restores the issue pane on return', async () => {
+    selection.focusedId = 'epic-a';
+    const container = await mountApp();
+    expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).not.toBeNull();
+
+    const fleetTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent?.trim() === 'Fleet')!;
+    await act(async () => fleetTab.click());
+    expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).toBeNull();
+    expect(container.querySelector('aside[aria-label^="Details for"]')).toBeNull();
+
+    const roadmapTab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent?.trim() === 'Roadmap')!;
+    await act(async () => roadmapTab.click());
+    expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).not.toBeNull();
+  });
 });
 
 describe('App create form toggle', () => {

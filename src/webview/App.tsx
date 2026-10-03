@@ -395,7 +395,7 @@ export function App(): ReactNode {
             )}
           </div>
 
-          {(creating && snapshot) || selected ? (
+          {(creating && snapshot) || (selected && tab !== 'fleet') ? (
             <>
               {/* Narrow: the pane covers the content, so there is nothing to split. */}
               <Splitter
