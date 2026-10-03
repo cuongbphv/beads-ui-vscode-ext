@@ -42,7 +42,7 @@
   },
   "main": "./dist/extension.js",
   "activationEvents": [
-    "workspaceContains:.beads"
+    "onStartupFinished"
   ],
   "contributes": {
     "viewsContainers": {
@@ -77,7 +77,7 @@
     "viewsWelcome": [
       {
         "view": "beadsDashboard.tree",
-        "contents": "No beads workspace detected here.\n\nThis folder has no `.beads` directory, or the `bd` CLI is not on your PATH.\n\n[Open the Beads Dashboard](command:beadsDashboard.openDashboard)\n[Check Setup](command:beadsDashboard.showOutput)"
+        "contents": "No Beads workspace detected here.\n\nCheck `bd context` for the selected folder, set `BEADS_DIR`, or run `bd init`. The `bd` CLI must be on your PATH.\n\n[Open the Beads Dashboard](command:beadsDashboard.openDashboard)\n[Check Setup](command:beadsDashboard.showOutput)"
       }
     ],
     "commands": [

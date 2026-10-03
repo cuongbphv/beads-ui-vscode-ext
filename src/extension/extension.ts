@@ -1,7 +1,7 @@
 /**
  * Activation.
  *
- * Every degraded state has to be legible: no workspace folder, no `.beads`
+ * Every degraded state has to be legible: no workspace folder, no Beads database
  * directory, no `bd` on PATH, or a `bd` that runs but refuses. None of them may
  * throw out of `activate()` — that would leave the view container empty with no
  * explanation.
@@ -25,23 +25,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const output = vscode.window.createOutputChannel('Beads Dashboard');
   context.subscriptions.push(output);
 
-  const folder = await resolveBeadsFolder(context.workspaceState, false);
-  if (!folder) {
+  const selected = await resolveBeadsFolder(context.workspaceState, false);
+  if (!selected) {
     // The tree's viewsWelcome explains what to do; the command still opens so
     // the user gets a real message rather than "command not found".
     context.subscriptions.push(
       vscode.commands.registerCommand('beadsDashboard.openDashboard', () =>
         vscode.window.showWarningMessage(
-          'No .beads directory found in this workspace. Run `bd init` in a terminal first.',
+          'No Beads database resolves from this workspace. Check `bd context`, `BEADS_DIR`, or run `bd init`.',
         ),
       ),
       vscode.commands.registerCommand('beadsDashboard.showOutput', () => output.show(true)),
     );
-    output.appendLine('No workspace folder contains a .beads directory — staying idle.');
+    output.appendLine('No workspace folder resolves to a valid Beads database — staying idle.');
     return;
   }
 
+  const { folder } = selected;
   output.appendLine(`Beads workspace: ${folder.uri.fsPath}`);
+  output.appendLine(`Beads database directory: ${selected.context.beads_dir}${selected.context.is_redirected ? ' (redirected)' : ''}`);
 
   store = new BeadsStore(folder, output);
   context.subscriptions.push(store);
@@ -128,11 +130,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * reference — the choice is remembered, so the reload lands on it.
    */
   const selectFolder = async (): Promise<void> => {
-    const picked = await pickBeadsFolder(context.workspaceState, folder);
+    const picked = await pickBeadsFolder(context.workspaceState, selected);
     if (!picked) return;
 
     const choice = await vscode.window.showInformationMessage(
-      `Track beads in ${picked.name}?`,
+      `Track beads in ${picked.folder.name} (${picked.context.beads_dir})?`,
       { detail: 'The window reloads so every view picks up the new folder.', modal: true },
       'Reload Window',
     );
