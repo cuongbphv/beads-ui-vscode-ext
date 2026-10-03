@@ -14,7 +14,7 @@
  * `BeadsStore`. The fake watcher never fires on its own; tests trigger it
  * explicitly via `vscodeMock.watchers`.
  */
-import { mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -159,9 +159,39 @@ function projectsRoot(): string {
   return join(root, 'projects');
 }
 
+function codexRoot(): string {
+  return join(root, 'codex-sessions');
+}
+
+/** Synthetic current Codex rollout schema: metadata first, spawn call in parent. */
+async function writeCodexFleet(
+  parentId: string,
+  childId: string,
+  taskName: string,
+  brief: string,
+  childCwd = cwd,
+): Promise<{ parentFile: string; childFile: string }> {
+  const dir = join(codexRoot(), '2026', '10', '03');
+  await mkdir(dir, { recursive: true });
+  const parentFile = join(dir, `rollout-2026-10-03T10-00-00-${parentId}.jsonl`);
+  const childFile = join(dir, `rollout-2026-10-03T10-00-01-${childId}.jsonl`);
+  await writeFile(parentFile, [
+    JSON.stringify({ type: 'session_meta', payload: { id: parentId, cwd, source: 'vscode' } }),
+    JSON.stringify({ type: 'response_item', payload: {
+      type: 'function_call', name: 'spawn_agent',
+      arguments: JSON.stringify({ task_name: taskName, message: brief }),
+    } }),
+  ].join('\n') + '\n');
+  await writeFile(childFile, JSON.stringify({
+    type: 'session_meta',
+    payload: { id: childId, cwd: childCwd, parent_thread_id: parentId, forked_from_id: parentId, agent_path: `/root/${taskName}` },
+  }) + '\n');
+  return { parentFile, childFile };
+}
+
 describe('FleetService session discovery', () => {
   it('degrades to no-claude-dir when ~/.claude/projects does not exist', async () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: join(root, 'does-not-exist') });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: join(root, 'does-not-exist') });
     await service.tick();
 
     expect(service.snapshot?.degraded).toEqual({ reason: 'no-claude-dir' });
@@ -172,7 +202,7 @@ describe('FleetService session discovery', () => {
   it('ignores an ordinary session with no subagents directory', async () => {
     await writeSessionFile('session-1', new Date());
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.snapshot?.orchestrators).toEqual([]);
@@ -186,7 +216,7 @@ describe('FleetService session discovery', () => {
     await writeSessionFile('session-1', new Date());
     await writeAgentFile('session-1', 'agent-a', briefText, new Date());
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     const snapshot = service.snapshot as FleetSnapshot;
@@ -207,7 +237,7 @@ describe('FleetService session discovery', () => {
     await writeSessionFile('session-1', new Date());
     await writeAgentFile('session-1', 'agent-a', 'Please refactor the utils module.', new Date());
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     const worker = service.snapshot?.workers[0];
@@ -228,7 +258,7 @@ describe('FleetService session discovery', () => {
     );
 
     const service = new FleetService(cwd, undefined, {
-      projectsRoot: projectsRoot(),
+      codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot(),
       now: () => now.getTime(),
     });
     await service.tick();
@@ -236,6 +266,119 @@ describe('FleetService session discovery', () => {
     const byId = new Map(service.snapshot?.workers.map((worker) => [worker.agentId, worker]));
     expect(byId.get('agent-fresh')?.status).toBe('running');
     expect(byId.get('agent-stale')?.status).toBe('idle');
+    service.dispose();
+  });
+});
+
+describe('FleetService Codex discovery', () => {
+  it('links a Codex child to its parent and spawn brief, so its live worktree is not stale', async () => {
+    const parentId = 'root-1';
+    const childId = 'child-1';
+    const worktree = join(root, 'wt-mk012');
+    await writeCodexFleet(parentId, childId, 'ready',
+      `Implement bead beads-ui-vscode-ext-mk0.12 in worktree ${worktree}.`, worktree);
+    worktreeGit.listWorktrees.mockResolvedValue([
+      { path: worktree, dirName: 'wt-mk012', branch: 'work/bead-mk0-12', bare: false },
+    ]);
+
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.orchestrators).toEqual([expect.objectContaining({
+      provider: 'codex', sessionId: parentId, workerIds: [childId],
+    })]);
+    expect(service.snapshot?.workers).toEqual([expect.objectContaining({
+      provider: 'codex', agentId: childId, sessionId: parentId,
+      beadId: 'beads-ui-vscode-ext-mk0.12', worktreePath: worktree, status: 'running',
+    })]);
+    expect(service.snapshot?.worktrees[0].beadId).toBe('beads-ui-vscode-ext-mk0.12');
+    expect(service.snapshot?.orphanWorktrees).toEqual([]);
+    expect(service.filePathFor(`agent:${childId}`)).toBeNull();
+    expect(service.filePathFor(`session:${parentId}`)).toBeNull();
+    service.dispose();
+  });
+
+  it('keeps Claude workers when Codex sessions also exist', async () => {
+    await writeSessionFile('claude-root', new Date());
+    await writeAgentFile('claude-root', 'claude-child', 'Implement bead proj-7 in /repo/wt-7.', new Date());
+    await writeCodexFleet('codex-root', 'codex-child', 'codex-task',
+      `Implement bead proj-8 in ${join(root, 'wt-8')}.`);
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.workers.map((worker) => worker.agentId)).toEqual(['claude-child', 'codex-child']);
+    expect(service.filePathFor('agent:claude-child')).toBe(join(projectDir, 'claude-root', 'subagents', 'agent-claude-child.jsonl'));
+    service.dispose();
+  });
+
+  it('picks up a spawn brief appended after the first scan without rereading the child', async () => {
+    const { parentFile } = await writeCodexFleet('codex-root', 'codex-child', 'ready', 'Unmatched initial brief.');
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+    expect(service.snapshot?.workers[0].beadId).toBeNull();
+
+    await appendFile(parentFile, JSON.stringify({
+      type: 'response_item',
+      payload: { type: 'function_call', name: 'spawn_agent', arguments: JSON.stringify({
+        task_name: 'ready', message: `Implement bead proj-9 in ${join(root, 'wt-9')}.`,
+      }) },
+    }) + '\n');
+    await service.tick();
+
+    expect(service.snapshot?.workers[0]).toMatchObject({ beadId: 'proj-9', worktreePath: join(root, 'wt-9') });
+    service.dispose();
+  });
+
+  it('uses forked_from_id when a child metadata record omits parent_thread_id', async () => {
+    const { childFile } = await writeCodexFleet('codex-root', 'codex-child', 'ready',
+      `Implement bead proj-10 in ${join(root, 'wt-10')}.`);
+    await writeFile(childFile, JSON.stringify({
+      type: 'session_meta', payload: {
+        id: 'codex-child', cwd, forked_from_id: 'codex-root', agent_path: '/root/ready',
+      },
+    }) + '\n');
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.workers[0]).toMatchObject({ provider: 'codex', beadId: 'proj-10' });
+    service.dispose();
+  });
+
+  it('keeps Codex results when Claude is missing and marks failures per provider', async () => {
+    await writeCodexFleet('codex-root', 'codex-child', 'ready',
+      `Implement bead proj-8 in ${join(root, 'wt-8')}.`);
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: join(root, 'no-claude'), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.workers).toHaveLength(1);
+    expect(service.snapshot?.degraded).toBeUndefined();
+    expect(service.snapshot?.providerDegraded).toEqual({ claude: 'no-claude-dir' });
+    service.dispose();
+  });
+
+  it('skips malformed Codex files without hiding a valid Claude worker', async () => {
+    await writeSessionFile('claude-root', new Date());
+    await writeAgentFile('claude-root', 'claude-child', 'Implement bead proj-7 in /repo/wt-7.', new Date());
+    const dir = join(codexRoot(), '2026', '10', '03');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'rollout-broken.jsonl'), '{malformed}\n');
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.workers.map((worker) => worker.agentId)).toEqual(['claude-child']);
+    expect(service.snapshot?.providerDegraded).toEqual({ codex: 'codex-read-error' });
     service.dispose();
   });
 });
@@ -253,7 +396,7 @@ describe('FleetService worktree reconciliation', () => {
       { path: '/repo/wt-7pi', dirName: 'wt-7pi', branch: 'work/bead-7pi', bare: false },
     ]);
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     const snapshot = service.snapshot as FleetSnapshot;
@@ -268,7 +411,7 @@ describe('FleetService worktree reconciliation', () => {
       { path: '/repo/wt-stale', dirName: 'wt-stale', branch: 'work/bead-stale', bare: false },
     ]);
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.snapshot?.orphanWorktrees).toEqual(['/repo/wt-stale']);
@@ -281,7 +424,7 @@ describe('FleetService worktree reconciliation', () => {
       { path: '/repo/wt-7pi', dirName: 'wt-7pi', branch: 'work/bead-7pi', bare: false },
     ]);
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     const paths = service.snapshot?.worktrees.map((worktree) => worktree.path);
@@ -293,7 +436,7 @@ describe('FleetService worktree reconciliation', () => {
   it('degrades to an empty worktree list, without throwing, when git worktree list fails', async () => {
     worktreeGit.listWorktrees.mockRejectedValue(new Error('git not found'));
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await expect(service.tick()).resolves.toBeUndefined();
 
     expect(service.snapshot?.worktrees).toEqual([]);
@@ -304,7 +447,7 @@ describe('FleetService worktree reconciliation', () => {
 
 describe('FleetService discovery-loop gating', () => {
   it('does not scan at all until observe() is called', async () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     const tick = vi.spyOn(service, 'tick');
 
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -315,7 +458,7 @@ describe('FleetService discovery-loop gating', () => {
 
   it('scans immediately on the first observe(), and stops once the last observer releases', async () => {
     vi.useFakeTimers();
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), intervalMs: 5_000 });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot(), intervalMs: 5_000 });
     const tick = vi.spyOn(service, 'tick').mockResolvedValue();
 
     const hold = service.observe();
@@ -336,7 +479,7 @@ describe('FleetService discovery-loop gating', () => {
   it('keeps a single timer running for multiple concurrent observers', () => {
     vi.useFakeTimers();
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     vi.spyOn(service, 'tick').mockResolvedValue();
 
     const holdA = service.observe();
@@ -354,7 +497,7 @@ describe('FleetService discovery-loop gating', () => {
 
 describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
   it('starts one file watcher on projectsRoot when the first observer arrives', () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     vi.spyOn(service, 'tick').mockResolvedValue();
 
     expect(vscodeMock.createFileSystemWatcher).not.toHaveBeenCalled();
@@ -370,7 +513,7 @@ describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
   });
 
   it('does not start a second watcher for a second concurrent observer', () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     vi.spyOn(service, 'tick').mockResolvedValue();
 
     const holdA = service.observe();
@@ -383,7 +526,7 @@ describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
   });
 
   it('disposes the watcher once the last observer releases', () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     vi.spyOn(service, 'tick').mockResolvedValue();
 
     const hold = service.observe();
@@ -398,7 +541,7 @@ describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
 
   it('schedules a debounced extra tick when the watcher fires, on top of the poll', async () => {
     vi.useFakeTimers();
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), intervalMs: 5_000 });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot(), intervalMs: 5_000 });
     const tick = vi.spyOn(service, 'tick').mockResolvedValue();
 
     const hold = service.observe();
@@ -420,7 +563,7 @@ describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
 
   it('cancels a pending watcher-triggered tick if the last observer releases first', async () => {
     vi.useFakeTimers();
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     const tick = vi.spyOn(service, 'tick').mockResolvedValue();
 
     const hold = service.observe();
@@ -441,7 +584,7 @@ describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
     vscodeMock.createFileSystemWatcher.mockImplementation(() => {
       throw new Error('watcher unsupported here');
     });
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), intervalMs: 5_000 });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot(), intervalMs: 5_000 });
     const tick = vi.spyOn(service, 'tick').mockResolvedValue();
 
     let hold: ReturnType<typeof service.observe> | undefined;
@@ -461,7 +604,7 @@ describe('FleetService watcher fast path (beads-ui-vscode-ext-37b)', () => {
 
 describe('FleetService fleetChanged debounce and dedupe', () => {
   it('emits on the first scan', async () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     const listener = vi.fn();
     service.onDidChange(listener);
 
@@ -473,7 +616,7 @@ describe('FleetService fleetChanged debounce and dedupe', () => {
 
   it('skips emitting when the new scan is unchanged from the last one', async () => {
     let clock = 0;
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), now: () => clock });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot(), now: () => clock });
     const listener = vi.fn();
     service.onDidChange(listener);
 
@@ -489,7 +632,7 @@ describe('FleetService fleetChanged debounce and dedupe', () => {
 
   it('coalesces two real changes that land inside the same 500ms window into one emission', async () => {
     let clock = 0;
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), now: () => clock });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot(), now: () => clock });
     const listener = vi.fn();
     service.onDidChange(listener);
 
@@ -508,7 +651,7 @@ describe('FleetService fleetChanged debounce and dedupe', () => {
 
   it('emits again for a real change once the debounce window has passed', async () => {
     let clock = 0;
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot(), now: () => clock });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot(), now: () => clock });
     const listener = vi.fn();
     service.onDidChange(listener);
 
@@ -531,7 +674,7 @@ describe('FleetService transcript path resolution (P4 reuse)', () => {
     await writeSessionFile('session-1', new Date());
     await writeAgentFile('session-1', 'agent-a', 'no bead here', new Date());
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.filePathFor('agent:agent-a')).toBe(
@@ -544,7 +687,7 @@ describe('FleetService transcript path resolution (P4 reuse)', () => {
     await writeSessionFile('session-1', new Date());
     await writeAgentFile('session-1', 'agent-a', 'no bead here', new Date());
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.filePathFor('session:session-1')).toBe(join(projectDir, 'session-1.jsonl'));
@@ -555,7 +698,7 @@ describe('FleetService transcript path resolution (P4 reuse)', () => {
     await writeSessionFile('session-1', new Date());
     await writeAgentFile('session-1', 'agent-a', 'no bead here', new Date());
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.filePathFor('agent:never-seen')).toBeNull();
@@ -567,7 +710,7 @@ describe('FleetService transcript path resolution (P4 reuse)', () => {
     // discovery never made it an orchestrator — it must not resolve either.
     await writeSessionFile('ordinary-session', new Date());
 
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.filePathFor('session:ordinary-session')).toBeNull();
@@ -575,7 +718,7 @@ describe('FleetService transcript path resolution (P4 reuse)', () => {
   });
 
   it('returns null for a targetId with an unrecognized prefix', async () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.filePathFor('bogus:whatever')).toBeNull();
@@ -583,14 +726,14 @@ describe('FleetService transcript path resolution (P4 reuse)', () => {
   });
 
   it('returns null before any scan has run (no cached project directory yet)', () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     expect(service.filePathFor('agent:agent-a')).toBeNull();
     expect(service.transcriptsBaseDir).toBeNull();
     service.dispose();
   });
 
   it('returns null when the workspace has no matching ~/.claude/projects directory', async () => {
-    const service = new FleetService(cwd, undefined, { projectsRoot: join(root, 'does-not-exist') });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: join(root, 'does-not-exist') });
     await service.tick();
 
     expect(service.filePathFor('agent:agent-a')).toBeNull();
@@ -600,7 +743,7 @@ describe('FleetService transcript path resolution (P4 reuse)', () => {
 
   it('exposes the resolved project directory as transcriptsBaseDir once known', async () => {
     await writeSessionFile('session-1', new Date());
-    const service = new FleetService(cwd, undefined, { projectsRoot: projectsRoot() });
+    const service = new FleetService(cwd, undefined, { codexSessionsRoot: codexRoot(), projectsRoot: projectsRoot() });
     await service.tick();
 
     expect(service.transcriptsBaseDir).toBe(projectDir);

@@ -38,6 +38,8 @@ export interface FleetWorktree {
 }
 
 export interface FleetWorker {
+  /** Transcript provider. Older snapshots without this field are Claude Code. */
+  provider?: 'claude' | 'codex';
   agentId: string;
   sessionId: string;
   /** bead id parsed from the spawn brief; `null` when the brief did not name one. */
@@ -52,6 +54,8 @@ export interface FleetWorker {
 }
 
 export interface FleetOrchestrator {
+  /** Transcript provider. Older snapshots without this field are Claude Code. */
+  provider?: 'claude' | 'codex';
   sessionId: string;
   /** Agent ids of the workers this session has spawned. */
   workerIds: string[];
@@ -67,6 +71,8 @@ export interface FleetSnapshot {
   orphanWorktrees: string[];
   /** Set when discovery degraded — e.g. `~/.claude/projects` is missing. */
   degraded?: { reason: string };
+  /** Provider-specific discovery failures; one missing store does not hide the other. */
+  providerDegraded?: { claude?: string; codex?: string };
   /** ISO timestamp of when this snapshot was assembled. */
   generatedAt: string;
 }

@@ -42,7 +42,7 @@
 import type { Dirent } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import * as vscode from 'vscode';
 
@@ -71,10 +71,31 @@ const ACTIVE_WINDOW_MS = 2 * 60 * 1000;
 const BRIEF_READ_CAP_BYTES = 64 * 1024;
 /** `briefSummary` is for a one-line list row, not a second copy of the brief. */
 const BRIEF_SUMMARY_CAP_CHARS = 240;
+const CODEX_META_READ_CAP_BYTES = 64 * 1024;
+const CODEX_SCAN_CHUNK_BYTES = 64 * 1024;
+const CODEX_SPAWN_SCAN_CAP_BYTES = 64 * 1024 * 1024;
+const CODEX_MAX_SESSION_FILES = 500;
+const CODEX_MAX_DIRECTORIES = 100;
+
+interface CodexSessionMeta {
+  id: string;
+  cwd: string;
+  parentId: string | null;
+  agentPath: string | null;
+  filePath: string;
+}
+
+interface CodexSpawnCursor {
+  offset: number;
+  pending: Buffer;
+  briefs: Map<string, string>;
+}
 
 export interface FleetServiceOptions {
   /** Override for `~/.claude/projects` — the test suite points this at a fixture directory. */
   projectsRoot?: string;
+  /** Override for `~/.codex/sessions` — tests use an isolated fixture tree. */
+  codexSessionsRoot?: string;
   /** Override for the discovery tick cadence. Production always uses the default. */
   intervalMs?: number;
   /** Injectable clock, for the test suite. */
@@ -83,6 +104,7 @@ export interface FleetServiceOptions {
 
 export class FleetService implements vscode.Disposable {
   private readonly projectsRoot: string;
+  private readonly codexSessionsRoot: string;
   private readonly intervalMs: number;
   private readonly now: () => number;
   private readonly gitProbe: WorktreeGitProbe;
@@ -98,6 +120,8 @@ export class FleetService implements vscode.Disposable {
   private current: FleetSnapshot | undefined;
   /** The on-disk directory name matching `cwd`, cached from the last successful scan (P4's transcript resolution). */
   private projectDirName: string | null = null;
+  private readonly codexMetaCache = new Map<string, CodexSessionMeta>();
+  private readonly codexSpawnCursors = new Map<string, CodexSpawnCursor>();
 
   private readonly emitter = new vscode.EventEmitter<FleetSnapshot>();
   /** Fires with a fresh snapshot — debounced and skipped on no real change; see `maybeEmit`. */
@@ -109,6 +133,7 @@ export class FleetService implements vscode.Disposable {
     options: FleetServiceOptions = {},
   ) {
     this.projectsRoot = options.projectsRoot ?? join(homedir(), '.claude', 'projects');
+    this.codexSessionsRoot = options.codexSessionsRoot ?? join(homedir(), '.codex', 'sessions');
     this.intervalMs = options.intervalMs ?? DISCOVERY_INTERVAL_MS;
     this.now = options.now ?? Date.now;
     this.gitProbe = new WorktreeGitProbe(undefined, this.now);
@@ -145,6 +170,7 @@ export class FleetService implements vscode.Disposable {
       const agentId = targetId.slice('agent:'.length);
       const worker = this.current?.workers.find((candidate) => candidate.agentId === agentId);
       if (!worker) return null;
+      if (worker.provider === 'codex') return null; // Codex tailing belongs to the transcript parser follow-up.
       return join(projectPath, worker.sessionId, 'subagents', `agent-${agentId}.jsonl`);
     }
 
@@ -152,6 +178,7 @@ export class FleetService implements vscode.Disposable {
       const sessionId = targetId.slice('session:'.length);
       const orchestrator = this.current?.orchestrators.find((candidate) => candidate.sessionId === sessionId);
       if (!orchestrator) return null;
+      if (orchestrator.provider === 'codex') return null;
       return join(projectPath, `${sessionId}.jsonl`);
     }
 
@@ -260,15 +287,21 @@ export class FleetService implements vscode.Disposable {
 
   private async scan(): Promise<FleetSnapshot> {
     const generatedAt = new Date().toISOString();
-    const sessions = await this.discoverSessions();
-    const { worktrees, orphanWorktrees } = await this.discoverWorktrees(sessions.workers);
+    const [claude, codex] = await Promise.all([this.discoverSessions(), this.discoverCodexSessions()]);
+    const workers = [...claude.workers, ...codex.workers];
+    const { worktrees, orphanWorktrees } = await this.discoverWorktrees(workers);
+    const providerDegraded = {
+      ...(claude.degraded ? { claude: claude.degraded.reason } : {}),
+      ...(codex.degraded ? { codex: codex.degraded.reason } : {}),
+    };
 
     return {
-      orchestrators: sessions.orchestrators,
-      workers: sessions.workers,
+      orchestrators: [...claude.orchestrators, ...codex.orchestrators],
+      workers,
       worktrees,
       orphanWorktrees,
-      degraded: sessions.degraded,
+      degraded: workers.length === 0 ? claude.degraded : undefined,
+      providerDegraded: Object.keys(providerDegraded).length > 0 ? providerDegraded : undefined,
       generatedAt,
     };
   }
@@ -360,6 +393,163 @@ export class FleetService implements vscode.Disposable {
     };
   }
 
+  /** Discover Codex rollout files by metadata, then attach children via parent thread ids. */
+  private async discoverCodexSessions(): Promise<{
+    orchestrators: FleetOrchestrator[];
+    workers: FleetWorker[];
+    degraded?: { reason: string };
+  }> {
+    const files: string[] = [];
+    let directories = 0;
+    let malformed = false;
+    let limited = false;
+    const visit = async (dir: string): Promise<void> => {
+      if (++directories > CODEX_MAX_DIRECTORIES || files.length >= CODEX_MAX_SESSION_FILES) {
+        limited = true;
+        return;
+      }
+      let entries: Dirent[];
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true });
+      } catch (error) {
+        if (dir === this.codexSessionsRoot) throw error;
+        malformed = true;
+        return;
+      }
+      // YYYY/MM/DD directories and rollout timestamps sort newest first.
+      for (const entry of entries.sort((a, b) => b.name.localeCompare(a.name))) {
+        if (files.length >= CODEX_MAX_SESSION_FILES) {
+          limited = true;
+          break;
+        }
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) await visit(path);
+        else if (entry.isFile() && /^rollout-.*\.jsonl$/.test(entry.name)) files.push(path);
+      }
+    };
+
+    try {
+      await visit(this.codexSessionsRoot);
+    } catch (error) {
+      if (!isEnoent(error)) this.log(`fleet discovery: could not read Codex sessions: ${errorMessage(error)}`);
+      return { orchestrators: [], workers: [], degraded: { reason: 'no-codex-dir' } };
+    }
+
+    const fileSet = new Set(files);
+    for (const path of this.codexMetaCache.keys()) {
+      if (!fileSet.has(path)) this.codexMetaCache.delete(path);
+    }
+    for (const path of this.codexSpawnCursors.keys()) {
+      if (!fileSet.has(path)) this.codexSpawnCursors.delete(path);
+    }
+
+    const metas: CodexSessionMeta[] = [];
+    for (const filePath of files) {
+      const meta = this.codexMetaCache.get(filePath) ?? await readCodexMeta(filePath);
+      if (meta) {
+        this.codexMetaCache.set(filePath, meta);
+        metas.push(meta);
+      }
+      else malformed = true;
+    }
+    const byId = new Map(metas.map((meta) => [meta.id, meta]));
+    const workspace = resolve(this.cwd);
+    const children = new Map<string, CodexSessionMeta[]>();
+    for (const meta of metas) {
+      if (!meta.parentId || !byId.has(meta.parentId)) continue;
+      const siblings = children.get(meta.parentId) ?? [];
+      siblings.push(meta);
+      children.set(meta.parentId, siblings);
+    }
+
+    const orchestrators: FleetOrchestrator[] = [];
+    const workers: FleetWorker[] = [];
+    for (const meta of metas) {
+      const directChildren = children.get(meta.id);
+      if (!directChildren?.length || resolve(meta.cwd) !== workspace) continue;
+      const briefs = await this.readCodexSpawnBriefs(meta.filePath);
+      for (const child of directChildren) {
+        const taskName = child.agentPath?.split('/').filter(Boolean).at(-1) ?? '';
+        const brief = briefs.get(taskName) ?? '';
+        const parsed = parseSpawnBrief(brief);
+        const lastActivityAt = await mtimeIso(child.filePath);
+        workers.push({
+          provider: 'codex',
+          agentId: child.id,
+          sessionId: meta.id,
+          beadId: parsed?.beadId ?? null,
+          worktreePath: parsed?.worktreePath ?? null,
+          briefSummary: brief ? firstLineOf(brief) : `Codex agent ${taskName || child.id}`,
+          lastActivityAt,
+          status: workerStatus(lastActivityAt, this.now()),
+        });
+      }
+      orchestrators.push({
+        provider: 'codex',
+        sessionId: meta.id,
+        workerIds: directChildren.map((child) => child.id),
+        lastActivityAt: await mtimeIso(meta.filePath),
+      });
+    }
+    return {
+      orchestrators,
+      workers,
+      degraded: limited ? { reason: 'codex-scan-limited' }
+        : malformed ? { reason: 'codex-read-error' } : undefined,
+    };
+  }
+
+  /** Incrementally inspect only spawn calls; never retain message history. */
+  private async readCodexSpawnBriefs(filePath: string): Promise<Map<string, string>> {
+    let cursor = this.codexSpawnCursors.get(filePath);
+    if (!cursor) {
+      cursor = { offset: 0, pending: Buffer.alloc(0), briefs: new Map() };
+      this.codexSpawnCursors.set(filePath, cursor);
+    }
+    let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    try {
+      handle = await fs.open(filePath, 'r');
+      const size = (await handle.stat()).size;
+      if (size < cursor.offset) {
+        cursor.offset = 0;
+        cursor.pending = Buffer.alloc(0);
+        cursor.briefs.clear();
+      }
+      const end = Math.min(size, cursor.offset + CODEX_SPAWN_SCAN_CAP_BYTES);
+      const buffer = Buffer.alloc(CODEX_SCAN_CHUNK_BYTES);
+      while (cursor.offset < end) {
+        const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, end - cursor.offset), cursor.offset);
+        if (!bytesRead) break;
+        cursor.offset += bytesRead;
+        const chunk = Buffer.concat([cursor.pending, buffer.subarray(0, bytesRead)]);
+        let start = 0;
+        for (let index = 0; index < chunk.length; index++) {
+          if (chunk[index] !== 10) continue;
+          const line = chunk.subarray(start, index).toString('utf8');
+          if (line.includes('spawn_agent')) {
+            try {
+              const record = JSON.parse(line) as { payload?: { type?: string; name?: string; arguments?: string } };
+              if (record.payload?.type === 'function_call' && record.payload.name === 'spawn_agent') {
+                const args = JSON.parse(record.payload.arguments ?? '{}') as { task_name?: string; message?: string };
+                if (typeof args.task_name === 'string' && typeof args.message === 'string') {
+                  cursor.briefs.set(args.task_name, args.message.slice(0, BRIEF_READ_CAP_BYTES));
+                }
+              }
+            } catch { /* An incomplete or malformed rollout line is skipped. */ }
+          }
+          start = index + 1;
+        }
+        cursor.pending = chunk.subarray(start);
+        if (cursor.pending.length > 1024 * 1024) cursor.pending = Buffer.alloc(0);
+      }
+    } catch (error) {
+      this.log(`fleet discovery: could not read Codex spawn metadata: ${errorMessage(error)}`);
+    } finally {
+      await handle?.close().catch(() => {});
+    }
+    return cursor.briefs;
+  }
+
   /**
    * Enumerate worktrees and measure each one's git status. Only `wt-*`
    * directories are the Fleet tab's business — the primary checkout (this
@@ -414,6 +604,38 @@ function workerStatus(lastActivityAt: string | null, now: number): FleetWorker['
   const timestamp = Date.parse(lastActivityAt);
   if (Number.isNaN(timestamp)) return 'unknown';
   return now - timestamp <= ACTIVE_WINDOW_MS ? 'running' : 'idle';
+}
+
+/** Read one bounded JSONL metadata line; Codex embeds large base instructions in it. */
+async function readCodexMeta(filePath: string): Promise<CodexSessionMeta | null> {
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
+  try {
+    handle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(CODEX_META_READ_CAP_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const end = buffer.subarray(0, bytesRead).indexOf(10);
+    if (end < 0) return null;
+    const record = JSON.parse(buffer.subarray(0, end).toString('utf8')) as {
+      type?: string;
+      payload?: Record<string, unknown>;
+    };
+    const payload = record.payload;
+    if (record.type !== 'session_meta' || !payload) return null;
+    if (typeof payload.id !== 'string' || typeof payload.cwd !== 'string') return null;
+    const parentId = typeof payload.parent_thread_id === 'string' ? payload.parent_thread_id
+      : typeof payload.forked_from_id === 'string' ? payload.forked_from_id : null;
+    return {
+      id: payload.id,
+      cwd: payload.cwd,
+      parentId,
+      agentPath: typeof payload.agent_path === 'string' ? payload.agent_path : null,
+      filePath,
+    };
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
 }
 
 async function mtimeIso(filePath: string): Promise<string | null> {
