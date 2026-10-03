@@ -223,6 +223,11 @@ describe('App dashboard tabs', () => {
     await act(async () => roadmapTab.click());
     expect(container.querySelector('[role="separator"][aria-label="Resize detail panel"]')).not.toBeNull();
   });
+
+  it('starts Fleet with a transcript-sized detail pane preference', async () => {
+    await mountApp();
+    expect(lastPersisted().fleetDetailWidth).toBe(600);
+  });
 });
 
 describe('App create form toggle', () => {

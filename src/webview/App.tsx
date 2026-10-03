@@ -76,6 +76,9 @@ interface PersistedState extends PersistedRoadmapPreferences, PersistedFleetPref
   fleetDetailWidth?: number;
 }
 
+/** A transcript needs room for tool output and search; Fleet owns its own splitter. */
+const FLEET_DETAIL_DEFAULT_PX = 600;
+
 const TAB_META: Record<DashboardTab, { label: string; icon: ReactNode }> = {
   overview: { label: 'Overview', icon: <LayoutDashboard aria-hidden="true" className="size-4" /> },
   roadmap: { label: 'Roadmap', icon: <MapIcon aria-hidden="true" className="size-4" /> },
@@ -106,7 +109,7 @@ export function App(): ReactNode {
   // Fleet's own detail pane (the transcript view, beads-ui-vscode-ext-37b) —
   // measured against `FleetView`'s own container, not `mainWidth` below,
   // since it is the only tab with its own list+detail split.
-  const [fleetDetailWidth, setFleetDetailWidth] = useState(saved?.fleetDetailWidth ?? DETAIL_DEFAULT_PX);
+  const [fleetDetailWidth, setFleetDetailWidth] = useState(saved?.fleetDetailWidth ?? FLEET_DETAIL_DEFAULT_PX);
   const [fleetStatusFilter, setFleetStatusFilter] = useState<FleetStatusFilter>(restoredFleet.statusFilter);
   // Not persisted: a create-in-flight form is a live editing session, not a
   // preference the panel should reopen into.

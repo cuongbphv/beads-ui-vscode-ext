@@ -50,6 +50,8 @@ try {
     + codexLine({ type: 'function_call', name: 'spawn_agent', arguments: JSON.stringify({ task_name: 'e2e_abc', message: `Implement bead e2e-abc in worktree ${worktree}.` }) }));
   await writeFile(childFile,
     JSON.stringify({ type: 'session_meta', payload: { id: childId, cwd: worktree, parent_thread_id: parentId, agent_path: '/root/e2e_abc' } }) + '\n'
+    + codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic older history' }] })
+    + Array.from({ length: 70 }, (_, index) => JSON.stringify({ type: 'event_msg', payload: { index, padding: 'x'.repeat(4096) } }) + '\n').join('')
     + codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic backfill' }] }));
 
   await run('npm', ['run', 'build'], { cwd: repoRoot, shell: process.platform === 'win32' });
@@ -89,13 +91,23 @@ try {
   if (await transcript.getByText('Synthetic backfill').count() !== 1) {
     throw new Error('Codex backfill rendered more than once');
   }
+  if (await transcript.getByText('Synthetic older history').count()) {
+    throw new Error('Older Codex history appeared inside the bounded initial backfill');
+  }
+  await transcript.getByRole('button', { name: 'Load older events' }).click();
+  await transcript.getByText('Synthetic older history').waitFor();
+  const search = transcript.getByRole('searchbox', { name: 'Search loaded transcript' });
+  await search.fill('Synthetic older history');
+  await transcript.getByText('1 matches in loaded events').waitFor();
+  await transcript.getByRole('button', { name: 'Latest' }).click();
+  if (await search.inputValue()) throw new Error('Latest did not clear transcript search');
   await appendFile(childFile, codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic append' }] }));
   await transcript.getByText('Synthetic append').first().waitFor();
   await window.waitForTimeout(1600); // covers another discovery and tail poll tick
   if (await transcript.getByText('Synthetic append').count() !== 1) {
     throw new Error('Codex transcript append rendered more than once');
   }
-  console.log('Fleet Codex E2E passed: discovery, labels, worktree link, transcript backfill and append');
+  console.log('Fleet Codex E2E passed: discovery, labels, worktree link, transcript history/search/latest and append');
 } finally {
   if (app) await app.close().catch(() => {});
   await rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
