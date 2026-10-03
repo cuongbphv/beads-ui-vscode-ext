@@ -373,7 +373,17 @@ export interface DashboardSnapshot {
   blockedIds: string[];
   /** Open gates from `bd gate list --json`. Empty on a project with none. */
   gates: BdGate[];
-  /** True when `beadsDashboard.issueLimit` truncated the list. */
+  /** Scope of `beads`, distinct from the all-persistent-issues `stats` scope. */
+  issueScope?: {
+    loadedCount: number;
+    /** Global count from `bd stats`, including persistent special issue classes. */
+    projectTotal: number;
+    /** Issue classes excluded by the ordinary `bd list --all` query. */
+    excludedKinds: Array<'gates' | 'infrastructure' | 'templates'>;
+    /** At least one more ordinary issue exists beyond the loaded window. */
+    hasMore: boolean;
+  };
+  /** True when more ordinary issues exist beyond `beadsDashboard.issueLimit`. */
   truncated: boolean;
   fetchedAt: string;
 }

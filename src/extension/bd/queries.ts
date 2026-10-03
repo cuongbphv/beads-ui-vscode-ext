@@ -297,7 +297,9 @@ export class BdQueries {
   }
 
   async ready(): Promise<Bead[]> {
-    return pickArray<Bead>(await this.bd.jsonShared<unknown>(['ready']), 'issues');
+    // Beads 1.3.1 defaults to 100. Ready drives both the count and claimable
+    // membership, so a silent cap would make large projects look idle.
+    return pickArray<Bead>(await this.bd.jsonShared<unknown>(['ready', '--limit', '0']), 'issues');
   }
 
   async blocked(): Promise<Bead[]> {
@@ -652,25 +654,37 @@ export class BdQueries {
    * so they run concurrently; BdService coalesces the ones the tree also wants.
    */
   async snapshot(limit = DEFAULT_ISSUE_LIMIT): Promise<DashboardSnapshot> {
+    // One extra row distinguishes an exact fit from an actually truncated
+    // standard issue list. `stats` has broader scope: it also counts gates,
+    // infrastructure and templates that `bd list --all` hides by default.
     const [context, vocabulary, stats, beads, ready, blocked, gates] = await Promise.all([
       this.context(),
       this.vocabulary(),
       this.stats(),
-      this.list({ all: true, limit }),
+      this.list({ all: true, limit: limit + 1 }),
       this.ready(),
       this.blocked(),
       this.gates(),
     ]);
 
+    const hasMore = beads.length > limit;
+    const loadedBeads = hasMore ? beads.slice(0, limit) : beads;
+
     return {
       context,
       vocabulary,
       stats,
-      beads,
+      beads: loadedBeads,
       readyIds: ready.map((b) => b.id),
       blockedIds: blocked.map((b) => b.id),
       gates,
-      truncated: beads.length >= limit,
+      issueScope: {
+        loadedCount: loadedBeads.length,
+        projectTotal: stats.total_issues,
+        excludedKinds: ['gates', 'infrastructure', 'templates'],
+        hasMore,
+      },
+      truncated: hasMore,
       fetchedAt: new Date().toISOString(),
     };
   }

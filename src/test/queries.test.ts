@@ -114,6 +114,65 @@ describe('BdQueries.stats', () => {
   });
 });
 
+describe('BdQueries.ready', () => {
+  it('requests the full native ready set beyond the CLI default of 100, including custom active statuses', async () => {
+    const fake = new FakeBd();
+    fake.responses.ready = Array.from({ length: 120 }, (_, index) => ({
+      id: `work-${index}`,
+      status: index === 119 ? 'review' : 'open',
+    }));
+
+    const ready = await queries(fake).ready();
+
+    expect(fake.argv[0]).toEqual(['ready', '--limit', '0']);
+    expect(ready).toHaveLength(120);
+    expect(ready.at(-1)).toMatchObject({ id: 'work-119', status: 'review' });
+  });
+});
+
+describe('BdQueries.snapshot scope', () => {
+  function fixture(rows: number): FakeBd {
+    const fake = new FakeBd();
+    fake.responses = {
+      context: { bd_version: '1.3.1' },
+      statuses: { built_in_statuses: [{ name: 'open', category: 'active' }], custom_statuses: [{ name: 'review', category: 'active' }] },
+      types: { core_types: [{ name: 'task' }], system_types: [{ name: 'gate' }] },
+      stats: { summary: { total_issues: 8, ready_issues: 2 } },
+      list: Array.from({ length: rows }, (_, index) => ({ id: `work-${index}`, status: 'open', issue_type: 'task' })),
+      ready: [{ id: 'work-0', status: 'open' }, { id: 'work-1', status: 'review' }],
+      blocked: [],
+      gate: [],
+    };
+    return fake;
+  }
+
+  it('reports loaded ordinary issues separately from global stats and probes one extra row', async () => {
+    const fake = fixture(4);
+    const snapshot = await queries(fake).snapshot(3);
+
+    expect(fake.argv.find(([command]) => command === 'list')).toEqual(['list', '--flat', '--all', '--limit', '4']);
+    expect(snapshot.beads).toHaveLength(3);
+    expect(snapshot.issueScope).toEqual({
+      loadedCount: 3,
+      projectTotal: 8,
+      excludedKinds: ['gates', 'infrastructure', 'templates'],
+      hasMore: true,
+    });
+    expect(snapshot.truncated).toBe(true);
+    expect(snapshot.readyIds).toEqual(['work-0', 'work-1']);
+  });
+
+  it('does not call an exact fit truncated even if project stats include hidden special issues', async () => {
+    const fake = fixture(3);
+    const snapshot = await queries(fake).snapshot(3);
+
+    expect(snapshot.issueScope?.loadedCount).toBe(3);
+    expect(snapshot.issueScope?.projectTotal).toBe(8);
+    expect(snapshot.issueScope?.hasMore).toBe(false);
+    expect(snapshot.truncated).toBe(false);
+  });
+});
+
 describe('BdQueries.list', () => {
   it('passes a multi-status filter as one comma-separated flag', async () => {
     const fake = new FakeBd();
