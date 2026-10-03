@@ -131,7 +131,7 @@ export interface RpcMethods {
     result: HistoryEvent[];
   };
   setStatus: {
-    params: { id: string; status: string };
+    params: { id: string; status: string; observedStatus: string };
     result: { ok: true };
   };
   setPriority: {
@@ -139,7 +139,7 @@ export interface RpcMethods {
     result: { ok: true };
   };
   setAssignee: {
-    params: { id: string; assignee: string };
+    params: { id: string; assignee: string; observedAssignee: string };
     result: { ok: true };
   };
   closeBead: {
@@ -437,6 +437,8 @@ export type RpcErrorKind =
   | 'no-workspace'
   /** bd ran and refused: bad status name, unknown id, routing misconfig. */
   | 'bd-error'
+  /** A Beads compare-and-set guard found that another actor changed the issue. */
+  | 'conflict'
   /** We could not parse what bd printed. */
   | 'bad-output'
   /** Anything else. */

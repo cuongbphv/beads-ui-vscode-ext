@@ -408,7 +408,7 @@ export function BeadDetail({
 
     setBusy(true);
     try {
-      await call('setAssignee', { id: bead.id, assignee: next });
+      await call('setAssignee', { id: bead.id, assignee: next, observedAssignee: bead.assignee ?? '' });
       notify(`${bead.id} assigned to ${next || 'nobody'}`);
     } catch (error) {
       setAssignee(bead.assignee ?? '');
@@ -664,7 +664,7 @@ export function BeadDetail({
               value={bead.status}
               onChange={(event) =>
                 void mutate(
-                  () => call('setStatus', { id: bead.id, status: event.target.value }),
+                  () => call('setStatus', { id: bead.id, status: event.target.value, observedStatus: bead.status }),
                   `${bead.id} → ${event.target.value}`,
                 )
               }

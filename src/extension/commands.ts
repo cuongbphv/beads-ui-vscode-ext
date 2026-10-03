@@ -85,24 +85,24 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
       const id = resolveId(target);
       const snapshot = store.current.snapshot;
       if (!id || !snapshot) return;
+      await guard(async () => {
+        const current = (await store.queries.show(id)).bead?.status;
+        if (current === undefined) throw new Error(`Issue ${id} could not be loaded.`);
+        const index = new StatusIndex(snapshot.vocabulary.statuses);
 
-      const index = new StatusIndex(snapshot.vocabulary.statuses);
-      const current = beadOf(store, id)?.status;
-
-      // The picker is built from the runtime vocabulary, so a project with
-      // custom statuses offers them without any change here.
-      const picked = await vscode.window.showQuickPick(
-        snapshot.vocabulary.statuses.map((status) => ({
-          label: `${status.icon ?? ''} ${status.name}`.trim(),
-          description: status.name === current ? 'current' : index.category(status.name),
-          detail: status.description,
-          value: status.name,
-        })),
-        { title: `Status for ${id}`, placeHolder: current },
-      );
-      if (!picked || picked.value === current) return;
-
-      await guard(() => store.mutations.setStatus(id, picked.value), output);
+        // The picker is built from the runtime vocabulary, so a project with
+        // custom statuses offers them without any change here.
+        const picked = await vscode.window.showQuickPick(
+          snapshot.vocabulary.statuses.map((status) => ({
+            label: `${status.icon ?? ''} ${status.name}`.trim(),
+            description: status.name === current ? 'current' : index.category(status.name),
+            detail: status.description,
+            value: status.name,
+          })),
+          { title: `Status for ${id}`, placeHolder: current },
+        );
+        if (picked && picked.value !== current) await store.mutations.setStatus(id, picked.value, current);
+      }, output);
     }),
 
     register('beadsDashboard.setPriority', async (target: BeadNode | string) => {
@@ -126,16 +126,17 @@ export function registerCommands(deps: CommandDeps): vscode.Disposable[] {
     register('beadsDashboard.setAssignee', async (target: BeadNode | string) => {
       const id = resolveId(target);
       if (!id) return;
-      const current = beadOf(store, id)?.assignee ?? '';
-
-      const value = await vscode.window.showInputBox({
-        title: `Assignee for ${id}`,
-        value: current,
-        prompt: 'Leave empty to unassign.',
-      });
-      if (value === undefined || value === current) return;
-
-      await guard(() => store.mutations.setAssignee(id, value), output);
+      await guard(async () => {
+        const bead = (await store.queries.show(id)).bead;
+        if (!bead) throw new Error(`Issue ${id} could not be loaded.`);
+        const current = bead.assignee ?? '';
+        const value = await vscode.window.showInputBox({
+          title: `Assignee for ${id}`,
+          value: current,
+          prompt: 'Leave empty to unassign.',
+        });
+        if (value !== undefined && value !== current) await store.mutations.setAssignee(id, value, current);
+      }, output);
     }),
 
     register('beadsDashboard.closeBead', async (target: BeadNode | string) => {

@@ -17,7 +17,7 @@ interface PendingCreate {
 }
 
 const rpc = vi.hoisted(() => ({
-  calls: new Array<{ id: string; status: string }>(),
+  calls: new Array<{ id: string; status: string; observedStatus: string }>(),
   createBeadCalls: new Array<{ title: string; status: string }>(),
   createBeadQueue: new Array<PendingCreate>(),
 }));
@@ -25,7 +25,7 @@ const rpc = vi.hoisted(() => ({
 vi.mock('../webview/bridge/rpc', () => ({
   call: (method: string, params: unknown) => {
     if (method === 'setStatus') {
-      rpc.calls.push(params as { id: string; status: string });
+      rpc.calls.push(params as { id: string; status: string; observedStatus: string });
       return Promise.resolve({});
     }
     if (method === 'createBead') {
@@ -282,7 +282,7 @@ describe('BoardView drag-and-drop with swimlanes on', () => {
     // card actually lives in; the lane half must never reach `setStatus`.
     await act(async () => dnd.onDragEnd?.({ active: { id: 'safe-1' }, over: { id: 'auto-ok::wip' } }));
 
-    expect(rpc.calls).toEqual([{ id: 'safe-1', status: 'in_progress' }]);
+    expect(rpc.calls).toEqual([{ id: 'safe-1', status: 'in_progress', observedStatus: 'open' }]);
   });
 
   it('still resolves a bare category drop id (the flat-board path) to the right status', async () => {
@@ -291,7 +291,7 @@ describe('BoardView drag-and-drop with swimlanes on', () => {
 
     await act(async () => dnd.onDragEnd?.({ active: { id: 'plain-1' }, over: { id: 'done' } }));
 
-    expect(rpc.calls).toEqual([{ id: 'plain-1', status: 'done' }]);
+    expect(rpc.calls).toEqual([{ id: 'plain-1', status: 'done', observedStatus: 'open' }]);
   });
 
   it('dropping into a different lane never changes anything but status — no label mutation call is made', async () => {
@@ -303,7 +303,7 @@ describe('BoardView drag-and-drop with swimlanes on', () => {
 
     // Only one rpc call total, and it is setStatus — nothing resembling a
     // label/update call was ever issued by BoardView for a cross-lane drop.
-    expect(rpc.calls).toEqual([{ id: 'human-1', status: 'done' }]);
+    expect(rpc.calls).toEqual([{ id: 'human-1', status: 'done', observedStatus: 'open' }]);
   });
 });
 
@@ -381,7 +381,7 @@ describe('BoardView droppable ids', () => {
     expect(narrowId).toBeDefined();
     await act(async () => dnd.onDragEnd?.({ active: { id: 'plain-1' }, over: { id: narrowId! } }));
 
-    expect(rpc.calls).toEqual([{ id: 'plain-1', status: 'done' }]);
+    expect(rpc.calls).toEqual([{ id: 'plain-1', status: 'done', observedStatus: 'open' }]);
   });
 
   it('resolves a drop on a lane’s narrow copy to that column’s status, lane discarded', async () => {
@@ -397,7 +397,7 @@ describe('BoardView droppable ids', () => {
     expect(narrowId).toBeDefined();
     await act(async () => dnd.onDragEnd?.({ active: { id: 'safe-1' }, over: { id: narrowId! } }));
 
-    expect(rpc.calls).toEqual([{ id: 'safe-1', status: 'done' }]);
+    expect(rpc.calls).toEqual([{ id: 'safe-1', status: 'done', observedStatus: 'open' }]);
   });
 });
 
@@ -737,7 +737,7 @@ describe('BoardView narrow keyboard fallback', () => {
     // No real coordinate exists to hand dnd-kit — the move happened through
     // the fallback's own mutation, not through a geometric drag-and-drop.
     expect(result).toBeUndefined();
-    expect(rpc.calls).toEqual([{ id: 'nb-open', status: 'in_progress' }]);
+    expect(rpc.calls).toEqual([{ id: 'nb-open', status: 'in_progress', observedStatus: 'open' }]);
     expect(switcher(root, 'In Progress').getAttribute('aria-pressed')).toBe('true');
     expect(narrow(root).dataset.dropId).toBe('narrow::wip');
   });
@@ -756,7 +756,7 @@ describe('BoardView narrow keyboard fallback', () => {
       await Promise.resolve();
     });
 
-    expect(rpc.calls).toEqual([{ id: 'nb-done', status: 'in_progress' }]);
+    expect(rpc.calls).toEqual([{ id: 'nb-done', status: 'in_progress', observedStatus: 'done' }]);
     expect(switcher(root, 'In Progress').getAttribute('aria-pressed')).toBe('true');
   });
 

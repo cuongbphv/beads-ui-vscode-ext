@@ -55,6 +55,14 @@ const showQuickPick = vscode.window.showQuickPick as unknown as Mock<
 class FakeMutations {
   readonly calls: Array<{ method: string; args: unknown[] }> = [];
 
+  async setStatus(id: string, status: string, observedStatus: string): Promise<void> {
+    this.calls.push({ method: 'setStatus', args: [id, status, observedStatus] });
+  }
+
+  async setAssignee(id: string, assignee: string, observedAssignee: string): Promise<void> {
+    this.calls.push({ method: 'setAssignee', args: [id, assignee, observedAssignee] });
+  }
+
   async create(input: CreateBeadParams): Promise<{ id: string }> {
     this.calls.push({ method: 'create', args: [input] });
     return { id: 'bd-new-1' };
@@ -99,8 +107,15 @@ function makeSnapshot(): DashboardSnapshot {
   };
 }
 
-function makeStore(mutations: FakeMutations, snapshot: DashboardSnapshot | undefined): BeadsStore {
-  return { current: { snapshot, loading: false }, mutations } as unknown as BeadsStore;
+function makeStore(mutations: FakeMutations, snapshot: DashboardSnapshot | undefined, freshBead?: Bead): BeadsStore {
+  return {
+    current: { snapshot, loading: false },
+    mutations,
+    queries: { show: vi.fn(async (id: string) => ({
+      bead: freshBead?.id === id ? freshBead : snapshot?.beads.find((bead) => bead.id === id) ?? null,
+      comments: [],
+    })) },
+  } as unknown as BeadsStore;
 }
 
 /** Registers the commands and returns the `createBead` handler, ready to invoke. */
@@ -108,10 +123,11 @@ function createBeadHandler(
   mutations: FakeMutations,
   openDashboard: Mock<(id?: string) => void>,
   snapshot: DashboardSnapshot | undefined,
+  freshBead?: Bead,
 ): Handler {
   registered.clear();
   registerCommands({
-    store: makeStore(mutations, snapshot),
+    store: makeStore(mutations, snapshot, freshBead),
     output: { appendLine: vi.fn(), show: vi.fn() } as unknown as import('vscode').OutputChannel,
     openDashboard,
     panel: () => undefined,
@@ -266,5 +282,34 @@ describe('beadsDashboard.createBead', () => {
     expect(vscode.window.showInputBox).not.toHaveBeenCalled();
     expect(mutations.calls).toEqual([]);
     expect(openDashboard).not.toHaveBeenCalled();
+  });
+});
+
+describe('guarded tree quick actions', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('passes the freshly loaded status to the mutation', async () => {
+    const mutations = new FakeMutations();
+    const snapshot = makeSnapshot();
+    snapshot.vocabulary.statuses = [
+      { name: 'open', category: 'active' },
+      { name: 'in_progress', category: 'wip' },
+    ];
+    createBeadHandler(mutations, vi.fn(), snapshot, { ...taskB, status: 'in_progress' });
+    showQuickPick.mockResolvedValueOnce({ label: 'open', value: 'open' });
+
+    await registered.get('beadsDashboard.setStatus')?.('bd-task-b' as never);
+
+    expect(mutations.calls).toEqual([{ method: 'setStatus', args: ['bd-task-b', 'open', 'in_progress'] }]);
+  });
+
+  it('passes a freshly loaded assignee when the snapshot is stale', async () => {
+    const mutations = new FakeMutations();
+    createBeadHandler(mutations, vi.fn(), makeSnapshot(), { ...taskB, assignee: 'bob' });
+    vi.mocked(vscode.window.showInputBox).mockResolvedValueOnce('ana');
+
+    await registered.get('beadsDashboard.setAssignee')?.('bd-task-b' as never);
+
+    expect(mutations.calls).toEqual([{ method: 'setAssignee', args: ['bd-task-b', 'ana', 'bob'] }]);
   });
 });

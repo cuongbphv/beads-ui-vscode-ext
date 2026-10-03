@@ -23,6 +23,14 @@ const { handleRequest } = await import('../extension/panel/router');
 class FakeMutations {
   readonly calls: Array<{ method: string; args: unknown[] }> = [];
 
+  async setStatus(id: string, status: string, observedStatus: string): Promise<void> {
+    this.calls.push({ method: 'setStatus', args: [id, status, observedStatus] });
+  }
+
+  async setAssignee(id: string, assignee: string, observedAssignee: string): Promise<void> {
+    this.calls.push({ method: 'setAssignee', args: [id, assignee, observedAssignee] });
+  }
+
   async comment(id: string, text: string): Promise<void> {
     this.calls.push({ method: 'comment', args: [id, text] });
   }
@@ -160,6 +168,33 @@ const host = makeHost();
 function request(method: string, params: Record<string, unknown>): RpcRequest {
   return { kind: 'request', id: 1, method, params } as unknown as RpcRequest;
 }
+
+describe('router guarded edits', () => {
+  it('passes the observed status and permits an observed unassigned assignee', async () => {
+    const mutations = new FakeMutations();
+    const store = makeStore(mutations);
+    expect((await handleRequest(store, host, request('setStatus', {
+      id: 'bd-1', status: 'review', observedStatus: 'open',
+    }))).ok).toBe(true);
+    expect((await handleRequest(store, host, request('setAssignee', {
+      id: 'bd-1', assignee: 'ana', observedAssignee: '',
+    }))).ok).toBe(true);
+    expect(mutations.calls).toEqual([
+      { method: 'setStatus', args: ['bd-1', 'review', 'open'] },
+      { method: 'setAssignee', args: ['bd-1', 'ana', ''] },
+    ]);
+  });
+
+  it('rejects edits without an observed value before any mutation call', async () => {
+    const mutations = new FakeMutations();
+    const store = makeStore(mutations);
+    const status = await handleRequest(store, host, request('setStatus', { id: 'bd-1', status: 'review' }));
+    const assignee = await handleRequest(store, host, request('setAssignee', { id: 'bd-1', assignee: 'ana' }));
+    expect(status.ok).toBe(false);
+    expect(assignee.ok).toBe(false);
+    expect(mutations.calls).toEqual([]);
+  });
+});
 
 describe('router addComment', () => {
   it('calls mutations.comment with the trimmed-by-bd text and returns ok', async () => {

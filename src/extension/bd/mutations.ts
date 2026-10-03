@@ -12,7 +12,7 @@
  */
 import type { CreateBeadParams, DepType, TextField } from '../../shared/protocol';
 import type { Priority } from '../../shared/types';
-import type { BdService } from './BdService';
+import { BdError, type BdService } from './BdService';
 
 /** `updateText`'s field-to-flag mapping — CLI shape, not beads vocabulary. */
 const TEXT_FLAGS: Record<TextField, string> = {
@@ -75,8 +75,8 @@ export class BdMutations {
    * beads statuses are user-extensible, and bd rejects an unknown name with a
    * clear message that BdService already turns into a readable error.
    */
-  async setStatus(id: string, status: string): Promise<void> {
-    await this.run(['update', id, '--status', status], id);
+  async setStatus(id: string, status: string, observedStatus: string): Promise<void> {
+    await this.runGuarded(['update', id, '--status', status, '--if-status', observedStatus], id);
   }
 
   async setPriority(id: string, priority: Priority): Promise<void> {
@@ -84,8 +84,8 @@ export class BdMutations {
   }
 
   /** An empty string clears the assignee — bd treats it as "unassign". */
-  async setAssignee(id: string, assignee: string): Promise<void> {
-    await this.run(['update', id, '--assignee', assignee], id);
+  async setAssignee(id: string, assignee: string, observedAssignee: string): Promise<void> {
+    await this.runGuarded(['update', id, '--assignee', assignee, '--if-assignee', observedAssignee], id);
   }
 
   async close(id: string, reason?: string): Promise<void> {
@@ -248,6 +248,22 @@ export class BdMutations {
   private async run(args: string[], ...changedIds: string[]): Promise<void> {
     await this.bd.exec(args);
     this.notify(changedIds);
+  }
+
+  private async runGuarded(args: string[], id: string): Promise<void> {
+    try {
+      await this.run(args, id);
+    } catch (error) {
+      if (!(error instanceof BdError) || error.rpcError.exitCode !== 13) throw error;
+      // A conflict wrote nothing, but every view must fetch the new winner.
+      this.notify([id]);
+      throw new BdError({
+        kind: 'conflict',
+        exitCode: 13,
+        message: `${id} changed in Beads while you were editing. The latest issue is loading; review it and try again.`,
+        detail: error.rpcError.detail,
+      });
+    }
   }
 
   private notify(changedIds: string[]): void {

@@ -382,16 +382,16 @@ describe('BdMutations', () => {
     const fake = new FakeBd();
     const mutations = new BdMutations(fake as unknown as BdService);
 
-    await mutations.setStatus('bd-1', 'in_review');
+    await mutations.setStatus('bd-1', 'in_review', 'open');
     await mutations.setPriority('bd-1', 0);
-    await mutations.setAssignee('bd-1', 'ana');
+    await mutations.setAssignee('bd-1', 'ana', '');
     await mutations.close('bd-1', ' shipped ');
     await mutations.claim('bd-1');
 
     expect(fake.argv).toEqual([
-      ['update', 'bd-1', '--status', 'in_review'],
+      ['update', 'bd-1', '--status', 'in_review', '--if-status', 'open'],
       ['update', 'bd-1', '--priority', '0'],
-      ['update', 'bd-1', '--assignee', 'ana'],
+      ['update', 'bd-1', '--assignee', 'ana', '--if-assignee', ''],
       ['close', 'bd-1', '--reason', 'shipped'],
       ['update', 'bd-1', '--claim'],
     ]);
@@ -410,9 +410,9 @@ describe('BdMutations', () => {
     const fake = new FakeBd();
     const mutations = new BdMutations(fake as unknown as BdService);
 
-    await mutations.setAssignee('bd-1', '');
+    await mutations.setAssignee('bd-1', '', 'ana');
 
-    expect(fake.argv[0]).toEqual(['update', 'bd-1', '--assignee', '']);
+    expect(fake.argv[0]).toEqual(['update', 'bd-1', '--assignee', '', '--if-assignee', 'ana']);
   });
 
   it('notifies listeners with the changed id after a successful write', async () => {
@@ -421,8 +421,24 @@ describe('BdMutations', () => {
     const seen: string[][] = [];
     mutations.onChanged((ids) => seen.push(ids));
 
-    await mutations.setStatus('bd-7', 'closed');
+    await mutations.setStatus('bd-7', 'closed', 'open');
 
+    expect(seen).toEqual([['bd-7']]);
+  });
+
+  it('turns Beads exit 13 into a conflict and requests a fresh view without retrying the write', async () => {
+    const fake = new FakeBd();
+    const exec = vi.spyOn(fake, 'exec').mockRejectedValue(new BdError({
+      kind: 'bd-error', message: 'stale --if-status guard', exitCode: 13,
+    }));
+    const mutations = new BdMutations(fake as unknown as BdService);
+    const seen: string[][] = [];
+    mutations.onChanged((ids) => seen.push(ids));
+
+    await expect(mutations.setStatus('bd-7', 'closed', 'open')).rejects.toMatchObject({
+      rpcError: { kind: 'conflict', exitCode: 13, message: expect.stringContaining('changed in Beads') },
+    });
+    expect(exec).toHaveBeenCalledExactlyOnceWith(['update', 'bd-7', '--status', 'closed', '--if-status', 'open']);
     expect(seen).toEqual([['bd-7']]);
   });
 });

@@ -203,7 +203,7 @@ export function BoardView({
 
     setOptimistic((current) => ({ ...current, [id]: nextStatus }));
     try {
-      await call('setStatus', { id, status: nextStatus });
+      await call('setStatus', { id, status: nextStatus, observedStatus: bead.status });
       notify(`${id} → ${nextStatus}`);
     } catch (error) {
       // Roll back to whatever bd actually has.

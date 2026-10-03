@@ -99,7 +99,7 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
     }
 
     case 'setStatus':
-      await mutations.setStatus(id(), requireString(params.status, 'status'));
+      await mutations.setStatus(id(), requireString(params.status, 'status'), requireString(params.observedStatus, 'observedStatus'));
       return { ok: true };
 
     case 'setPriority':
@@ -107,7 +107,7 @@ async function dispatch(store: BeadsStore, host: RouterHost, request: RpcRequest
       return { ok: true };
 
     case 'setAssignee':
-      await mutations.setAssignee(id(), String(params.assignee ?? ''));
+      await mutations.setAssignee(id(), String(params.assignee ?? ''), requireStringAllowEmpty(params.observedAssignee, 'observedAssignee'));
       return { ok: true };
 
     case 'closeBead':
@@ -292,5 +292,10 @@ function requireString(value: unknown, field: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error(`Missing required parameter "${field}".`);
   }
+  return value;
+}
+
+function requireStringAllowEmpty(value: unknown, field: string): string {
+  if (typeof value !== 'string') throw new Error(`Missing required parameter "${field}".`);
   return value;
 }

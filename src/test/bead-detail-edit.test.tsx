@@ -408,7 +408,7 @@ describe('assignee field Escape-cancel (regression, bead li0.12)', () => {
 
     expect(rpc.calls).toHaveLength(1);
     expect(rpc.calls[0].method).toBe('setAssignee');
-    expect(rpc.calls[0].params).toEqual({ id: 'bd-1', assignee: 'bob' });
+    expect(rpc.calls[0].params).toEqual({ id: 'bd-1', assignee: 'bob', observedAssignee: 'ana' });
 
     await act(async () => {
       rpc.calls[0].resolve({ ok: true });
