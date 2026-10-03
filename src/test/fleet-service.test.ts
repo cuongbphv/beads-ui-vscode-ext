@@ -363,6 +363,22 @@ describe('FleetService Codex discovery', () => {
     service.dispose();
   });
 
+  it('uses the Codex task name when a spawn brief is an opaque encoded token', async () => {
+    const opaqueBrief = `gAAAAAB${'q7_+-'.repeat(24)}=`;
+    await writeCodexFleet('codex-root', 'codex-child', 'workspace', opaqueBrief);
+    const service = new FleetService(cwd, undefined, {
+      projectsRoot: projectsRoot(), codexSessionsRoot: codexRoot(),
+    });
+    await service.tick();
+
+    expect(service.snapshot?.workers[0]).toMatchObject({
+      provider: 'codex', briefSummary: 'Codex agent workspace',
+      beadId: null, worktreePath: null,
+    });
+    expect(service.snapshot?.workers[0].briefSummary).not.toContain('gAAAAAB');
+    service.dispose();
+  });
+
   it('keeps Claude workers when Codex sessions also exist', async () => {
     await writeSessionFile('claude-root', new Date());
     await writeAgentFile('claude-root', 'claude-child', 'Implement bead proj-7 in /repo/wt-7.', new Date());

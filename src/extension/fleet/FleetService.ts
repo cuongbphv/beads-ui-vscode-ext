@@ -519,7 +519,7 @@ export class FleetService implements vscode.Disposable {
           sessionId: meta.id,
           beadId: parsed?.beadId ?? null,
           worktreePath: parsed?.worktreePath ?? null,
-          briefSummary: brief ? firstLineOf(brief) : `Codex agent ${taskName || child.id}`,
+          briefSummary: codexBriefSummary(brief, taskName, child.id),
           lastActivityAt,
           status: workerStatus(lastActivityAt, this.now()),
         });
@@ -727,6 +727,17 @@ async function readFirstUserMessage(filePath: string): Promise<string | null> {
 function firstLineOf(text: string): string {
   const line = text.split('\n')[0] ?? '';
   return line.length > BRIEF_SUMMARY_CAP_CHARS ? `${line.slice(0, BRIEF_SUMMARY_CAP_CHARS)}…` : line;
+}
+
+/** Codex may store a spawn message as an opaque encoded token. It is useful
+ * for neither task matching nor a human-readable worker label; show the
+ * stable agent name instead of leaking a truncated token into Fleet. */
+function codexBriefSummary(brief: string, taskName: string, agentId: string): string {
+  const line = brief.split('\n')[0]?.trim() ?? '';
+  if (!line || (line.length >= 80 && /^[A-Za-z0-9+/_=-]+$/.test(line))) {
+    return `Codex agent ${taskName || agentId}`;
+  }
+  return firstLineOf(brief);
 }
 
 /**
