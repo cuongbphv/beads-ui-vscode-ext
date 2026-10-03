@@ -54,6 +54,7 @@ const vscode = await import('vscode');
 const { DashboardPanel } = await import('../extension/panel/DashboardPanel');
 import type { BeadsStore } from '../extension/store';
 import type { FleetService } from '../extension/fleet/FleetService';
+import type { TranscriptResolution } from '../extension/fleet/TranscriptTailer';
 
 interface FakePanel {
   iconPath: unknown;
@@ -112,6 +113,7 @@ function makeFakePanel(): FakePanel {
 class FakeFleetService {
   snapshot: FleetSnapshot | undefined;
   filePaths: Record<string, string> = {};
+  providers: Record<string, 'claude' | 'codex'> = {};
   baseDir: string | null = null;
 
   observe(): { dispose: () => void } {
@@ -126,6 +128,11 @@ class FakeFleetService {
 
   get transcriptsBaseDir(): string | null {
     return this.baseDir;
+  }
+
+  transcriptLocationFor(targetId: string): TranscriptResolution | null {
+    const filePath = this.filePathFor(targetId);
+    return filePath && this.baseDir ? { filePath, baseDir: this.baseDir, provider: this.providers[targetId] ?? 'claude' } : null;
   }
 }
 
@@ -164,6 +171,24 @@ afterEach(async () => {
 });
 
 describe('DashboardPanel transcript wiring', () => {
+  it('routes a Codex worker through the Codex parser', async () => {
+    const filePath = join(baseDir, 'rollout-codex.jsonl');
+    await writeFile(filePath, JSON.stringify({
+      type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Codex reply' }] },
+    }) + '\n');
+    const fleet = new FakeFleetService();
+    fleet.baseDir = baseDir;
+    fleet.filePaths['agent:codex-worker'] = filePath;
+    fleet.providers['agent:codex-worker'] = 'codex';
+    const panel = DashboardPanel.show(context, makeFakeStore(), fleet as unknown as FleetService, {
+      revealBead: vi.fn(),
+    });
+
+    const backfill = await panel.transcriptSubscribe('agent:codex-worker');
+    expect(backfill.events[0].blocks[0]).toMatchObject({ type: 'text', text: 'Codex reply' });
+    panel.dispose();
+  });
+
   it('resolves subscribeTranscript through FleetService and returns the tailer backfill', async () => {
     const filePath = join(baseDir, 'session-1.jsonl');
     await writeFile(filePath, jsonLine('user', 'hello'), 'utf8');

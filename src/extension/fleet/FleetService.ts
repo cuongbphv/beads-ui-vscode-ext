@@ -52,6 +52,7 @@ import { findProjectDirFor } from './lib/session-locator';
 import { parseSpawnBrief } from './lib/spawn-brief';
 import { Debouncer } from '../poll-gate';
 import { listWorktrees, WorktreeGitProbe, type DiscoveredWorktree } from './worktree-git';
+import type { TranscriptResolution } from './TranscriptTailer';
 
 /** How often discovery re-scans while at least one subscriber is watching. */
 export const DISCOVERY_INTERVAL_MS = 5_000;
@@ -122,6 +123,7 @@ export class FleetService implements vscode.Disposable {
   private projectDirName: string | null = null;
   private readonly codexMetaCache = new Map<string, CodexSessionMeta>();
   private readonly codexSpawnCursors = new Map<string, CodexSpawnCursor>();
+  private readonly codexSessionPaths = new Map<string, string>();
 
   private readonly emitter = new vscode.EventEmitter<FleetSnapshot>();
   /** Fires with a fresh snapshot — debounced and skipped on no real change; see `maybeEmit`. */
@@ -183,6 +185,31 @@ export class FleetService implements vscode.Disposable {
     }
 
     return null;
+  }
+
+  /** Resolve a discovered target with its own provider's containment base. */
+  transcriptLocationFor(targetId: string): TranscriptResolution | null {
+    if (targetId.startsWith('agent:')) {
+      const agentId = targetId.slice('agent:'.length);
+      const worker = this.current?.workers.find((candidate) => candidate.agentId === agentId);
+      if (!worker) return null;
+      if (worker.provider === 'codex') {
+        const filePath = this.codexSessionPaths.get(agentId);
+        return filePath ? { filePath, baseDir: this.codexSessionsRoot, provider: 'codex' } : null;
+      }
+    } else if (targetId.startsWith('session:')) {
+      const sessionId = targetId.slice('session:'.length);
+      const orchestrator = this.current?.orchestrators.find((candidate) => candidate.sessionId === sessionId);
+      if (!orchestrator) return null;
+      if (orchestrator.provider === 'codex') {
+        const filePath = this.codexSessionPaths.get(sessionId);
+        return filePath ? { filePath, baseDir: this.codexSessionsRoot, provider: 'codex' } : null;
+      }
+    } else return null;
+
+    const filePath = this.filePathFor(targetId);
+    const baseDir = this.transcriptsBaseDir;
+    return filePath && baseDir ? { filePath, baseDir, provider: 'claude' } : null;
   }
 
   /**
@@ -444,11 +471,13 @@ export class FleetService implements vscode.Disposable {
     }
 
     const metas: CodexSessionMeta[] = [];
+    this.codexSessionPaths.clear();
     for (const filePath of files) {
       const meta = this.codexMetaCache.get(filePath) ?? await readCodexMeta(filePath);
       if (meta) {
         this.codexMetaCache.set(filePath, meta);
         metas.push(meta);
+        this.codexSessionPaths.set(meta.id, filePath);
       }
       else malformed = true;
     }

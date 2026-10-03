@@ -173,3 +173,78 @@ export function parseTranscriptLine(line: string): TranscriptEvent | null {
     blocks,
   };
 }
+
+/** Translate one Codex rollout JSONL record without exposing metadata rows. */
+export function parseCodexTranscriptLine(line: string): TranscriptEvent | null {
+  if (!line.trim()) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const payload = record.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+    ? record.payload as Record<string, unknown> : undefined;
+  const base = {
+    uuid: typeof payload?.id === 'string' ? payload.id : null,
+    timestamp: typeof record.timestamp === 'string' ? record.timestamp : null,
+    agentId: null,
+    sessionId: null,
+  };
+  if (record.type !== 'response_item' || !payload) return { ...base, role: 'other', blocks: [] };
+
+  if (payload.type === 'message' && (payload.role === 'user' || payload.role === 'assistant')) {
+    const blocks: TranscriptBlock[] = [];
+    const content = Array.isArray(payload.content) ? payload.content : [];
+    for (const item of content) {
+      if (!item || typeof item !== 'object') continue;
+      const block = item as Record<string, unknown>;
+      if (!['input_text', 'output_text', 'text'].includes(String(block.type))) continue;
+      if (typeof block.text !== 'string') continue;
+      const { value, truncated } = truncateUtf8(block.text, TEXT_CAP_BYTES);
+      blocks.push({ type: 'text', text: value, truncated });
+    }
+    return { ...base, role: payload.role, blocks };
+  }
+
+  if (payload.type === 'reasoning') {
+    const summary = Array.isArray(payload.summary) ? payload.summary : [];
+    const content = Array.isArray(payload.content) ? payload.content : [];
+    const text = [...summary, ...content].filter((part): part is Record<string, unknown> =>
+      !!part && typeof part === 'object' && !Array.isArray(part))
+      .filter((part) => part.type === 'summary_text' || part.type === 'reasoning_text')
+      .map((part) => typeof part.text === 'string' ? part.text : '')
+      .filter(Boolean).join('\n');
+    const { value, truncated } = truncateUtf8(text, THINKING_CAP_BYTES);
+    return { ...base, role: 'assistant', blocks: text ? [{ type: 'thinking', thinking: value, truncated }] : [] };
+  }
+
+  if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
+    const rawInput = payload.type === 'function_call' ? payload.arguments : payload.input;
+    let input = typeof rawInput === 'string' ? rawInput : '';
+    try { input = JSON.stringify(JSON.parse(input), null, 2); } catch { /* Keep opaque command text. */ }
+    const { value, truncated } = truncateUtf8(input, TOOL_USE_CAP_BYTES);
+    return { ...base, role: 'assistant', blocks: [{
+      type: 'tool_use',
+      id: typeof payload.call_id === 'string' ? payload.call_id : '',
+      name: typeof payload.name === 'string' ? payload.name : '',
+      input: value,
+      truncated,
+    }] };
+  }
+
+  if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
+    const { value, truncated } = truncateUtf8(textOf(payload.output), TOOL_RESULT_CAP_BYTES);
+    return { ...base, role: 'assistant', blocks: [{
+      type: 'tool_result',
+      toolUseId: typeof payload.call_id === 'string' ? payload.call_id : '',
+      content: value,
+      isError: payload.is_error === true || payload.status === 'failed',
+      truncated,
+    }] };
+  }
+
+  return { ...base, role: 'other', blocks: [] };
+}

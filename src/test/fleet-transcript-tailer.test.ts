@@ -16,7 +16,7 @@
  * `vi.mock('vscode', ...)` — unlike `fleet-service.test.ts`.
  */
 import { promises as fsPromises } from 'node:fs';
-import { mkdtemp, mkdir, rm, writeFile, appendFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, appendFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -126,6 +126,21 @@ describe('TranscriptTailer.subscribe — security', () => {
     await expect(tailer.subscribe('agent:nope', vi.fn())).rejects.toThrow();
     tailer.dispose();
   });
+
+  it('rejects a Codex rollout symlink that resolves outside its sessions root', async () => {
+    const codexBase = join(root, 'codex', 'sessions');
+    await mkdir(codexBase, { recursive: true });
+    const outside = join(root, 'outside.jsonl');
+    await writeFile(outside, jsonLine('user', 'outside'), 'utf8');
+    const link = join(codexBase, 'rollout-linked.jsonl');
+    await symlink(outside, link);
+    const tailer = new TranscriptTailer(resolver({
+      'agent:codex': { filePath: link, baseDir: codexBase, provider: 'codex' },
+    }));
+
+    await expect(tailer.subscribe('agent:codex', vi.fn())).rejects.toThrow(/symlink|outside|contain/i);
+    tailer.dispose();
+  });
 });
 
 describe('TranscriptTailer.subscribe — backfill', () => {
@@ -226,6 +241,56 @@ describe('TranscriptTailer.subscribe — backfill', () => {
 });
 
 describe('TranscriptTailer streaming', () => {
+  it('backfills and streams Codex text and tool activity while skipping metadata', async () => {
+    const filePath = join(baseDir, 'rollout-codex.jsonl');
+    const codexLine = (payload: unknown) => JSON.stringify({ type: 'response_item', payload }) + '\n';
+    await writeFile(filePath,
+      JSON.stringify({ type: 'session_meta', payload: { cwd: '/private/metadata' } }) + '\n'
+      + codexLine({ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Start work' }] })
+      + codexLine({ type: 'function_call', call_id: 'call-1', name: 'exec_command', arguments: '{"cmd":"pwd"}' }),
+    );
+    const tailer = new TranscriptTailer(resolver({
+      'agent:codex': { filePath, baseDir, provider: 'codex' },
+    }), undefined, FAST);
+    const onAppend = vi.fn();
+    const backfill = await tailer.subscribe('agent:codex', onAppend);
+
+    expect(backfill.events.map((event) => event.role)).toEqual(['user', 'assistant']);
+    expect(backfill.events[1].blocks[0]).toMatchObject({ type: 'tool_use', name: 'exec_command' });
+    expect(JSON.stringify(backfill)).not.toContain('/private/metadata');
+
+    await appendFile(filePath,
+      codexLine({ type: 'function_call_output', call_id: 'call-1', output: 'cwd result' })
+      + codexLine({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Finished' }] }),
+    );
+    await waitForCalls(onAppend, 1);
+    const events = (onAppend.mock.calls[0][0] as TranscriptAppendPayload).events;
+    expect(events.map((event) => event.blocks[0].type)).toEqual(['tool_result', 'text']);
+    tailer.dispose();
+  });
+
+  it('bounds a large Codex append and still emits its last complete event', async () => {
+    const filePath = join(baseDir, 'rollout-large.jsonl');
+    await writeFile(filePath, '', 'utf8');
+    const tailer = new TranscriptTailer(resolver({
+      'agent:codex': { filePath, baseDir, provider: 'codex' },
+    }), undefined, FAST);
+    const onAppend = vi.fn();
+    await tailer.subscribe('agent:codex', onAppend);
+
+    await appendFile(filePath,
+      JSON.stringify({ type: 'world_state', payload: { opaque: 'x'.repeat(1024 * 1024 + 100) } }) + '\n'
+      + JSON.stringify({ type: 'response_item', payload: {
+        type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'latest' }],
+      } }) + '\n');
+    await waitForCalls(onAppend, 1);
+
+    const batch = onAppend.mock.calls[0][0] as TranscriptAppendPayload;
+    expect(batch.degraded).toBe(true);
+    expect(batch.events.at(-1)?.blocks[0]).toMatchObject({ type: 'text', text: 'latest' });
+    tailer.dispose();
+  });
+
   it('streams a line appended after subscribe within one poll tick', async () => {
     const filePath = join(baseDir, 'stream.jsonl');
     await writeFile(filePath, jsonLine('user', 'first'), 'utf8');

@@ -6,11 +6,64 @@ import {
   TOOL_RESULT_CAP_BYTES,
   TOOL_USE_CAP_BYTES,
   parseTranscriptLine,
+  parseCodexTranscriptLine,
 } from '../extension/fleet/lib/transcript';
 
 function line(obj: unknown): string {
   return JSON.stringify(obj);
 }
+
+describe('parseCodexTranscriptLine', () => {
+  it('maps user and assistant text from response_item without rendering developer metadata', () => {
+    const user = parseCodexTranscriptLine(line({
+      timestamp: '2026-10-03T10:00:00Z', type: 'response_item',
+      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Investigate bead' }] },
+    }));
+    const assistant = parseCodexTranscriptLine(line({
+      type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done' }] },
+    }));
+    const metadata = parseCodexTranscriptLine(line({
+      type: 'session_meta', payload: { cwd: '/private/path', base_instructions: 'private metadata' },
+    }));
+
+    expect(user).toMatchObject({ role: 'user', timestamp: '2026-10-03T10:00:00Z', blocks: [{ type: 'text', text: 'Investigate bead', truncated: false }] });
+    expect(assistant).toMatchObject({ role: 'assistant', blocks: [{ type: 'text', text: 'Done', truncated: false }] });
+    expect(metadata).toMatchObject({ role: 'other', blocks: [] });
+    expect(JSON.stringify(metadata)).not.toContain('private');
+  });
+
+  it('maps reasoning summaries and tool calls/results with caps and call IDs', () => {
+    const reasoning = parseCodexTranscriptLine(line({
+      type: 'response_item', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: 'Check the edge case' }], encrypted_content: 'secret' },
+    }));
+    const call = parseCodexTranscriptLine(line({
+      type: 'response_item', payload: { type: 'function_call', call_id: 'call-1', name: 'exec_command', arguments: '{"cmd":"pwd"}' },
+    }));
+    const result = parseCodexTranscriptLine(line({
+      type: 'response_item', payload: { type: 'function_call_output', call_id: 'call-1', output: 'ok' },
+    }));
+
+    expect(reasoning?.blocks).toEqual([{ type: 'thinking', thinking: 'Check the edge case', truncated: false }]);
+    expect(JSON.stringify(reasoning)).not.toContain('secret');
+    expect(call?.blocks).toEqual([{ type: 'tool_use', id: 'call-1', name: 'exec_command', input: '{\n  "cmd": "pwd"\n}', truncated: false }]);
+    expect(result?.blocks).toEqual([{ type: 'tool_result', toolUseId: 'call-1', content: 'ok', isError: false, truncated: false }]);
+  });
+
+  it('handles custom tools, malformed JSON and unknown records without leaking raw fields', () => {
+    const call = parseCodexTranscriptLine(line({
+      type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'custom-1', name: 'js', input: 'plain input' },
+    }));
+    const result = parseCodexTranscriptLine(line({
+      type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'custom-1', output: 'failed', status: 'failed' },
+    }));
+    expect(call?.blocks[0]).toMatchObject({ type: 'tool_use', id: 'custom-1', name: 'js' });
+    expect(result?.blocks[0]).toMatchObject({ type: 'tool_result', toolUseId: 'custom-1', isError: true });
+    expect(parseCodexTranscriptLine('{broken')).toBeNull();
+    const unknown = parseCodexTranscriptLine(line({ type: 'world_state', payload: { token: 'do-not-render' } }));
+    expect(unknown).toMatchObject({ role: 'other', blocks: [] });
+    expect(JSON.stringify(unknown)).not.toContain('do-not-render');
+  });
+});
 
 describe('parseTranscriptLine', () => {
   it('returns null for corrupt JSON rather than throwing', () => {

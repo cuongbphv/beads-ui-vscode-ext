@@ -297,6 +297,12 @@ describe('FleetService Codex discovery', () => {
     expect(service.snapshot?.orphanWorktrees).toEqual([]);
     expect(service.filePathFor(`agent:${childId}`)).toBeNull();
     expect(service.filePathFor(`session:${parentId}`)).toBeNull();
+    expect(service.transcriptLocationFor(`agent:${childId}`)).toMatchObject({
+      baseDir: codexRoot(), provider: 'codex', filePath: expect.stringContaining(childId),
+    });
+    expect(service.transcriptLocationFor(`session:${parentId}`)).toMatchObject({
+      baseDir: codexRoot(), provider: 'codex', filePath: expect.stringContaining(parentId),
+    });
     service.dispose();
   });
 

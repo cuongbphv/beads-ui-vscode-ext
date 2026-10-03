@@ -1,5 +1,5 @@
 /**
- * Tails one Claude Code transcript file by byte offset (Fleet P4).
+ * Tails one Claude Code or Codex transcript file by byte offset.
  *
  * A single `TranscriptTailer` follows at most one target at a time: calling
  * `subscribe` again — for the same target or a different one — cancels
@@ -26,8 +26,8 @@
  * came through.
  *
  * Security: a resolver hands this class a `{ filePath, baseDir }` pair for a
- * `targetId`; before any file is opened, `isPathContained` verifies the
- * resolved absolute path still sits inside `baseDir`. This is defense in
+ * `targetId`; before any file is opened, lexical and realpath containment
+ * verify the file still sits inside `baseDir`. This is defense in
  * depth *underneath* the RPC boundary's `targetId` allowlist
  * (`param-validation.ts`'s `requireTargetId`) — that allowlist blocks the
  * characters a traversal would need, but does not itself prove where a
@@ -39,7 +39,7 @@ import { resolve as resolvePath, sep } from 'node:path';
 
 import type { TranscriptBackfill, TranscriptEvent, TranscriptTarget } from '../../shared/fleet';
 import { decodeUtf8Chunk, trimPartialFirstLine } from './lib/tail-decode';
-import { parseTranscriptLine } from './lib/transcript';
+import { parseCodexTranscriptLine, parseTranscriptLine } from './lib/transcript';
 
 /** Default backfill window on first subscribe: the last N bytes of the file. */
 export const BACKFILL_WINDOW_BYTES = 256 * 1024;
@@ -51,12 +51,15 @@ export const FLUSH_MS = 300;
 export const MAX_EVENTS_PER_FLUSH = 200;
 /** Share of a poll window's lines that must fail to parse to flag `degraded`. */
 const SCHEMA_DRIFT_THRESHOLD = 0.5;
+const MAX_POLL_READ_BYTES = 1024 * 1024;
 
 export interface TranscriptResolution {
   /** Absolute path to the transcript file to tail. */
   filePath: string;
   /** The directory `filePath` must resolve inside — the containment guard's base. */
   baseDir: string;
+  /** Defaults to Claude for existing callers. */
+  provider?: 'claude' | 'codex';
 }
 
 /** Maps a `targetId` to the file it names, or `null` when the target is unknown. */
@@ -95,6 +98,7 @@ export function isPathContained(filePath: string, baseDir: string): boolean {
 interface ActiveTail {
   targetId: string;
   filePath: string;
+  provider: 'claude' | 'codex';
   /** Byte offset up to which the file has been read and parsed so far. */
   offset: number;
   /** File size as of the last successful stat/read — used to detect truncation. */
@@ -147,10 +151,17 @@ export class TranscriptTailer {
     if (!isPathContained(resolution.filePath, resolution.baseDir)) {
       throw new Error(`Refused to tail a transcript path outside its expected directory: ${targetId}`);
     }
+    const [realFilePath, realBaseDir] = await Promise.all([
+      fs.realpath(resolution.filePath), fs.realpath(resolution.baseDir),
+    ]);
+    if (!isPathContained(realFilePath, realBaseDir)) {
+      throw new Error(`Refused to tail a transcript symlink outside its expected directory: ${targetId}`);
+    }
 
-    const { filePath } = resolution;
+    const filePath = realFilePath;
+    const provider = resolution.provider ?? 'claude';
     const window = await readBackfillWindow(filePath, this.backfillBytes);
-    const { events, total, failed } = parseLines(window.complete);
+    const { events, total, failed } = parseLines(window.complete, provider);
     const degraded = total > 0 && failed / total > SCHEMA_DRIFT_THRESHOLD;
 
     const backfill: TranscriptBackfill = {
@@ -165,6 +176,7 @@ export class TranscriptTailer {
     const tail: ActiveTail = {
       targetId,
       filePath,
+      provider,
       offset: window.size,
       lastSize: window.size,
       byteCarry: window.carry,
@@ -238,20 +250,22 @@ export class TranscriptTailer {
     }
     if (stat.size === tail.lastSize) return;
 
-    const raw = await readRange(tail.filePath, tail.offset, stat.size);
+    const skipped = stat.size - tail.offset > MAX_POLL_READ_BYTES;
+    const start = skipped ? stat.size - MAX_POLL_READ_BYTES : tail.offset;
+    const raw = await readRange(tail.filePath, start, stat.size);
     if (tail.disposed) return;
 
-    const { text, carry } = decodeUtf8Chunk(tail.byteCarry, raw);
+    const { text, carry } = decodeUtf8Chunk(skipped ? new Uint8Array(0) : tail.byteCarry, raw);
     tail.byteCarry = carry;
     tail.offset = stat.size;
     tail.lastSize = stat.size;
 
-    const { complete, pending } = splitLines(tail.pendingLine + text);
+    const { complete, pending } = splitLines((skipped ? '' : tail.pendingLine) + (skipped ? trimPartialFirstLine(text) : text));
     tail.pendingLine = pending;
 
-    const { events, total, failed } = parseLines(complete);
+    const { events, total, failed } = parseLines(complete, tail.provider);
     if (events.length > 0) tail.queue.push(...events);
-    if (total > 0 && failed / total > SCHEMA_DRIFT_THRESHOLD) tail.pendingDegraded = true;
+    if (skipped || (total > 0 && failed / total > SCHEMA_DRIFT_THRESHOLD)) tail.pendingDegraded = true;
 
     if (tail.queue.length > 0 || tail.pendingDegraded) this.scheduleFlush(tail);
   }
@@ -272,7 +286,7 @@ export class TranscriptTailer {
     tail.byteCarry = window.carry;
     tail.pendingLine = window.pending;
 
-    const { events, total, failed } = parseLines(window.complete);
+    const { events, total, failed } = parseLines(window.complete, tail.provider);
     if (events.length > 0) tail.queue.push(...events);
     if (total > 0 && failed / total > SCHEMA_DRIFT_THRESHOLD) tail.pendingDegraded = true;
 
@@ -366,19 +380,19 @@ function splitLines(text: string): { complete: string[]; pending: string } {
  * `user`/`assistant` events (everything else this tab does not render) while
  * still counting every non-blank line towards the schema-drift ratio.
  */
-function parseLines(lines: string[]): { events: TranscriptEvent[]; total: number; failed: number } {
+function parseLines(lines: string[], provider: 'claude' | 'codex'): { events: TranscriptEvent[]; total: number; failed: number } {
   let total = 0;
   let failed = 0;
   const events: TranscriptEvent[] = [];
   for (const line of lines) {
     if (!line.trim()) continue;
     total += 1;
-    const parsed = parseTranscriptLine(line);
+    const parsed = provider === 'codex' ? parseCodexTranscriptLine(line) : parseTranscriptLine(line);
     if (!parsed) {
       failed += 1;
       continue;
     }
-    if (parsed.role === 'user' || parsed.role === 'assistant') events.push(parsed);
+    if ((parsed.role === 'user' || parsed.role === 'assistant') && (provider === 'claude' || parsed.blocks.length > 0)) events.push(parsed);
   }
   return { events, total, failed };
 }

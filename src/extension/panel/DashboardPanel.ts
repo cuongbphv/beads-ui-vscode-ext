@@ -171,12 +171,10 @@ export class DashboardPanel implements vscode.Disposable {
   /**
    * Resolve a transcript `targetId` to the file/base-directory pair
    * `TranscriptTailer` needs, reusing `FleetService`'s already-discovered
-   * session/worker associations (Fleet P3) rather than re-deriving them.
+   * session/worker associations and provider-specific containment base.
    */
   private resolveTranscriptTarget(targetId: string): TranscriptResolution | null {
-    const filePath = this.fleet.filePathFor(targetId);
-    const baseDir = this.fleet.transcriptsBaseDir;
-    return filePath && baseDir ? { filePath, baseDir } : null;
+    return this.fleet.transcriptLocationFor(targetId);
   }
 
   /**
